@@ -1569,4 +1569,6 @@ export function GsProjectCombobox({
   );
 }
 
+export { ProjectSelect, type ProjectSelectProps } from "@/components/payroll/project-select";
+
 

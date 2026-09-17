@@ -53,8 +53,14 @@ async function payrollRequest<T>(endpoint: string, init?: RequestInit): Promise<
 
 export const payrollApi = {
   // 1.0 Danh sách Dự án theo phân quyền (Bearer JWT claims)
-  getPayrollProjects: () => {
-    return payrollRequest<ProjectItem[]>("/projects").then((res) => res.data);
+  getPayrollProjects: (params?: { search?: string }) => {
+    const query = new URLSearchParams(
+      Object.entries(params || {})
+        .filter(([, v]) => v !== undefined && v !== null && v !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return payrollRequest<ProjectItem[]>(`/projects${qs}`).then((res) => res.data);
   },
 
   // 1.1 Danh sách Bảng công đã chốt
