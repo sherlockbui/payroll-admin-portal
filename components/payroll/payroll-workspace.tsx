@@ -223,6 +223,10 @@ export function PayrollWorkspacePage() {
                   {payrolls.map((run) => {
                     // Logic to map status to UI Config
                     const sConf = statusConfig[run.status] || { tone: "neutral", short: run.status };
+                    const stage = getWorkflowStage(run);
+                    const progressPercent = run.status === "locked"
+                      ? 100
+                      : Math.min(100, Math.max(12, Math.round(((stage - 1) / 8) * 100)));
                     
                     return (
                       <tr key={run.id} onClick={() => router.push(`/payroll/${run.id}`)}>
@@ -246,11 +250,14 @@ export function PayrollWorkspacePage() {
                         </td>
                         <td>
                           <div className="payroll-progress-cell">
+                            <div>
+                              <span style={{ width: `${progressPercent}%` }} />
+                            </div>
                             <StatusBadge tone={sConf.tone as any}>
                               {sConf.short}
                             </StatusBadge>
                             {run.wfCurrentStepName && (
-                              <small className="block mt-1 text-xs text-muted-foreground">
+                              <small className="block mt-0.5 text-xs text-muted-foreground">
                                 {run.wfCurrentStepName}
                               </small>
                             )}

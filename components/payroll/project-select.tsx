@@ -315,13 +315,11 @@ export function ProjectSelect({
                         setSearch("");
                       }}
                     >
-                      <div className="item-text-group flex flex-col gap-0.5 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-xs px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-700 dark:text-teal-300">
-                            {project.projectCode}
-                          </span>
-                          <span className="item-label font-medium truncate">{project.projectName}</span>
-                        </div>
+                      <div className="item-text-group flex flex-col gap-0.5 min-w-0 text-left">
+                        <span className="item-label font-medium truncate">{project.projectName}</span>
+                        <span className="item-sub text-xs text-muted-foreground font-mono">
+                          {project.projectCode}
+                        </span>
                       </div>
                       {isSelected && <Check className="item-check" />}
                     </button>

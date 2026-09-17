@@ -345,7 +345,6 @@ export function PayrollFullTable({
         )}
       </>
     )}
-      <p className="payroll-full-table-footnote mt-3 text-sm text-muted-foreground">Bảng hiển thị động theo ma trận công thức tính lương.</p>
     </section>
   );
 }
