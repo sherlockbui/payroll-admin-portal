@@ -60,15 +60,6 @@ export function PayrollFullTable({
     );
   }, [matrix.rows, normalizedQuery]);
 
-  // Aggregate stats
-  const stats = useMemo(() => {
-    const totalEmployees = visibleRows.length;
-    const totalGross = visibleRows.reduce((sum, r) => sum + (Number(r.grossSalary) || 0), 0);
-    const totalNet = visibleRows.reduce((sum, r) => sum + (Number(r.netSalary) || 0), 0);
-    const totalActualDays = visibleRows.reduce((sum, r) => sum + (Number(r.actualWorkdays) || 0), 0);
-    const totalHours = visibleRows.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0);
-    return { totalEmployees, totalGross, totalNet, totalActualDays, totalHours };
-  }, [visibleRows]);
 
   // Build group headers for row 1
   const groupHeaders = useMemo(() => {
@@ -134,65 +125,19 @@ export function PayrollFullTable({
 
   return (
     <section className="payroll-detail-section payroll-full-section">
-      {/* Top Header & Search */}
       <div className="payroll-section-toolbar">
         <div>
           <h2>Bảng lương chi tiết</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Phân nhóm cột trực quan: Nhân sự, Ngân hàng, Bảng công ngày, Tổng công, Thu nhập, Khấu trừ và Thực lĩnh.
-          </p>
         </div>
         <label className="search-field payroll-line-search">
           <Search />
           <input 
             value={query} 
             onChange={(event) => onQueryChange(event.target.value)} 
-            placeholder="Tìm mã hoặc tên nhân viên…" 
+            placeholder="Tìm mã hoặc tên…" 
             aria-label="Tìm người lao động trong bảng lương" 
           />
         </label>
-      </div>
-
-      {/* Summary KPI Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-3 p-3 bg-muted/30 rounded-lg border border-border">
-        <div>
-          <span className="text-xs text-muted-foreground font-medium">Nhân sự hiển thị</span>
-          <p className="text-base font-bold text-foreground">
-            {stats.totalEmployees} <small className="text-xs font-normal text-muted">/ {matrix.rows.length} NLĐ</small>
-          </p>
-        </div>
-        <div>
-          <span className="text-xs text-muted-foreground font-medium">Tổng ngày công TT</span>
-          <p className="text-base font-bold text-sky-700 dark:text-sky-400">
-            {stats.totalActualDays.toLocaleString("vi-VN")} công <small className="text-xs font-normal text-muted">({stats.totalHours.toLocaleString("vi-VN")}h)</small>
-          </p>
-        </div>
-        <div>
-          <span className="text-xs text-muted-foreground font-medium">Tổng thu nhập (Gross)</span>
-          <p className="text-base font-bold text-foreground">
-            {formatCurrency(stats.totalGross)}
-          </p>
-        </div>
-        <div>
-          <span className="text-xs text-muted-foreground font-medium">Tổng thực lĩnh (Net)</span>
-          <p className="text-base font-extrabold text-teal-700 dark:text-teal-400">
-            {formatCurrency(stats.totalNet)}
-          </p>
-        </div>
-      </div>
-
-      {/* Meta legend bar */}
-      <div className="payroll-full-table-meta flex flex-wrap items-center justify-between gap-3 mb-2 px-1">
-        <div className="attendance-code-legend flex items-center gap-3 text-xs">
-          <span><i className="work" /> 8h chuẩn</span>
-          <span><i className="overtime" /> &gt;8h tăng ca</span>
-          <span><i className="off" /> 0h / Nghỉ</span>
-        </div>
-        <div className="payroll-sensitive-note text-xs text-muted-foreground">
-          {canViewSensitive
-            ? "Dữ liệu định danh & số tài khoản hiển thị đầy đủ theo quyền Kế toán."
-            : "Số tài khoản ngân hàng đang được bảo mật theo vai trò hiện tại."}
-        </div>
       </div>
 
       {visibleRows.length === 0 ? (
@@ -439,9 +384,7 @@ export function PayrollFullTable({
           </table>
         </div>
       )}
-      <p className="payroll-full-table-footnote mt-3 text-xs text-muted-foreground">
-        Bảng gồm {matrix.columns.length} cột dữ liệu được nhóm tự động theo cấu trúc Excel. Kéo ngang để xem toàn bộ bảng công, các khoản thu nhập và trích nộp.
-      </p>
+      <p className="payroll-full-table-footnote mt-3 text-sm text-muted-foreground">Bảng hiển thị động theo ma trận công thức tính lương.</p>
     </section>
   );
 }
