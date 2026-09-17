@@ -215,6 +215,7 @@ export function PayrollWorkspacePage() {
                     <th>Kỳ lương</th>
                     <th>Thực nhận</th>
                     <th>Tiến độ</th>
+                    <th>Phản hồi</th>
                     <th>Cập nhật</th>
                     <th />
                   </tr>
@@ -227,6 +228,7 @@ export function PayrollWorkspacePage() {
                     const progressPercent = run.status === "locked"
                       ? 100
                       : Math.min(100, Math.max(12, Math.round(((stage - 1) / 8) * 100)));
+                    const feedbackCount = run.disputeCount ?? (run as any).feedbackCount ?? 0;
                     
                     return (
                       <tr key={run.id} onClick={() => router.push(`/payroll/${run.id}`)}>
@@ -262,6 +264,24 @@ export function PayrollWorkspacePage() {
                               </small>
                             )}
                           </div>
+                        </td>
+                        <td>
+                          {feedbackCount > 0 ? (
+                            <button
+                              type="button"
+                              className="payroll-feedback-trigger warning"
+                              aria-label={`Mở chi tiết phản hồi của ${run.periodCode}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                router.push(`/payroll/${run.id}?tab=workflow&dialog=confirmations`);
+                              }}
+                            >
+                              <MessageSquareText />
+                              <span>{feedbackCount}</span>
+                            </button>
+                          ) : (
+                            <span className="muted-dash">—</span>
+                          )}
                         </td>
                         <td>
                           <span>{formatDate(run.createdAt)}</span>
