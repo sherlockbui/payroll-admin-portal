@@ -57,7 +57,18 @@ const validTabs = new Set(tabs.map((item) => item.value));
 type WorkflowAction = "submit" | "approve" | "reject";
 
 export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
   
   const [actionModal, setActionModal] = useState<{ action: WorkflowAction, open: boolean }>({ action: "approve", open: false });
   const [actionNote, setActionNote] = useState("");
@@ -79,7 +90,11 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
   
   // Queries
   const { data: run, isLoading: isRunLoading } = usePayrollDetail(id);
-  const { data: matrixData, isLoading: isMatrixLoading } = usePayrollMatrix(id);
+  const { data: matrixData, isLoading: isMatrixLoading, isFetching: isMatrixFetching } = usePayrollMatrix(id, {
+    page,
+    pageSize,
+    search: debouncedQuery.trim() || undefined,
+  });
   const { data: timelineData, isLoading: isTimelineLoading, error: timelineError } = useWorkflowTimeline(id);
   
   // Mutations
@@ -119,6 +134,8 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
 
   const changeTab = (tab: DetailTab) => {
     setQuery("");
+    setDebouncedQuery("");
+    setPage(1);
     router.replace(tab === "overview" ? `/payroll/${payrollId}` : `/payroll/${payrollId}?tab=${tab}`, { scroll: false });
   };
 
@@ -219,11 +236,25 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
         <main className="payroll-detail-page-content">
           {activeTab === "overview" && (
             <div className="payroll-overview-tab payroll-page-tab-panel">
-              {isMatrixLoading ? (
+              {isMatrixLoading && !matrixData ? (
                 <div className="payroll-loading"><RefreshCw className="spin" /> Đang tải dữ liệu ma trận...</div>
-              ) : (
-                <PayrollFullTable matrix={matrixData!} query={query} onQueryChange={setQuery} canViewSensitive={canViewSensitive} />
-              )}
+              ) : matrixData ? (
+                <PayrollFullTable
+                  matrix={matrixData}
+                  query={query}
+                  onQueryChange={setQuery}
+                  canViewSensitive={canViewSensitive}
+                  page={page}
+                  pageSize={pageSize}
+                  totalItems={matrixData.total ?? matrixData.totalRecords ?? matrixData.rows?.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={(newSize) => {
+                    setPageSize(newSize);
+                    setPage(1);
+                  }}
+                  isFetching={isMatrixFetching}
+                />
+              ) : null}
             </div>
           )}
           {activeTab === "workflow" && (

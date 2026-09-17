@@ -28,8 +28,15 @@ export const workflowSteps = [
   { step: 9, title: "Hoàn tất & khóa", owner: "Kế toán C&B", time: "Ngày chi lương", description: "Lưu dữ liệu hoàn tất làm cơ sở lập danh sách chi lương." },
 ];
 
-export function getWorkflowStage(run: any) {
-  return 1; // Unused, kept for backwards compatibility if needed
+export function getWorkflowStage(run: any): number {
+  if (!run) return 1;
+  if (run.status === "locked") return 9;
+  if (typeof run.wfCurrentStepOrder === "number" && run.wfCurrentStepOrder > 0) {
+    return Math.min(9, Math.max(1, run.wfCurrentStepOrder));
+  }
+  if (run.status === "submitted") return 4;
+  if (run.status === "calculated") return 2;
+  return 1;
 }
 
 export const sourceLabels = { system: "Hệ thống Công ty", excel: "Excel / Scan ký", customer: "Khách hàng xác nhận" } as const;

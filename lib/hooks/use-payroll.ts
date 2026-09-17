@@ -3,10 +3,11 @@ import { payrollApi } from "../payroll-api";
 import { PayrollMatrix } from "../payroll-types";
 
 // === Hook for Projects (theo phân quyền Bearer Token) ===
-export function usePayrollProjects() {
+export function usePayrollProjects(params?: { search?: string }) {
   return useQuery({
-    queryKey: ["payroll-projects"],
-    queryFn: () => payrollApi.getPayrollProjects(),
+    queryKey: ["payroll-projects", params],
+    queryFn: () => payrollApi.getPayrollProjects(params),
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -103,6 +104,7 @@ export function usePayrollMatrix(id: number, params?: { search?: string; page?: 
     queryKey: ["payroll-matrix", id, params],
     queryFn: () => payrollApi.getPayrollMatrix(id, params),
     enabled: !!id,
+    placeholderData: (prev) => prev,
   });
 }
 

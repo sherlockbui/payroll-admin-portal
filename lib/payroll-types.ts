@@ -168,6 +168,10 @@ export interface PayrollMatrix {
   columns: PayrollMatrixColumn[];
   rows: Record<string, any>[];
   totalRecords: number;
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  totalPages?: number;
 }
 
 export interface WorkflowInstance {

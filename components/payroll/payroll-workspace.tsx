@@ -23,9 +23,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useToast, useUserRole } from "@/components/providers";
 import { getWorkflowStage, statusConfig } from "@/components/payroll/payroll-config";
-import { Badge, Button, Modal, MonthPicker, StatusBadge, TablePaginationFooter } from "@/components/ui";
+import { Badge, Button, Modal, MonthPicker, ProjectSelect, StatusBadge, TablePaginationFooter } from "@/components/ui";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
-import { usePayrollPeriods, useSyncTimesheet, usePayrollProjects, useApprovedTimesheets } from "@/lib/hooks/use-payroll";
+import { usePayrollPeriods, useSyncTimesheet, useApprovedTimesheets } from "@/lib/hooks/use-payroll";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 
@@ -33,15 +33,15 @@ const generationSteps = [
   "Kiểm tra trạng thái bảng công",
   "Đối chiếu Master Data nhân sự",
   "Tổng hợp chế độ lương và bảo hiểm",
-  "Tính thu nhập, khấu trừ, thực nhận",
-  "Hoàn thiện bảng lương dự án",
+  "Khởi tạo bảng lương dự thảo",
+  "Hoàn tất quy trình tính toán",
 ];
 
 export function PayrollWorkspacePage() {
+  const [query, setQuery] = useState("");
   const [filterProject, setFilterProject] = useState("");
   const [monthFilter, setMonthFilter] = useState("2026-07");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   
@@ -56,10 +56,6 @@ export function PayrollWorkspacePage() {
   
   const { notify } = useToast();
   const router = useRouter();
-
-  // Query Projects from real API (phân quyền tự động từ Bearer Token Claims)
-  const { data: projectsData, isLoading: isLoadingProjects } = usePayrollProjects();
-  const projects = projectsData || [];
 
   const [year, month] = monthFilter ? monthFilter.split("-").map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
 
@@ -129,8 +125,6 @@ export function PayrollWorkspacePage() {
     }
   };
 
-  if (isLoadingProjects) return <div className="payroll-loading"><RefreshCw className="spin" /> Đang tải danh mục...</div>;
-
   return (
     <>
       <div className="payroll-page-title-simple">
@@ -139,26 +133,19 @@ export function PayrollWorkspacePage() {
 
       <div className="payroll-header-controls">
         <div className="payroll-header-filters">
-          <label className="payroll-filter-control">
+          <div className="payroll-filter-control">
             <span className="payroll-control-label">CHỌN DỰ ÁN</span>
-            <select
-            className="payroll-control-select"
-            value={filterProject}
-            onChange={(e) => setFilterProject(e.target.value)}
-          >
-            <option value="">-- Tất cả dự án --</option>
-            {projects.map((project: any) => {
-              const pId = project.id ?? project.projectId ?? project.Id ?? project.ProjectId;
-              const pCode = project.projectCode ?? project.ProjectCode;
-              const pName = project.projectName ?? project.ProjectName;
-              return (
-                <option value={pId} key={pId}>
-                  {pCode} — {pName}
-                </option>
-              );
-            })}
-          </select>
-          </label>
+            <ProjectSelect
+              value={filterProject}
+              onChange={(val) => {
+                setFilterProject(val ? String(val) : "");
+                setPage(1);
+              }}
+              variant="filter"
+              placeholder="-- Tất cả dự án --"
+              allLabel="-- Tất cả dự án --"
+            />
+          </div>
 
           <div className="payroll-filter-control">
             <span className="payroll-control-label">THÁNG</span>
@@ -228,6 +215,7 @@ export function PayrollWorkspacePage() {
                     <th>Kỳ lương</th>
                     <th>Thực nhận</th>
                     <th>Tiến độ</th>
+                    <th>Phản hồi</th>
                     <th>Cập nhật</th>
                     <th />
                   </tr>
@@ -236,6 +224,11 @@ export function PayrollWorkspacePage() {
                   {payrolls.map((run) => {
                     // Logic to map status to UI Config
                     const sConf = statusConfig[run.status] || { tone: "neutral", short: run.status };
+                    const stage = getWorkflowStage(run);
+                    const progressPercent = run.status === "locked"
+                      ? 100
+                      : Math.min(100, Math.max(12, Math.round(((stage - 1) / 8) * 100)));
+                    const feedbackCount = run.disputeCount ?? (run as any).feedbackCount ?? 0;
                     
                     return (
                       <tr key={run.id} onClick={() => router.push(`/payroll/${run.id}`)}>
@@ -259,15 +252,36 @@ export function PayrollWorkspacePage() {
                         </td>
                         <td>
                           <div className="payroll-progress-cell">
+                            <div>
+                              <span style={{ width: `${progressPercent}%` }} />
+                            </div>
                             <StatusBadge tone={sConf.tone as any}>
                               {sConf.short}
                             </StatusBadge>
                             {run.wfCurrentStepName && (
-                              <small className="block mt-1 text-xs text-muted-foreground">
+                              <small className="block mt-0.5 text-xs text-muted-foreground">
                                 {run.wfCurrentStepName}
                               </small>
                             )}
                           </div>
+                        </td>
+                        <td>
+                          {feedbackCount > 0 ? (
+                            <button
+                              type="button"
+                              className="payroll-feedback-trigger warning"
+                              aria-label={`Mở chi tiết phản hồi của ${run.periodCode}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                router.push(`/payroll/${run.id}?tab=workflow&dialog=confirmations`);
+                              }}
+                            >
+                              <MessageSquareText />
+                              <span>{feedbackCount}</span>
+                            </button>
+                          ) : (
+                            <span className="muted-dash">—</span>
+                          )}
                         </td>
                         <td>
                           <span>{formatDate(run.createdAt)}</span>
@@ -317,29 +331,19 @@ export function PayrollWorkspacePage() {
         ) : (
           <div className="create-payroll-form">
             <div className="form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-              <label className="form-field">
+              <div className="form-field">
                 <span>Chọn dự án</span>
-                <select
-                  className="payroll-control-select"
+                <ProjectSelect
                   value={createProjectId}
-                  onChange={(e) => {
-                    setCreateProjectId(e.target.value ? Number(e.target.value) : "");
+                  onChange={(val) => {
+                    setCreateProjectId(val ? Number(val) : "");
                     setCreateSheetId(null);
                   }}
-                >
-                  <option value="">-- Tất cả dự án --</option>
-                  {projects.map((project: any) => {
-                    const pId = project.id ?? project.projectId ?? project.Id ?? project.ProjectId;
-                    const pCode = project.projectCode ?? project.ProjectCode;
-                    const pName = project.projectName ?? project.ProjectName;
-                    return (
-                      <option value={pId} key={pId}>
-                        {pCode} — {pName}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
+                  variant="form"
+                  placeholder="-- Chọn dự án --"
+                  allLabel="-- Tất cả dự án --"
+                />
+              </div>
               <div className="form-field">
                 <span>Tháng chốt công</span>
                 <MonthPicker
@@ -423,3 +427,5 @@ export function PayrollWorkspacePage() {
     </>
   );
 }
+
+export const PayrollWorkspace = PayrollWorkspacePage;

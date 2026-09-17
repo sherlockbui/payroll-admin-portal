@@ -5612,6 +5612,47 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   background: #ffffff !important;
   box-sizing: border-box !important;
 }
+.project-select-trigger {
+  height: 38px !important;
+  min-height: 38px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px;
+  padding: 0 12px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  background-color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #0f172a !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+  text-align: left;
+}
+:root.dark .project-select-trigger {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background-color: #112030 !important;
+  color: #f1f5f9 !important;
+}
+.project-select-trigger:hover {
+  border-color: rgba(3, 139, 140, 0.4) !important;
+}
+.project-select-trigger.open {
+  border-color: #038b8c !important;
+  box-shadow: 0 0 0 3px rgba(3, 139, 140, 0.15) !important;
+}
+.project-select-trigger.variant-filter {
+  min-width: 250px;
+}
+.project-select-trigger.variant-form {
+  width: 100%;
+}
+.project-select-popover {
+  min-width: 320px;
+}
 .payroll-header-actions { display: flex; align-items: center; gap: 10px; }
 .payroll-action-btn { height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; background: #038b8c; color: white; border-radius: 6px; display: inline-flex; align-items: center; gap: 8px; border: none; cursor: pointer; transition: background 0.15s; }
 .payroll-action-btn:hover { background: #026d6e; }
