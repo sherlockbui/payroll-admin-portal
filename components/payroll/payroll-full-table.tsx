@@ -233,16 +233,13 @@ export function PayrollFullTable({
                     }
 
                     if (isDaily) {
-                      const hours = Number(val) || 0;
-                      const statusClass = hours === 0 ? "status-off" : hours > 8 ? "status-overtime" : "status-work";
+                      const hours = Number(val);
                       return (
                         <td
                           key={col.key}
-                          className={`payroll-full-day-cell ${statusClass}`}
-                          title={`${col.title}: ${hours} giờ công`}
+                          className="payroll-full-day-cell text-center text-xs"
                         >
-                          <strong>{hours === 0 ? "—" : hours}</strong>
-                          {hours > 8 && <small>+{hours - 8}h</small>}
+                          {val == null || val === "" || hours === 0 ? "—" : hours}
                         </td>
                       );
                     }
