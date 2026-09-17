@@ -4,19 +4,14 @@ import { useMemo } from "react";
 import { Search } from "lucide-react";
 import type { PayrollMatrix, PayrollMatrixColumn } from "@/lib/payroll-types";
 import { formatCurrency } from "@/lib/utils";
-import { UserAvatar } from "@/components/ui";
 
 interface ColumnCategory {
   id: string;
   label: string;
   tone: string;
-  isSticky?: boolean;
 }
 
 function getColumnCategory(col: PayrollMatrixColumn): ColumnCategory {
-  if (col.key === "employeeCode" || col.key === "fullName") {
-    return { id: "employee", label: "Thông tin nhân sự", tone: "section-employee", isSticky: true };
-  }
   if (col.key === "bankAccountNumber" || col.key === "bankName") {
     return { id: "bank", label: "Tài khoản ngân hàng", tone: "section-bank" };
   }
@@ -60,6 +55,10 @@ export function PayrollFullTable({
     );
   }, [matrix.rows, normalizedQuery]);
 
+  // Exclude employeeCode and fullName from dataColumns as they are merged into the sticky "Người lao động" column
+  const dataColumns = useMemo(() => {
+    return matrix.columns.filter((c) => c.key !== "employeeCode" && c.key !== "fullName");
+  }, [matrix.columns]);
 
   // Build group headers for row 1
   const groupHeaders = useMemo(() => {
@@ -68,10 +67,9 @@ export function PayrollFullTable({
       label: string;
       tone: string;
       colSpan: number;
-      isSticky?: boolean;
     }> = [];
 
-    for (const col of matrix.columns) {
+    for (const col of dataColumns) {
       const cat = getColumnCategory(col);
       const last = groups[groups.length - 1];
       if (last && last.id === cat.id) {
@@ -82,12 +80,11 @@ export function PayrollFullTable({
           label: cat.label,
           tone: cat.tone,
           colSpan: 1,
-          isSticky: cat.isSticky,
         });
       }
     }
     return groups;
-  }, [matrix.columns]);
+  }, [dataColumns]);
 
   // Helper for day info
   const getDayInfo = (col: PayrollMatrixColumn) => {
@@ -152,52 +149,24 @@ export function PayrollFullTable({
             <thead>
               {/* TIER 1: Group / Section Headers */}
               <tr className="payroll-unified-section-row">
-                {groupHeaders.map((group, idx) => {
-                  const isStickyGroup = group.isSticky;
-                  return (
-                    <th
-                      key={`${group.id}-${idx}`}
-                      colSpan={group.colSpan}
-                      className={`payroll-unified-section ${group.tone} ${
-                        isStickyGroup ? "sticky left-0 z-40 shadow-[1px_0_0_0_var(--border)]" : ""
-                      }`}
-                    >
-                      {group.label}
-                    </th>
-                  );
-                })}
+                <th className="payroll-line-employee-sticky" rowSpan={2}>
+                  Người lao động
+                </th>
+                {groupHeaders.map((group, idx) => (
+                  <th
+                    key={`${group.id}-${idx}`}
+                    colSpan={group.colSpan}
+                    className={`payroll-unified-section ${group.tone}`}
+                  >
+                    {group.label}
+                  </th>
+                ))}
               </tr>
 
               {/* TIER 2: Detailed Column Titles */}
               <tr className="payroll-unified-column-row">
-                {matrix.columns.map((col) => {
-                  const isEmpCode = col.key === "employeeCode";
-                  const isFullName = col.key === "fullName";
+                {dataColumns.map((col) => {
                   const isDaily = col.group === "DAILY_TIMESHEET";
-
-                  if (isEmpCode) {
-                    return (
-                      <th
-                        key={col.key}
-                        className="sticky left-0 z-35 top-[38px] bg-slate-100 dark:bg-slate-800 border-r border-border text-center font-bold text-xs min-w-[110px] w-[110px]"
-                        title={col.title}
-                      >
-                        {col.title}
-                      </th>
-                    );
-                  }
-
-                  if (isFullName) {
-                    return (
-                      <th
-                        key={col.key}
-                        className="sticky left-[110px] z-35 top-[38px] bg-slate-100 dark:bg-slate-800 border-r border-border shadow-[2px_0_4px_rgba(0,0,0,0.06)] text-left font-bold text-xs min-w-[210px] w-[210px] pl-3"
-                        title={col.title}
-                      >
-                        {col.title}
-                      </th>
-                    );
-                  }
 
                   if (isDaily) {
                     const { dayNum, weekdayStr, isWeekend, fullDate } = getDayInfo(col);
@@ -237,42 +206,23 @@ export function PayrollFullTable({
             <tbody>
               {visibleRows.map((row, idx) => (
                 <tr key={row.employeeCode || idx} className="hover:bg-muted/30 transition-colors">
-                  {matrix.columns.map((col) => {
-                    let val = row[col.key];
-                    const isEmpCode = col.key === "employeeCode";
-                    const isFullName = col.key === "fullName";
+                  {/* Sticky combined employee column without avatar */}
+                  <td className="payroll-line-employee-sticky">
+                    <div className="line-employee">
+                      <div>
+                        <strong>{row.fullName || "—"}</strong>
+                        <small>{row.employeeCode || "—"}</small>
+                      </div>
+                    </div>
+                  </td>
+
+                  {dataColumns.map((col) => {
+                    const val = row[col.key];
                     const isBankAcc = col.key === "bankAccountNumber";
                     const isDaily = col.group === "DAILY_TIMESHEET";
                     const isGross = col.key === "grossSalary";
                     const isNet = col.key === "netSalary";
                     const isDeduction = col.group === "DEDUCTIONS";
-
-                    if (isEmpCode) {
-                      return (
-                        <td
-                          key={col.key}
-                          className="sticky left-0 z-20 bg-card border-r border-border text-center font-mono font-bold text-xs text-primary min-w-[110px] w-[110px]"
-                        >
-                          {val}
-                        </td>
-                      );
-                    }
-
-                    if (isFullName) {
-                      return (
-                        <td
-                          key={col.key}
-                          className="sticky left-[110px] z-20 bg-card border-r border-border shadow-[2px_0_4px_rgba(0,0,0,0.06)] min-w-[210px] w-[210px] pl-3"
-                        >
-                          <div className="flex items-center gap-2">
-                            <UserAvatar name={String(val || "")} size="sm" />
-                            <span className="font-semibold text-foreground text-xs whitespace-nowrap">
-                              {val}
-                            </span>
-                          </div>
-                        </td>
-                      );
-                    }
 
                     if (isBankAcc) {
                       return (
@@ -316,29 +266,13 @@ export function PayrollFullTable({
 
             <tfoot>
               <tr className="bg-muted/70 font-semibold border-t-2 border-border">
-                {matrix.columns.map((col) => {
-                  if (col.key === "employeeCode") {
-                    return (
-                      <td
-                        key={col.key}
-                        className="sticky left-0 z-20 bg-muted/95 border-r border-border text-center font-bold text-xs min-w-[110px] w-[110px] py-2"
-                      >
-                        Tổng cộng
-                      </td>
-                    );
-                  }
+                {/* Sticky employee total footer cell */}
+                <td className="payroll-line-employee-sticky">
+                  <strong>Tổng cộng</strong>
+                  <small>{visibleRows.length} NLĐ</small>
+                </td>
 
-                  if (col.key === "fullName") {
-                    return (
-                      <td
-                        key={col.key}
-                        className="sticky left-[110px] z-20 bg-muted/95 border-r border-border shadow-[2px_0_4px_rgba(0,0,0,0.06)] text-left font-bold text-xs min-w-[210px] w-[210px] pl-3 py-2 text-muted-foreground"
-                      >
-                        {visibleRows.length} nhân sự
-                      </td>
-                    );
-                  }
-
+                {dataColumns.map((col) => {
                   if (col.group === "DAILY_TIMESHEET") {
                     const totalDayHours = visibleRows.reduce((sum, r) => sum + (Number(r[col.key]) || 0), 0);
                     return (
