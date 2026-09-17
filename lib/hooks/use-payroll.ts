@@ -103,6 +103,7 @@ export function usePayrollMatrix(id: number, params?: { search?: string; page?: 
     queryKey: ["payroll-matrix", id, params],
     queryFn: () => payrollApi.getPayrollMatrix(id, params),
     enabled: !!id,
+    placeholderData: (prev) => prev,
   });
 }
 

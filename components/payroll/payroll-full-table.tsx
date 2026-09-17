@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Search } from "lucide-react";
 import type { PayrollMatrix, PayrollMatrixColumn } from "@/lib/payroll-types";
+import { TablePaginationFooter } from "@/components/ui";
 import { formatCurrency } from "@/lib/utils";
 
 interface ColumnCategory {
@@ -41,19 +42,37 @@ export function PayrollFullTable({
   query,
   onQueryChange,
   canViewSensitive,
+  page,
+  pageSize,
+  totalItems,
+  onPageChange,
+  onPageSizeChange,
+  isFetching,
 }: {
   matrix: PayrollMatrix;
   query: string;
   onQueryChange: (value: string) => void;
   canViewSensitive: boolean;
+  page?: number;
+  pageSize?: number;
+  totalItems?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  isFetching?: boolean;
 }) {
+  const total = totalItems ?? matrix.total ?? matrix.totalRecords ?? (matrix.rows ? matrix.rows.length : 0);
+  const currentPage = page ?? matrix.page ?? 1;
+  const currentPageSize = pageSize ?? matrix.pageSize ?? 50;
+
   const normalizedQuery = query.trim().toLocaleLowerCase("vi");
   const visibleRows = useMemo(() => {
-    if (!normalizedQuery) return matrix.rows;
-    return matrix.rows.filter((row) =>
-      `${row.employeeCode || ""} ${row.fullName || ""}`.toLocaleLowerCase("vi").includes(normalizedQuery),
-    );
-  }, [matrix.rows, normalizedQuery]);
+    if (!onPageChange && normalizedQuery) {
+      return (matrix.rows || []).filter((row) =>
+        `${row.employeeCode || ""} ${row.fullName || ""}`.toLocaleLowerCase("vi").includes(normalizedQuery),
+      );
+    }
+    return matrix.rows || [];
+  }, [matrix.rows, normalizedQuery, onPageChange]);
 
   // Exclude employeeCode and fullName from dataColumns as they are merged into the sticky "Người lao động" column
   const dataColumns = useMemo(() => {
@@ -144,7 +163,8 @@ export function PayrollFullTable({
           <p>Thử thay đổi từ khóa tìm kiếm trong bảng lương.</p>
         </div>
       ) : (
-        <div className="payroll-table-wrap payroll-lines-table-wrap payroll-full-table-wrap overflow-x-auto">
+        <>
+          <div className="payroll-table-wrap payroll-lines-table-wrap payroll-full-table-wrap overflow-x-auto">
           <table className="payroll-table payroll-lines-table payroll-unified-table w-full" style={{ minWidth: "max-content" }}>
             <thead>
               {/* TIER 1: Group / Section Headers */}
@@ -314,7 +334,17 @@ export function PayrollFullTable({
             </tfoot>
           </table>
         </div>
-      )}
+        {onPageChange && (
+          <TablePaginationFooter
+            totalItems={total}
+            currentPage={currentPage}
+            pageSize={currentPageSize}
+            onPageChange={onPageChange}
+            onPageSizeChange={onPageSizeChange}
+          />
+        )}
+      </>
+    )}
       <p className="payroll-full-table-footnote mt-3 text-sm text-muted-foreground">Bảng hiển thị động theo ma trận công thức tính lương.</p>
     </section>
   );
