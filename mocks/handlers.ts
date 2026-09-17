@@ -5,11 +5,19 @@ import type {
   ActivityLogItem,
   ApiResponse,
   AttendanceConfig,
+  AuditLogV3,
+  BulkConfirmRequestV3,
+  CreateDependentRequestV3,
   DataMapping,
   Dependent,
+  DependentDetailV3,
+  DependentDocument,
+  DependentStatusV3,
+  DependentSummaryV3,
   Employee,
   EmployeePolicyItem,
   EmployeePolicyRecord,
+  ImportErrorDetailV3,
   InsuranceChangeRecord,
   InsuranceRecord,
   LeaveHistoryItem,
@@ -19,18 +27,98 @@ import type {
   ProjectEmployeeGroup,
   ProjectOvertimeConfig,
   ProjectPolicy,
+  RejectDependentRequestV3,
   SalaryFormula,
+  SalaryStructure,
+  SalaryStructurePayload,
   StandardWorkdayRecord,
   TaxConfigRecord,
   TestRunResult,
   UnionFeeRecord,
+  UpdateDependentRequestV3,
   OtherDeductionRecord,
   OtherIncomeRecord,
-  SalaryStructure,
-  SalaryStructurePayload,
+  AnnualLeaveEmployee,
+  AnnualLeaveHistoryItemV3,
+  AnnualLeaveSummaryResponse,
+  AnnualLeaveListResponse,
+  AnnualLeaveHistoryResponse,
+  AnnualLeaveViewFilter,
+  UnionDuesMemberV3,
+  UnionDuesHistoryItemV3,
+  UnionDuesSummaryResponse,
+  UnionDuesListResponse,
+  UnionDuesHistoryResponse,
+  UnionDuesParticipationStatus,
+  UpdateUnionDuesRequestV3,
+  StandardWorkdayEmployeeV3,
+  StandardWorkdayMode,
+  UpdateStandardWorkdayRequestV3,
+  StandardWorkdaySummaryResponse,
+  StandardWorkdayListResponse,
+  SocialInsuranceMemberV3,
+  SocialInsuranceChangeV3,
+  SocialInsuranceChangeType,
+  SocialInsuranceChangeStatus,
+  SocialInsuranceParticipationStatus,
+  SocialInsuranceSummaryResponse,
+  SocialInsuranceMemberListResponse,
+  SocialInsuranceChangeListResponse,
+  BenefitsAllowanceEmployeeV3,
+  BenefitsAllowanceMode,
+  UpdateBenefitsAllowanceRequestV3,
+  BenefitsAllowanceSummaryResponse,
+  BenefitsAllowanceListResponse,
+  EmployeeAllowanceItemV3,
+  OtherDeductionV3,
+  OtherDeductionType,
+  CreateOtherDeductionRequestV3,
+  OtherDeductionsSummaryResponse,
+  OtherDeductionsListResponse,
+  OtherIncomeV3,
+  OtherIncomeType,
+  CreateOtherIncomeRequestV3,
+  OtherIncomesSummaryResponse,
+  OtherIncomesListResponse,
 } from "@/lib/types";
-import { defaultCustomVariablesDefinitions } from "@/lib/mock-data";
+import {
+  defaultCustomVariablesDefinitions,
+  dependentDocumentTypesMaster,
+  dependentRelationshipsMaster,
+  initialAuditLogsV3,
+  initialDependentsV3,
+  initialAnnualLeaveEmployeesV3,
+  initialAnnualLeaveHistoryV3,
+  initialUnionDuesMembersV3,
+  initialUnionDuesHistoryV3,
+  initialStandardWorkdaysV3,
+  initialSocialInsuranceMembersV3,
+  initialSocialInsuranceChangesV3,
+  initialBenefitsAllowanceEmployeesV3,
+  initialOtherDeductionsV3,
+  initialOtherIncomesV3,
+} from "@/lib/mock-data";
 import { uid } from "@/lib/utils";
+
+const okV3 = <T,>(data: T, message = "Thao tác thành công", code = "SUCCESS") =>
+  HttpResponse.json({
+    success: true,
+    code,
+    message,
+    data,
+  });
+
+const errorV3 = (status: number, message: string, code = "BAD_REQUEST", data: any = null) =>
+  HttpResponse.json(
+    {
+      success: false,
+      code,
+      message,
+      data,
+    },
+    { status }
+  );
+
 
 let mockSalaryStructuresStore: Array<{
   id: number;
@@ -70,6 +158,36 @@ const fail = (status: number, code: string, message: string, fields?: Record<str
 const projectId = (value: string | readonly string[] | undefined) => String(value ?? "");
 
 export const handlers = [
+  http.get("/api/projects", async ({ request }) => {
+    await delay(100);
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "10", 10));
+    const database = readMockDatabase();
+    const total = database.projects.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const paged = database.projects.slice(startIndex, startIndex + pageSize);
+    return HttpResponse.json<ApiResponse<Project[]>>({
+      data: paged,
+      meta: { page, pageSize, total, totalPages },
+    });
+  }),
+
+  http.get("/api/projects/:projectId", async ({ params }) => {
+    await delay(100);
+    const id = projectId(params.projectId);
+    const database = readMockDatabase();
+    const found = database.projects.find((p) => p.id === id);
+    if (!found) return fail(404, "PROJECT_NOT_FOUND", "Không tìm thấy dự án.");
+    return ok(found);
+  }),
+
+  http.get("/api/policy-definitions", async () => {
+    await delay(100);
+    return ok(readMockDatabase().policyDefinitions);
+  }),
+
   http.post("/api/projects", async ({ request }) => {
     await delay(420);
     const payload = (await request.json()) as Partial<Project>;
@@ -2293,4 +2411,2624 @@ export const handlers = [
 
     return ok(createdRecords);
   }),
+
+  // =========================================================================
+  // OpenAPI 3.0 (01-nguoi-phu-thuoc.yaml) Handlers
+  // =========================================================================
+
+  // 1. Master Data: Relationships
+  http.get("/api/web/payroll/master-data/dependent-relationships", async () => {
+    await delay(150);
+    return okV3(dependentRelationshipsMaster);
+  }),
+
+  // 2. Master Data: Document Types
+  http.get("/api/web/payroll/master-data/dependent-document-types", async () => {
+    await delay(150);
+    return okV3(dependentDocumentTypesMaster);
+  }),
+
+  // 3. Master Data: Payroll Cycles
+  http.get("/api/web/payroll/payroll-cycles", async () => {
+    await delay(150);
+    const cycles = [
+      { id: 1, code: "2026-08", name: "Kỳ lương Tháng 08/2026", isCurrent: true, startDate: "2026-08-01", endDate: "2026-08-31" },
+      { id: 2, code: "2026-07", name: "Kỳ lương Tháng 07/2026", isCurrent: false, startDate: "2026-07-01", endDate: "2026-07-31" },
+      { id: 3, code: "2026-06", name: "Kỳ lương Tháng 06/2026", isCurrent: false, startDate: "2026-06-01", endDate: "2026-06-30" },
+    ];
+    return okV3(cycles);
+  }),
+
+  // 4. Projects list
+  http.get("/api/web/payroll/projects", async () => {
+    await delay(200);
+    const database = readMockDatabase();
+    const projectItems = database.projects.map((p, idx) => ({
+      projectId: p.code === "JSS-ST" ? 1017 : p.code === "KCV-NM" ? 1018 : 1000 + idx,
+      projectCode: p.code,
+      projectName: p.name,
+      active: p.status !== "archived",
+    }));
+    return okV3(projectItems);
+  }),
+
+  // 5. Project Employees
+  http.get("/api/web/payroll/projects/:projectId/employees", async ({ params }) => {
+    await delay(250);
+    const pId = String(params.projectId);
+    const database = readMockDatabase();
+    const matchedProject = database.projects.find((p) => String(p.id) === pId || p.code === pId || (p.code === "JSS-ST" && pId === "1017") || (p.code === "KCV-NM" && pId === "1018"));
+    const emps = database.employees.filter((e) => !matchedProject || e.projectId === matchedProject.id || pId === "all");
+    const items = emps.map((e) => ({
+      employeeCode: e.code,
+      fullName: e.name,
+      gender: e.gender || "Nam",
+      joiningDate: e.joinDate || "2022-01-01",
+      offDate: null,
+      projectId: matchedProject ? (matchedProject.code === "JSS-ST" ? 1017 : 1018) : 1017,
+      projectCode: matchedProject?.code || "JSS-ST",
+      projectName: matchedProject?.name || "Jabil Smart Solutions",
+      positionName: e.position || "Nhân viên",
+      taxCode: (e as any).taxCode || "8090001122",
+      idNumber: (e as any).idCard || "079090001122",
+    }));
+    return okV3(items);
+  }),
+
+  // 6. Dependents Summary
+  http.get("/api/web/payroll/dependents/summary", async ({ request }) => {
+    await delay(200);
+    const url = new URL(request.url);
+    const pId = url.searchParams.get("projectId");
+    const database = readMockDatabase();
+    let deps = database.dependentsV3 ?? initialDependentsV3;
+    if (pId && pId !== "all") {
+      deps = deps.filter((d) => String(d.employee.project?.projectId) === pId || d.employee.project?.projectCode === pId);
+    }
+    const counts = [
+      { key: "TOTAL", count: deps.length },
+      { key: "PENDING", count: deps.filter((d) => d.status === "PENDING").length },
+      { key: "CONFIRMED", count: deps.filter((d) => d.status === "CONFIRMED").length },
+      { key: "APPROVED", count: deps.filter((d) => d.status === "APPROVED").length },
+      { key: "REJECTED", count: deps.filter((d) => d.status === "REJECTED").length },
+      { key: "DRAFT", count: deps.filter((d) => d.status === "DRAFT").length },
+    ];
+    return okV3({ total: deps.length, counts });
+  }),
+
+  // 7. List Dependents
+  http.get("/api/web/payroll/dependents", async ({ request }) => {
+    await delay(300);
+    const url = new URL(request.url);
+    const pId = url.searchParams.get("projectId") || url.searchParams.get("ProjectId");
+    const search = (url.searchParams.get("search") || url.searchParams.get("Search") || "").trim().toLowerCase();
+    const relationship = url.searchParams.get("relationship") || url.searchParams.get("Relationship");
+    const status = url.searchParams.get("status") || url.searchParams.get("Status");
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || url.searchParams.get("Page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || url.searchParams.get("PageSize") || "10", 10));
+
+    const database = readMockDatabase();
+    let deps = database.dependentsV3 ?? initialDependentsV3;
+
+    if (pId && pId !== "all") {
+      deps = deps.filter((d) => String(d.employee.project?.projectId) === pId || d.employee.project?.projectCode === pId);
+    }
+
+    if (status && status !== "all") {
+      deps = deps.filter((d) => d.status.toUpperCase() === status.toUpperCase());
+    }
+
+    if (relationship && relationship !== "all") {
+      deps = deps.filter((d) => d.relationship.code.toUpperCase() === relationship.toUpperCase());
+    }
+
+    if (search) {
+      deps = deps.filter(
+        (d) =>
+          d.fullName.toLowerCase().includes(search) ||
+          d.identityNumber.toLowerCase().includes(search) ||
+          (d.taxCode && d.taxCode.toLowerCase().includes(search)) ||
+          d.employee.fullName.toLowerCase().includes(search) ||
+          d.employee.employeeCode.toLowerCase().includes(search)
+      );
+    }
+
+    const total = deps.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const pagedItems = deps.slice(startIndex, startIndex + pageSize);
+
+    return okV3({
+      items: pagedItems,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    });
+  }),
+
+  // 8. Create Dependent
+  http.post("/api/web/payroll/dependents", async ({ request }) => {
+    await delay(350);
+    const payload = (await request.json()) as CreateDependentRequestV3;
+    if (!payload.employeeCode || !payload.fullName || !payload.identityNumber || !payload.relationshipCode) {
+      return errorV3(422, "Vui lòng điền đầy đủ các thông tin bắt buộc.", "VALIDATION_ERROR");
+    }
+
+    const database = readMockDatabase();
+    const relMaster = dependentRelationshipsMaster.find((r) => r.code === payload.relationshipCode) || {
+      code: payload.relationshipCode,
+      name: "Con ruột / Con nuôi hợp pháp",
+    };
+
+    const emp = database.employees.find((e) => e.code === payload.employeeCode) || {
+      code: payload.employeeCode,
+      name: payload.fullName || "Nhân viên",
+      idCard: "079090001122",
+      taxCode: "8090001122",
+    };
+
+    const newId = Date.now();
+    const newDependent: DependentDetailV3 = {
+      id: newId,
+      employee: {
+        employeeCode: payload.employeeCode,
+        fullName: emp.name,
+        project: { projectId: payload.projectId || 1017, projectCode: "JSS-ST", projectName: "Jabil Smart Solutions" },
+        identityNumber: (emp as any).idCard || "079090001122",
+        taxCode: (emp as any).taxCode || "8090001122",
+      },
+      fullName: payload.fullName,
+      dateOfBirth: payload.dateOfBirth || "2020-01-01",
+      identityNumber: payload.identityNumber,
+      taxCode: payload.taxCode || null,
+      relationship: {
+        code: relMaster.code,
+        name: relMaster.name,
+      },
+      effectiveFrom: payload.effectiveFrom || "2026-08",
+      effectiveTo: payload.effectiveTo || null,
+      documentType: payload.documentType,
+      status: "PENDING",
+      canConfirm: true,
+      canReject: true,
+      canEdit: true,
+      documentsCount: 0,
+      documents: [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    const auditLog: AuditLogV3 = {
+      id: Date.now() + 1,
+      eventType: "DECLARED",
+      occurredAt: new Date().toISOString(),
+      actor: { id: 1, fullName: "Quản trị viên", roleName: "Nhân sự" },
+      employee: newDependent.employee,
+      dependent: { id: newId, fullName: newDependent.fullName },
+      description: `Khai báo người phụ thuộc ${newDependent.fullName} cho nhân viên ${newDependent.employee.fullName}.`,
+    };
+
+    mutateMockDatabase((db) => {
+      db.dependentsV3 = [newDependent, ...(db.dependentsV3 ?? initialDependentsV3)];
+      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
+    });
+
+    return okV3(newDependent, "Khai báo người phụ thuộc thành công.", "CREATED");
+  }),
+
+  // 8.1 Audit Logs (Declared before :dependentId)
+  http.get("/api/web/payroll/dependents/audit-logs", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const depId = url.searchParams.get("dependentId");
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10));
+
+    const database = readMockDatabase();
+    let logs = database.auditLogsV3 ?? initialAuditLogsV3;
+
+    if (depId) {
+      const dIdNum = Number(depId);
+      logs = logs.filter((l) => l.dependent?.id === dIdNum);
+    }
+
+    const total = logs.length;
+    const startIndex = (page - 1) * pageSize;
+    const paged = logs.slice(startIndex, startIndex + pageSize);
+
+    return okV3({
+      items: paged,
+      total,
+      page,
+      pageSize,
+    });
+  }),
+
+  // 9. Get Dependent Detail
+  http.get("/api/web/payroll/dependents/:dependentId", async ({ params }) => {
+    if (params.dependentId === "audit-logs" || params.dependentId === "summary" || params.dependentId === "bulk-confirm") {
+      return;
+    }
+    await delay(200);
+    const id = Number(params.dependentId);
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const found = deps.find((d) => d.id === id);
+    if (!found) {
+      return errorV3(404, "Không tìm thấy thông tin người phụ thuộc.", "NOT_FOUND");
+    }
+    return okV3(found);
+  }),
+
+  // 10. Update Dependent
+  http.put("/api/web/payroll/dependents/:dependentId", async ({ params, request }) => {
+    await delay(300);
+    const id = Number(params.dependentId);
+    const payload = (await request.json()) as UpdateDependentRequestV3;
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const index = deps.findIndex((d) => d.id === id);
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
+    }
+
+    const existing = deps[index];
+    let rel = existing.relationship;
+    if (payload.relationshipCode) {
+      const relMaster = dependentRelationshipsMaster.find((r) => r.code === payload.relationshipCode);
+      if (relMaster) {
+        rel = { code: relMaster.code, name: relMaster.name };
+      }
+    }
+
+    const updated: DependentDetailV3 = {
+      ...existing,
+      fullName: payload.fullName ?? existing.fullName,
+      dateOfBirth: payload.dateOfBirth ?? existing.dateOfBirth,
+      identityNumber: payload.identityNumber ?? existing.identityNumber,
+      taxCode: payload.taxCode !== undefined ? payload.taxCode : existing.taxCode,
+      relationship: rel,
+      effectiveFrom: payload.effectiveFrom ?? existing.effectiveFrom,
+      effectiveTo: payload.effectiveTo !== undefined ? payload.effectiveTo : existing.effectiveTo,
+      documentType: payload.documentType ?? existing.documentType,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const auditLog: AuditLogV3 = {
+      id: Date.now(),
+      eventType: "UPDATED",
+      occurredAt: new Date().toISOString(),
+      actor: { id: 1, fullName: "Quản trị viên", roleName: "Nhân sự" },
+      employee: updated.employee,
+      dependent: { id: updated.id, fullName: updated.fullName },
+      description: `Cập nhật thông tin người phụ thuộc ${updated.fullName}.`,
+    };
+
+    mutateMockDatabase((db) => {
+      const currentList = [...(db.dependentsV3 ?? initialDependentsV3)];
+      currentList[index] = updated;
+      db.dependentsV3 = currentList;
+      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
+    });
+
+    return okV3(updated, "Cập nhật thông tin thành công.");
+  }),
+
+  // 11. Delete Dependent
+  http.delete("/api/web/payroll/dependents/:dependentId", async ({ params }) => {
+    await delay(300);
+    const id = Number(params.dependentId);
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const found = deps.find((d) => d.id === id);
+    if (!found) {
+      return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
+    }
+
+    mutateMockDatabase((db) => {
+      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).filter((d) => d.id !== id);
+    });
+
+    return okV3({ id }, "Đã xóa người phụ thuộc.");
+  }),
+
+  // 12. Confirm Dependent
+  http.post("/api/web/payroll/dependents/:dependentId/confirm", async ({ params }) => {
+    await delay(300);
+    const id = Number(params.dependentId);
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const found = deps.find((d) => d.id === id);
+    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
+
+    const updated: DependentDetailV3 = {
+      ...found,
+      status: "CONFIRMED",
+      canConfirm: false,
+      canReject: true,
+      confirmedAt: new Date().toISOString(),
+      confirmedBy: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+      updatedAt: new Date().toISOString(),
+    };
+
+    const auditLog: AuditLogV3 = {
+      id: Date.now(),
+      eventType: "CONFIRMED",
+      occurredAt: new Date().toISOString(),
+      actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+      employee: updated.employee,
+      dependent: { id: updated.id, fullName: updated.fullName },
+      description: `Kế toán xác nhận hồ sơ người phụ thuộc ${updated.fullName} hợp lệ.`,
+    };
+
+    mutateMockDatabase((db) => {
+      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === id ? updated : d));
+      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
+    });
+
+    return okV3(updated, "Đã xác nhận hồ sơ người phụ thuộc.");
+  }),
+
+  // 13. Approve Dependent
+  http.post("/api/web/payroll/dependents/:dependentId/approve", async ({ params }) => {
+    await delay(300);
+    const id = Number(params.dependentId);
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const found = deps.find((d) => d.id === id);
+    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
+
+    const updated: DependentDetailV3 = {
+      ...found,
+      status: "APPROVED",
+      canConfirm: false,
+      canReject: false,
+      approvedAt: new Date().toISOString(),
+      approvedBy: { id: 5, fullName: "Lê Hoàng Quân", roleName: "Trưởng phòng C&B" },
+      updatedAt: new Date().toISOString(),
+    };
+
+    const auditLog: AuditLogV3 = {
+      id: Date.now(),
+      eventType: "APPROVED",
+      occurredAt: new Date().toISOString(),
+      actor: { id: 5, fullName: "Lê Hoàng Quân", roleName: "Trưởng phòng C&B" },
+      employee: updated.employee,
+      dependent: { id: updated.id, fullName: updated.fullName },
+      description: `Phê duyệt người phụ thuộc ${updated.fullName}.`,
+    };
+
+    mutateMockDatabase((db) => {
+      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === id ? updated : d));
+      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
+    });
+
+    return okV3(updated, "Đã phê duyệt người phụ thuộc.");
+  }),
+
+  // 14. Reject Dependent
+  http.post("/api/web/payroll/dependents/:dependentId/reject", async ({ params, request }) => {
+    await delay(300);
+    const id = Number(params.dependentId);
+    const payload = (await request.json()) as RejectDependentRequestV3;
+    if (!payload.reason || !payload.reason.trim()) {
+      return errorV3(422, "Vui lòng nhập lý do từ chối.", "REASON_REQUIRED");
+    }
+
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const found = deps.find((d) => d.id === id);
+    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
+
+    const updated: DependentDetailV3 = {
+      ...found,
+      status: "REJECTED",
+      rejectionReason: payload.reason.trim(),
+      canConfirm: false,
+      canReject: false,
+      canEdit: true,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const auditLog: AuditLogV3 = {
+      id: Date.now(),
+      eventType: "REJECTED",
+      occurredAt: new Date().toISOString(),
+      actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+      employee: updated.employee,
+      dependent: { id: updated.id, fullName: updated.fullName },
+      description: `Từ chối hồ sơ người phụ thuộc ${updated.fullName}. Lý do: ${payload.reason.trim()}`,
+    };
+
+    mutateMockDatabase((db) => {
+      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === id ? updated : d));
+      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
+    });
+
+    return okV3(updated, "Đã từ chối hồ sơ người phụ thuộc.");
+  }),
+
+  // 15. Bulk Confirm
+  http.post("/api/web/payroll/dependents/bulk-confirm", async ({ request }) => {
+    await delay(400);
+    const payload = (await request.json()) as BulkConfirmRequestV3;
+    if (!payload.dependentIds || payload.dependentIds.length === 0) {
+      return errorV3(400, "Vui lòng chọn ít nhất một người phụ thuộc.", "NO_ITEMS");
+    }
+
+    const idsSet = new Set(payload.dependentIds);
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+
+    const updatedList = deps.map((d) => {
+      if (idsSet.has(d.id)) {
+        return {
+          ...d,
+          status: "CONFIRMED" as DependentStatusV3,
+          canConfirm: false,
+          canReject: true,
+          confirmedAt: new Date().toISOString(),
+          confirmedBy: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return d;
+    });
+
+    const auditLog: AuditLogV3 = {
+      id: Date.now(),
+      eventType: "CONFIRMED",
+      occurredAt: new Date().toISOString(),
+      actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+      description: `Xác nhận hàng loạt ${payload.dependentIds.length} người phụ thuộc.`,
+    };
+
+    mutateMockDatabase((db) => {
+      db.dependentsV3 = updatedList;
+      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
+    });
+
+    return okV3({ confirmedCount: payload.dependentIds.length }, `Đã xác nhận thành công ${payload.dependentIds.length} người phụ thuộc.`);
+  }),
+
+  // 16. Documents List
+  http.get("/api/web/payroll/dependents/:dependentId/documents", async ({ params }) => {
+    await delay(200);
+    const id = Number(params.dependentId);
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const found = deps.find((d) => d.id === id);
+    return okV3(found?.documents ?? []);
+  }),
+
+  // 17. Upload Document
+  http.post("/api/web/payroll/dependents/:dependentId/documents", async ({ params, request }) => {
+    await delay(450);
+    const id = Number(params.dependentId);
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const found = deps.find((d) => d.id === id);
+    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
+
+    let docType = "GIAY_KHAI_SINH";
+    let fileName = "TaiLieuDinhKem.pdf";
+    let fileSize = 1024000;
+
+    try {
+      const formData = await request.formData();
+      const file = formData.get("file") as File | null;
+      const type = formData.get("documentType") as string | null;
+      if (file) {
+        fileName = file.name;
+        fileSize = file.size;
+      }
+      if (type) docType = type;
+    } catch {
+      // Fallback
+    }
+
+    const docTypeItem = dependentDocumentTypesMaster.find((d) => d.code === docType) || {
+      code: "GIAY_KHAI_SINH" as const,
+      name: "Bản sao Giấy khai sinh",
+    };
+
+    const newDoc: DependentDocument = {
+      id: Date.now(),
+      dependentId: id,
+      documentType: docTypeItem.code,
+      documentTypeName: docTypeItem.name,
+      fileName,
+      fileSize,
+      fileUrl: `https://example.com/docs/${newDocId(id)}_${fileName}`,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: "Người dùng hệ thống",
+    };
+
+    const updatedDocuments = [...(found.documents ?? []), newDoc];
+    const updatedDep: DependentDetailV3 = {
+      ...found,
+      documentsCount: updatedDocuments.length,
+      documents: updatedDocuments,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const auditLog: AuditLogV3 = {
+      id: Date.now() + 1,
+      eventType: "DOCUMENT_UPLOADED",
+      occurredAt: new Date().toISOString(),
+      actor: { id: 1, fullName: "Người dùng hệ thống", roleName: "Nhân viên" },
+      employee: found.employee,
+      dependent: { id: found.id, fullName: found.fullName },
+      description: `Tải lên tài liệu minh chứng: ${newDoc.documentTypeName} (${newDoc.fileName}).`,
+    };
+
+    mutateMockDatabase((db) => {
+      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === id ? updatedDep : d));
+      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
+    });
+
+    return okV3(newDoc, "Tải lên tài liệu thành công.", "CREATED");
+  }),
+
+  // 18. Delete Document
+  http.delete("/api/web/payroll/dependents/:dependentId/documents/:documentId", async ({ params }) => {
+    await delay(300);
+    const depId = Number(params.dependentId);
+    const docId = Number(params.documentId);
+    const database = readMockDatabase();
+    const deps = database.dependentsV3 ?? initialDependentsV3;
+    const found = deps.find((d) => d.id === depId);
+    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
+
+    const updatedDocs = (found.documents ?? []).filter((doc: DependentDocument) => doc.id !== docId);
+    const updatedDep: DependentDetailV3 = {
+      ...found,
+      documentsCount: updatedDocs.length,
+      documents: updatedDocs,
+      updatedAt: new Date().toISOString(),
+    };
+
+    mutateMockDatabase((db) => {
+      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === depId ? updatedDep : d));
+    });
+
+    return okV3({ documentId: docId }, "Đã xóa tài liệu đính kèm.");
+  }),
+
+  // 19. Download Document File
+  http.get("/api/web/payroll/dependents/:dependentId/documents/:documentId/file", async () => {
+    await delay(250);
+    const dummyContent = "Mock Dependent Document File Content (PDF / Image)";
+    return new HttpResponse(dummyContent, {
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": 'attachment; filename="TaiLieuNguoiPhuThuoc.pdf"',
+      },
+    });
+  }),
+
+  // 20. Download Import Template
+  http.get("/api/web/payroll/dependents/import/template", async () => {
+    await delay(300);
+    const dummyCsv = "Mã nhân viên,Họ và tên NPT,Ngày sinh (YYYY-MM-DD),Số CCCD/Định danh,Mã số thuế,Mối quan hệ,Hiệu lực từ (YYYY-MM),Hiệu lực đến (YYYY-MM)\nNV-00124,Nguyễn Văn Mẫu,2020-01-01,079220001234,8092200012,CON_RUOT_NUOI,2026-08,";
+    return new HttpResponse(dummyCsv, {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": 'attachment; filename="Template_Import_NguoiPhuThuoc_V3.xlsx"',
+      },
+    });
+  }),
+
+  // 21. Import Dependents Excel
+  http.post("/api/web/payroll/dependents/import", async ({ request }) => {
+    await delay(600);
+    const database = readMockDatabase();
+    
+    // Simulate smart parsing and validation errors
+    const errors: ImportErrorDetailV3[] = [];
+    const simulatedTotal = 8;
+    const simulatedSuccess = 7;
+    const simulatedError = 1;
+
+    errors.push({
+      row: 4,
+      column: "Số CCCD/Định danh",
+      value: "079022",
+      message: "Số CCCD không hợp lệ (phải đủ 12 chữ số hợp lệ).",
+    });
+
+    const auditLog: AuditLogV3 = {
+      id: Date.now(),
+      eventType: "IMPORTED",
+      occurredAt: new Date().toISOString(),
+      actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+      description: `Import danh sách người phụ thuộc từ Excel: ${simulatedSuccess} thành công, ${simulatedError} lỗi.`,
+    };
+
+    mutateMockDatabase((db) => {
+      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
+    });
+
+    return okV3({
+      success: true,
+      totalRows: simulatedTotal,
+      successRows: simulatedSuccess,
+      errorRows: simulatedError,
+      errors,
+    }, "Xử lý tệp import hoàn tất.");
+  }),
+
+  // 22. Audit Logs
+  http.get("/api/web/payroll/dependents/audit-logs", async ({ request }) => {
+    await delay(200);
+    const url = new URL(request.url);
+    const depId = url.searchParams.get("dependentId");
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10));
+
+    const database = readMockDatabase();
+    let logs = database.auditLogsV3 ?? initialAuditLogsV3;
+
+    if (depId) {
+      const dIdNum = Number(depId);
+      logs = logs.filter((l) => l.dependent?.id === dIdNum);
+    }
+
+    const total = logs.length;
+    const startIndex = (page - 1) * pageSize;
+    const paged = logs.slice(startIndex, startIndex + pageSize);
+
+    return okV3({
+      items: paged,
+      total,
+      page,
+      pageSize,
+    });
+  }),
+  // ================= 02. Phép năm (Annual Leave) OpenAPI 3.0 Handlers =================
+  // 1. Annual Leave Summary
+  http.get("/api/web/payroll/annual-leave/summary", async ({ request }) => {
+    await delay(200);
+    const url = new URL(request.url);
+    const pId = url.searchParams.get("projectId") || url.searchParams.get("ProjectId");
+    const database = readMockDatabase();
+    let emps = database.annualLeaveEmployeesV3 ?? initialAnnualLeaveEmployeesV3;
+
+    if (pId && pId !== "all") {
+      emps = emps.filter((e) => String(e.employee.project?.projectId) === pId || e.employee.project?.projectCode === pId);
+    }
+
+    const officialEligible = emps.filter((e) => e.employmentType === "OFFICIAL_CONTRACT" && !e.terminationDate).length;
+    const probationOrNoContract = emps.filter((e) => e.employmentType !== "OFFICIAL_CONTRACT" && !e.terminationDate).length;
+    const terminated = emps.filter((e) => Boolean(e.terminationDate)).length;
+    const hasAvailableLeave = emps.filter((e) => (e.availableDays ?? 0) > 0).length;
+    const exhausted = emps.filter((e) => (e.availableDays ?? 0) <= 0 && e.employmentType === "OFFICIAL_CONTRACT" && !e.terminationDate).length;
+
+    const counts = [
+      { key: "ALL", count: emps.length },
+      { key: "OFFICIAL_ELIGIBLE", count: officialEligible },
+      { key: "PROBATION_OR_NO_CONTRACT", count: probationOrNoContract },
+      { key: "TERMINATED", count: terminated },
+      { key: "HAS_AVAILABLE_LEAVE", count: hasAvailableLeave },
+      { key: "EXHAUSTED", count: exhausted },
+    ];
+
+    const responseData: AnnualLeaveSummaryResponse = {
+      total: emps.length,
+      officialEligible,
+      probationOrNoContract,
+      terminated,
+      hasAvailableLeave,
+      exhausted,
+      counts,
+    };
+
+    return okV3(responseData);
+  }),
+
+  // 2. Export Excel Annual Leave
+  http.get("/api/web/payroll/annual-leave/export", async ({ request }) => {
+    await delay(300);
+    const url = new URL(request.url);
+    const pId = url.searchParams.get("projectId");
+    const view = (url.searchParams.get("view") || "ALL").toUpperCase() as AnnualLeaveViewFilter;
+    const search = (url.searchParams.get("search") || "").trim().toLowerCase();
+    const year = url.searchParams.get("year") || "2026";
+
+    const database = readMockDatabase();
+    let emps = database.annualLeaveEmployeesV3 ?? initialAnnualLeaveEmployeesV3;
+
+    if (pId && pId !== "all") {
+      emps = emps.filter((e) => String(e.employee.project?.projectId) === pId || e.employee.project?.projectCode === pId);
+    }
+
+    if (view === "OFFICIAL_ELIGIBLE") {
+      emps = emps.filter((e) => e.employmentType === "OFFICIAL_CONTRACT" && !e.terminationDate);
+    } else if (view === "PROBATION_OR_NO_CONTRACT") {
+      emps = emps.filter((e) => e.employmentType !== "OFFICIAL_CONTRACT" && !e.terminationDate);
+    } else if (view === "TERMINATED") {
+      emps = emps.filter((e) => Boolean(e.terminationDate));
+    } else if (view === "HAS_AVAILABLE_LEAVE") {
+      emps = emps.filter((e) => (e.availableDays ?? 0) > 0);
+    } else if (view === "EXHAUSTED") {
+      emps = emps.filter((e) => (e.availableDays ?? 0) <= 0 && e.employmentType === "OFFICIAL_CONTRACT" && !e.terminationDate);
+    }
+
+    if (search) {
+      emps = emps.filter((e) =>
+        e.employee.fullName.toLowerCase().includes(search) ||
+        e.employee.employeeCode.toLowerCase().includes(search) ||
+        (e.employee.department && e.employee.department.toLowerCase().includes(search)) ||
+        (e.employee.project?.projectName && e.employee.project.projectName.toLowerCase().includes(search))
+      );
+    }
+
+    // Return downloadable mock file info
+    return okV3({
+      fileName: `Bao_cao_phep_nam_${year}_${Date.now()}.xlsx`,
+      fileUrl: `https://example.com/exports/annual-leave-${year}.xlsx`,
+      totalRecords: emps.length,
+      exportedAt: new Date().toISOString(),
+    }, "Xuất báo cáo phép năm thành công.");
+  }),
+
+  // 3. List Annual Leave Employees
+  http.get("/api/web/payroll/annual-leave/employees", async ({ request }) => {
+    await delay(250);
+    const url = new URL(request.url);
+    const pId = url.searchParams.get("projectId") || url.searchParams.get("ProjectId");
+    const view = (url.searchParams.get("view") || url.searchParams.get("View") || "ALL").toUpperCase() as AnnualLeaveViewFilter;
+    const search = (url.searchParams.get("search") || url.searchParams.get("Search") || "").trim().toLowerCase();
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || url.searchParams.get("Page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || url.searchParams.get("PageSize") || "10", 10));
+
+    const database = readMockDatabase();
+    let emps = database.annualLeaveEmployeesV3 ?? initialAnnualLeaveEmployeesV3;
+
+    if (pId && pId !== "all") {
+      emps = emps.filter((e) => String(e.employee.project?.projectId) === pId || e.employee.project?.projectCode === pId);
+    }
+
+    if (view === "OFFICIAL_ELIGIBLE") {
+      emps = emps.filter((e) => e.employmentType === "OFFICIAL_CONTRACT" && !e.terminationDate);
+    } else if (view === "PROBATION_OR_NO_CONTRACT") {
+      emps = emps.filter((e) => e.employmentType !== "OFFICIAL_CONTRACT" && !e.terminationDate);
+    } else if (view === "TERMINATED") {
+      emps = emps.filter((e) => Boolean(e.terminationDate));
+    } else if (view === "HAS_AVAILABLE_LEAVE") {
+      emps = emps.filter((e) => (e.availableDays ?? 0) > 0);
+    } else if (view === "EXHAUSTED") {
+      emps = emps.filter((e) => (e.availableDays ?? 0) <= 0 && e.employmentType === "OFFICIAL_CONTRACT" && !e.terminationDate);
+    }
+
+    if (search) {
+      emps = emps.filter((e) =>
+        e.employee.fullName.toLowerCase().includes(search) ||
+        e.employee.employeeCode.toLowerCase().includes(search) ||
+        (e.employee.department && e.employee.department.toLowerCase().includes(search)) ||
+        (e.employee.position && e.employee.position.toLowerCase().includes(search)) ||
+        (e.employee.project?.projectName && e.employee.project.projectName.toLowerCase().includes(search)) ||
+        (e.employee.project?.projectCode && e.employee.project.projectCode.toLowerCase().includes(search))
+      );
+    }
+
+    const total = emps.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const pagedItems = emps.slice(startIndex, startIndex + pageSize);
+
+    const responseData: AnnualLeaveListResponse = {
+      items: pagedItems,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+
+    return okV3(responseData);
+  }),
+
+  // 4. Annual Leave History of Employee
+  http.get("/api/web/payroll/annual-leave/employees/:employeeCode/history", async ({ params, request }) => {
+    await delay(200);
+    const code = String(params.employeeCode);
+    const url = new URL(request.url);
+    const yearParam = url.searchParams.get("year");
+    const year = yearParam ? parseInt(yearParam, 10) : undefined;
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10));
+
+    const database = readMockDatabase();
+    const historyMap = database.annualLeaveHistoryV3 ?? initialAnnualLeaveHistoryV3;
+    let list = historyMap[code] || [];
+
+    if (year) {
+      list = list.filter((item) => item.fromDate.startsWith(String(year)));
+    }
+
+    const total = list.length;
+    const startIndex = (page - 1) * pageSize;
+    const paged = list.slice(startIndex, startIndex + pageSize);
+
+    const responseData: AnnualLeaveHistoryResponse = {
+      items: paged,
+      total,
+      page,
+      pageSize,
+      year,
+    };
+
+    return okV3(responseData);
+  }),
+
+  // 5. Annual Leave Detail of Employee
+  http.get("/api/web/payroll/annual-leave/employees/:employeeCode", async ({ params }) => {
+    await delay(150);
+    const code = String(params.employeeCode);
+    const database = readMockDatabase();
+    const emps = database.annualLeaveEmployeesV3 ?? initialAnnualLeaveEmployeesV3;
+    const emp = emps.find((e) => e.employee.employeeCode.toUpperCase() === code.toUpperCase());
+    if (!emp) {
+      return errorV3(404, "Không tìm thấy thông tin phép năm của nhân viên.", "EMPLOYEE_NOT_FOUND");
+    }
+
+    return okV3(emp);
+  }),
+
+  // ================= 03. Công đoàn phí (Union Dues) OpenAPI 3.0 Handlers =================
+  // 1. Union Dues Summary
+  http.get("/api/web/payroll/union-dues/summary", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const pId = url.searchParams.get("projectId") || url.searchParams.get("ProjectId");
+    const database = readMockDatabase();
+    let members = database.unionDuesMembersV3 ?? initialUnionDuesMembersV3;
+
+    if (pId && pId !== "all") {
+      members = members.filter((m) => String(m.employee.project?.projectId) === pId || m.employee.project?.projectCode === pId);
+    }
+
+    const participatingCount = members.filter((m) => m.participating).length;
+    const notParticipatingCount = members.filter((m) => !m.participating).length;
+    const totalMonthlyDues = members
+      .filter((m) => m.participating)
+      .reduce((sum, m) => sum + (m.contributionAmount ?? 23400), 0);
+
+    const counts = [
+      { key: "ALL", count: members.length },
+      { key: "PARTICIPATING", count: participatingCount },
+      { key: "NOT_PARTICIPATING", count: notParticipatingCount },
+    ];
+
+    const responseData: UnionDuesSummaryResponse = {
+      total: members.length,
+      participatingCount,
+      notParticipatingCount,
+      totalMonthlyDues,
+      counts,
+    };
+
+    return okV3(responseData);
+  }),
+
+  // 2. Export Excel Union Dues
+  http.get("/api/web/payroll/union-dues/export", async ({ request }) => {
+    await delay(250);
+    const url = new URL(request.url);
+    const pId = url.searchParams.get("projectId");
+    const status = (url.searchParams.get("participationStatus") || "ALL").toUpperCase();
+    const search = (url.searchParams.get("search") || "").trim().toLowerCase();
+
+    const database = readMockDatabase();
+    let members = database.unionDuesMembersV3 ?? initialUnionDuesMembersV3;
+
+    if (pId && pId !== "all") {
+      members = members.filter((m) => String(m.employee.project?.projectId) === pId || m.employee.project?.projectCode === pId);
+    }
+    if (status === "PARTICIPATING") {
+      members = members.filter((m) => m.participating);
+    } else if (status === "NOT_PARTICIPATING") {
+      members = members.filter((m) => !m.participating);
+    }
+    if (search) {
+      members = members.filter((m) =>
+        m.employee.fullName.toLowerCase().includes(search) ||
+        m.employee.employeeCode.toLowerCase().includes(search) ||
+        (m.employee.department && m.employee.department.toLowerCase().includes(search))
+      );
+    }
+
+    return okV3({
+      fileName: `Bao_cao_cong_doan_phi_${Date.now()}.xlsx`,
+      fileUrl: `https://example.com/exports/union-dues-${Date.now()}.xlsx`,
+      totalRecords: members.length,
+      exportedAt: new Date().toISOString(),
+    }, "Xuất báo cáo công đoàn phí thành công.");
+  }),
+
+  // 3. Import Template & Import
+  http.get("/api/web/payroll/union-dues/import/template", async () => {
+    await delay(200);
+    const fakeExcelContent = "STT,Mã nhân viên,Họ và tên,Tham gia công đoàn,Ngày bắt đầu,Mức đóng,Ghi chú\n1,NV-00124,Nguyễn Văn An,Có,2022-03-01,23400,\n";
+    const blob = new Blob([fakeExcelContent], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    return new HttpResponse(blob, {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": 'attachment; filename="Template_Import_CongDoanPhi_V3.xlsx"',
+      },
+    });
+  }),
+
+  http.post("/api/web/payroll/union-dues/import", async () => {
+    await delay(400);
+    return okV3({
+      totalRows: 10,
+      importedRows: 10,
+      errors: [],
+    }, "Import danh sách công đoàn phí thành công.");
+  }),
+
+  // 4. Audit logs
+  http.get("/api/web/payroll/union-dues/audit-logs", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10));
+
+    const logs = [
+      {
+        id: 701,
+        eventType: "JOINED",
+        occurredAt: "2026-08-01T09:00:00Z",
+        actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+        employee: { employeeCode: "NV-00124", fullName: "Nguyễn Văn An" },
+        description: "Gia nhập tổ chức công đoàn cơ sở",
+      },
+      {
+        id: 702,
+        eventType: "ADJUSTED",
+        occurredAt: "2026-07-01T10:30:00Z",
+        actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+        employee: { employeeCode: "NV-00124", fullName: "Nguyễn Văn An" },
+        description: "Cập nhật mức đóng đoàn phí theo quy định mới 23.400 đ/tháng",
+      },
+    ];
+
+    return okV3({
+      items: logs,
+      total: logs.length,
+      page,
+      pageSize,
+    });
+  }),
+
+  // 5. List Union Dues Members
+  http.get("/api/web/payroll/union-dues/members", async ({ request }) => {
+    await delay(200);
+    const url = new URL(request.url);
+    const pId = url.searchParams.get("projectId") || url.searchParams.get("ProjectId");
+    const status = (url.searchParams.get("participationStatus") || url.searchParams.get("status") || "ALL").toUpperCase();
+    const search = (url.searchParams.get("search") || "").trim().toLowerCase();
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "10", 10));
+
+    const database = readMockDatabase();
+    let members = database.unionDuesMembersV3 ?? initialUnionDuesMembersV3;
+
+    if (pId && pId !== "all") {
+      members = members.filter((m) => String(m.employee.project?.projectId) === pId || m.employee.project?.projectCode === pId);
+    }
+    if (status === "PARTICIPATING") {
+      members = members.filter((m) => m.participating);
+    } else if (status === "NOT_PARTICIPATING") {
+      members = members.filter((m) => !m.participating);
+    }
+    if (search) {
+      members = members.filter((m) =>
+        m.employee.fullName.toLowerCase().includes(search) ||
+        m.employee.employeeCode.toLowerCase().includes(search) ||
+        (m.employee.department && m.employee.department.toLowerCase().includes(search)) ||
+        (m.employee.position && m.employee.position.toLowerCase().includes(search)) ||
+        (m.employee.project?.projectName && m.employee.project.projectName.toLowerCase().includes(search))
+      );
+    }
+
+    const total = members.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const pagedItems = members.slice(startIndex, startIndex + pageSize);
+
+    const responseData: UnionDuesListResponse = {
+      items: pagedItems,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+
+    return okV3(responseData);
+  }),
+
+  // 6. Union Dues History of Member
+  http.get("/api/web/payroll/union-dues/members/:employeeCode/history", async ({ params, request }) => {
+    await delay(150);
+    const code = String(params.employeeCode);
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10));
+
+    const database = readMockDatabase();
+    const historyMap = database.unionDuesHistoryV3 ?? initialUnionDuesHistoryV3;
+    const list = historyMap[code] || [];
+
+    const total = list.length;
+    const startIndex = (page - 1) * pageSize;
+    const paged = list.slice(startIndex, startIndex + pageSize);
+
+    const responseData: UnionDuesHistoryResponse = {
+      items: paged,
+      total,
+      page,
+      pageSize,
+    };
+
+    return okV3(responseData);
+  }),
+
+  // 7. Member Detail
+  http.get("/api/web/payroll/union-dues/members/:employeeCode", async ({ params }) => {
+    await delay(100);
+    const code = String(params.employeeCode);
+    const database = readMockDatabase();
+    const members = database.unionDuesMembersV3 ?? initialUnionDuesMembersV3;
+    const member = members.find((m) => m.employee.employeeCode.toUpperCase() === code.toUpperCase());
+
+    if (!member) {
+      return errorV3(404, "Không tìm thấy thông tin đoàn viên công đoàn.", "MEMBER_NOT_FOUND");
+    }
+
+    return okV3({ data: member });
+  }),
+
+  // 8. Update Union Dues Member
+  http.patch("/api/web/payroll/union-dues/members/:employeeCode", async ({ params, request }) => {
+    await delay(200);
+    const code = String(params.employeeCode);
+    const payload = (await request.json()) as UpdateUnionDuesRequestV3;
+    const database = readMockDatabase();
+    const members = database.unionDuesMembersV3 ?? initialUnionDuesMembersV3;
+    const index = members.findIndex((m) => m.employee.employeeCode.toUpperCase() === code.toUpperCase());
+
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy thông tin đoàn viên công đoàn.", "MEMBER_NOT_FOUND");
+    }
+
+    const current = members[index];
+    const updated: UnionDuesMemberV3 = {
+      ...current,
+      participating: payload.participating !== undefined ? payload.participating : current.participating,
+      joinDate: payload.joinDate || (payload.participating ? payload.effectiveDate || current.joinDate || new Date().toISOString().slice(0, 10) : current.joinDate),
+      leaveDate: payload.participating === false ? payload.effectiveDate || new Date().toISOString().slice(0, 10) : null,
+      contributionAmount: payload.contributionAmount !== undefined ? payload.contributionAmount : current.contributionAmount,
+      note: payload.note !== undefined ? payload.note : current.note,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newHistoryItem: UnionDuesHistoryItemV3 = {
+      id: Date.now(),
+      occurredAt: new Date().toISOString(),
+      eventType: payload.participating !== undefined ? (payload.participating ? "JOINED" : "LEFT") : "ADJUSTED",
+      contributionAmount: updated.contributionAmount,
+      performedBy: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
+      note: payload.reason || payload.note || "Cập nhật thông tin đoàn phí công đoàn",
+    };
+
+    mutateMockDatabase((db) => {
+      const list = [...(db.unionDuesMembersV3 ?? initialUnionDuesMembersV3)];
+      list[index] = updated;
+      db.unionDuesMembersV3 = list;
+
+      const historyMap = { ...(db.unionDuesHistoryV3 ?? initialUnionDuesHistoryV3) };
+      historyMap[code] = [newHistoryItem, ...(historyMap[code] || [])];
+      db.unionDuesHistoryV3 = historyMap;
+    });
+
+    return okV3({ data: updated }, "Cập nhật trạng thái công đoàn phí thành công.");
+  }),
+
+  http.put("/api/web/payroll/union-dues/members/:employeeCode", async ({ params, request }) => {
+    await delay(200);
+    const code = String(params.employeeCode);
+    const payload = (await request.json()) as UpdateUnionDuesRequestV3;
+    const database = readMockDatabase();
+    const members = database.unionDuesMembersV3 ?? initialUnionDuesMembersV3;
+    const index = members.findIndex((m) => m.employee.employeeCode.toUpperCase() === code.toUpperCase());
+
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy thông tin đoàn viên công đoàn.", "MEMBER_NOT_FOUND");
+    }
+
+    const current = members[index];
+    const updated: UnionDuesMemberV3 = {
+      ...current,
+      participating: payload.participating !== undefined ? payload.participating : current.participating,
+      joinDate: payload.joinDate || (payload.participating ? payload.effectiveDate || current.joinDate || new Date().toISOString().slice(0, 10) : current.joinDate),
+      leaveDate: payload.participating === false ? payload.effectiveDate || new Date().toISOString().slice(0, 10) : null,
+      contributionAmount: payload.contributionAmount !== undefined ? payload.contributionAmount : current.contributionAmount,
+      note: payload.note !== undefined ? payload.note : current.note,
+      updatedAt: new Date().toISOString(),
+    };
+
+    mutateMockDatabase((db) => {
+      const list = [...(db.unionDuesMembersV3 ?? initialUnionDuesMembersV3)];
+      list[index] = updated;
+      db.unionDuesMembersV3 = list;
+    });
+
+    return okV3({ data: updated }, "Cập nhật trạng thái công đoàn phí thành công.");
+  }),
+
+  // ================= 04. NGÀY CÔNG CHUẨN (STANDARD WORKDAYS) =================
+  http.get("/api/web/payroll/standard-workdays/summary", async ({ request }) => {
+    await delay(100);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const database = readMockDatabase();
+    let list = database.standardWorkdaysV3 ?? initialStandardWorkdaysV3;
+    if (projectId) {
+      list = list.filter((item) => String(item.employee.project?.projectId) === String(projectId));
+    }
+    const total = list.length;
+    const projectDefaultCount = list.filter((i) => i.mode === "PROJECT_DEFAULT").length;
+    const customCount = list.filter((i) => i.mode === "CUSTOM").length;
+
+    const summary: StandardWorkdaySummaryResponse = {
+      total,
+      projectDefaultCount,
+      customCount,
+      projectStandardDays: 26,
+      counts: [
+        { status: "ALL", count: total, label: "Tất cả" },
+        { status: "PROJECT_DEFAULT", count: projectDefaultCount, label: "Mặc định dự án" },
+        { status: "CUSTOM", count: customCount, label: "Tùy chỉnh riêng" },
+      ],
+    };
+    return okV3(summary, "Lấy thông tin tổng quan ngày công chuẩn thành công.");
+  }),
+
+  http.get("/api/web/payroll/standard-workdays/project-default", async ({ request }) => {
+    await delay(100);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId") || "1017";
+    return okV3({
+      projectId: Number(projectId),
+      defaultStandardDays: 26,
+      note: "Quy định ngày công chuẩn mặc định cho toàn dự án là 26 ngày/tháng",
+    }, "Lấy thông tin ngày công chuẩn mặc định dự án thành công.");
+  }),
+
+  http.get("/api/web/payroll/standard-workdays/export", async () => {
+    await delay(200);
+    return okV3({
+      fileUrl: "https://example.com/exports/standard-workdays-2026-08.xlsx",
+      fileName: "Danh_sach_ngay_cong_chuan_2026_08.xlsx",
+      totalRecords: 5,
+    }, "Xuất dữ liệu ngày công chuẩn thành công.");
+  }),
+
+  http.get("/api/web/payroll/standard-workdays/import/template", async () => {
+    await delay(100);
+    return okV3({
+      templateUrl: "https://example.com/templates/mau_import_ngay_cong_chuan.xlsx",
+      fileName: "Mau_Import_Ngay_Cong_Chuan.xlsx",
+    }, "Tải mẫu import ngày công chuẩn thành công.");
+  }),
+
+  http.post("/api/web/payroll/standard-workdays/import", async () => {
+    await delay(300);
+    return okV3({
+      totalRows: 5,
+      successRows: 5,
+      errorRows: 0,
+      errors: [],
+    }, "Import danh sách ngày công chuẩn thành công.");
+  }),
+
+  http.get("/api/web/payroll/standard-workdays/audit-logs", async () => {
+    await delay(100);
+    return okV3({
+      items: [
+        {
+          id: "log-std-1",
+          action: "UPDATE",
+          entityType: "STANDARD_WORKDAY",
+          employeeCode: "NV-00125",
+          employeeName: "Trần Thị Mai",
+          oldValue: "26 ngày",
+          newValue: "24 ngày",
+          reason: "Công việc tổ trưởng văn phòng chốt công 24 ngày/tháng",
+          performedBy: { id: 1, fullName: "Trần Minh Anh", roleName: "Quản lý dự án" },
+          createdAt: "2026-08-02T10:00:00Z",
+        }
+      ],
+      total: 1,
+    }, "Lấy lịch sử thao tác ngày công chuẩn thành công.");
+  }),
+
+  http.get("/api/web/payroll/standard-workdays/employees", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const search = url.searchParams.get("search")?.toLowerCase().trim();
+    const mode = (url.searchParams.get("mode") || "ALL").toUpperCase();
+    const page = Number(url.searchParams.get("page") || "1");
+    const pageSize = Number(url.searchParams.get("pageSize") || "10");
+
+    const database = readMockDatabase();
+    let list = database.standardWorkdaysV3 ?? initialStandardWorkdaysV3;
+
+    if (projectId) {
+      list = list.filter((item) => String(item.employee.project?.projectId) === String(projectId));
+    }
+    if (mode === "CUSTOM") {
+      list = list.filter((item) => item.mode === "CUSTOM");
+    } else if (mode === "PROJECT_DEFAULT") {
+      list = list.filter((item) => item.mode === "PROJECT_DEFAULT");
+    }
+    if (search) {
+      list = list.filter(
+        (item) =>
+          item.employee.fullName.toLowerCase().includes(search) ||
+          item.employee.employeeCode.toLowerCase().includes(search) ||
+          item.employee.department?.toLowerCase().includes(search) ||
+          item.employee.position?.toLowerCase().includes(search)
+      );
+    }
+
+    const total = list.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const items = list.slice(startIndex, startIndex + pageSize);
+
+    const response: StandardWorkdayListResponse = {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+      counts: {
+        all: total,
+        custom: list.filter((i) => i.mode === "CUSTOM").length,
+        projectDefault: list.filter((i) => i.mode === "PROJECT_DEFAULT").length,
+      },
+    };
+    return okV3(response, "Lấy danh sách ngày công chuẩn nhân viên thành công.");
+  }),
+
+  http.get("/api/web/payroll/standard-workdays/employees/:employeeCode/history", async ({ params }) => {
+    await delay(100);
+    const code = String(params.employeeCode);
+    return okV3({
+      employeeCode: code,
+      history: [
+        {
+          id: 1,
+          appliedStandardDays: 24,
+          projectStandardDays: 26,
+          mode: "CUSTOM",
+          reason: "Điều chỉnh ngày công theo phân công công việc",
+          updatedBy: { fullName: "Trần Minh Anh" },
+          updatedAt: "2026-08-02T10:00:00Z",
+        },
+      ],
+    }, "Lấy lịch sử điều chỉnh ngày công chuẩn thành công.");
+  }),
+
+  http.post("/api/web/payroll/standard-workdays/employees/:employeeCode/restore-project-default", async ({ params }) => {
+    await delay(200);
+    const code = String(params.employeeCode);
+    const database = readMockDatabase();
+    const list = database.standardWorkdaysV3 ?? initialStandardWorkdaysV3;
+    const index = list.findIndex((item) => item.employee.employeeCode.toUpperCase() === code.toUpperCase());
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy nhân viên.", "EMPLOYEE_NOT_FOUND");
+    }
+    const current = list[index];
+    const updated: StandardWorkdayEmployeeV3 = {
+      ...current,
+      appliedStandardDays: current.projectStandardDays,
+      mode: "PROJECT_DEFAULT",
+      adjustmentReason: null,
+      updatedBy: { fullName: "Quản trị viên" },
+      updatedAt: new Date().toISOString(),
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.standardWorkdaysV3 ?? initialStandardWorkdaysV3)];
+      copy[index] = updated;
+      db.standardWorkdaysV3 = copy;
+    });
+    return okV3(updated, "Khôi phục ngày công chuẩn mặc định dự án thành công.");
+  }),
+
+  http.get("/api/web/payroll/standard-workdays/employees/:employeeCode", async ({ params }) => {
+    await delay(100);
+    const code = String(params.employeeCode);
+    const database = readMockDatabase();
+    const list = database.standardWorkdaysV3 ?? initialStandardWorkdaysV3;
+    const item = list.find((i) => i.employee.employeeCode.toUpperCase() === code.toUpperCase());
+    if (!item) {
+      return errorV3(404, "Không tìm thấy nhân viên.", "EMPLOYEE_NOT_FOUND");
+    }
+    return okV3(item, "Lấy thông tin ngày công chuẩn nhân viên thành công.");
+  }),
+
+  http.put("/api/web/payroll/standard-workdays/employees/:employeeCode", async ({ params, request }) => {
+    await delay(200);
+    const code = String(params.employeeCode);
+    const payload = (await request.json()) as UpdateStandardWorkdayRequestV3;
+    const database = readMockDatabase();
+    const list = database.standardWorkdaysV3 ?? initialStandardWorkdaysV3;
+    const index = list.findIndex((item) => item.employee.employeeCode.toUpperCase() === code.toUpperCase());
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy nhân viên.", "EMPLOYEE_NOT_FOUND");
+    }
+    const current = list[index];
+    const updated: StandardWorkdayEmployeeV3 = {
+      ...current,
+      appliedStandardDays: Number(payload.standardDays),
+      mode: "CUSTOM",
+      adjustmentReason: payload.reason,
+      updatedBy: { fullName: "Quản trị viên" },
+      updatedAt: new Date().toISOString(),
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.standardWorkdaysV3 ?? initialStandardWorkdaysV3)];
+      copy[index] = updated;
+      db.standardWorkdaysV3 = copy;
+    });
+    return okV3(updated, "Cập nhật ngày công chuẩn nhân viên thành công.");
+  }),
+
+  // ================= 05. BẢO HIỂM XÃ HỘI (SOCIAL INSURANCE D02-LT) =================
+  http.get("/api/web/payroll/social-insurance/summary", async ({ request }) => {
+    await delay(100);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const database = readMockDatabase();
+    let members = database.socialInsuranceMembersV3 ?? initialSocialInsuranceMembersV3;
+    let changes = database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3;
+    if (projectId) {
+      members = members.filter((m) => String(m.employee.project?.projectId) === String(projectId));
+      changes = changes.filter((c) => String(c.employee.project?.projectId) === String(projectId));
+    }
+    const total = members.length;
+    const activeCount = members.filter((m) => m.status === "ACTIVE").length;
+    const suspendedCount = members.filter((m) => m.status === "SUSPENDED").length;
+    const stoppedCount = members.filter((m) => m.status === "STOPPED").length;
+    const totalMonthlyContribution = members.reduce((sum, m) => sum + (m.status === "ACTIVE" ? m.totalContribution : 0), 0);
+    const pendingChangesCount = changes.filter((c) => c.status === "SUBMITTED" || c.status === "DRAFT").length;
+
+    const summary: SocialInsuranceSummaryResponse = {
+      total,
+      activeCount,
+      suspendedCount,
+      stoppedCount,
+      totalMonthlyContribution,
+      pendingChangesCount,
+      counts: [
+        { status: "ALL", count: total, label: "Tất cả" },
+        { status: "ACTIVE", count: activeCount, label: "Đang tham gia" },
+        { status: "SUSPENDED", count: suspendedCount, label: "Tạm hoãn" },
+        { status: "STOPPED", count: stoppedCount, label: "Đã báo giảm" },
+      ],
+    };
+    return okV3(summary, "Lấy tổng quan bảo hiểm xã hội thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/export", async () => {
+    await delay(200);
+    return okV3({
+      fileUrl: "https://example.com/exports/social-insurance-d02-2026-08.xlsx",
+      fileName: "Mau_D02_LT_Bao_Hiem_Xa_Hoi_2026_08.xlsx",
+      totalRecords: 4,
+    }, "Xuất dữ liệu mẫu D02-LT bảo hiểm xã hội thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/import/template", async () => {
+    await delay(100);
+    return okV3({
+      templateUrl: "https://example.com/templates/mau_import_bhxh.xlsx",
+      fileName: "Mau_Import_BHXH.xlsx",
+    }, "Tải mẫu import BHXH thành công.");
+  }),
+
+  http.post("/api/web/payroll/social-insurance/import", async () => {
+    await delay(300);
+    return okV3({
+      totalRows: 4,
+      successRows: 4,
+      errorRows: 0,
+      errors: [],
+    }, "Import danh sách BHXH thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/audit-logs", async () => {
+    await delay(100);
+    return okV3({
+      items: [
+        {
+          id: "log-bhxh-1",
+          action: "APPROVE",
+          entityType: "SOCIAL_INSURANCE_CHANGE",
+          employeeCode: "NV-00124",
+          employeeName: "Nguyễn Văn An",
+          oldValue: "6,000,000 đ",
+          newValue: "6,300,000 đ",
+          reason: "Tăng lương đóng BHXH theo phụ lục hợp đồng",
+          performedBy: { fullName: "Trần Thu Trang" },
+          createdAt: "2026-08-05T14:30:00Z",
+        }
+      ],
+      total: 1,
+    }, "Lấy nhật ký thao tác BHXH thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/members", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const search = url.searchParams.get("search")?.toLowerCase().trim();
+    const status = (url.searchParams.get("status") || "ALL").toUpperCase();
+    const page = Number(url.searchParams.get("page") || "1");
+    const pageSize = Number(url.searchParams.get("pageSize") || "10");
+
+    const database = readMockDatabase();
+    let list = database.socialInsuranceMembersV3 ?? initialSocialInsuranceMembersV3;
+
+    if (projectId) {
+      list = list.filter((m) => String(m.employee.project?.projectId) === String(projectId));
+    }
+    if (status !== "ALL") {
+      list = list.filter((m) => m.status === status);
+    }
+    if (search) {
+      list = list.filter(
+        (m) =>
+          m.employee.fullName.toLowerCase().includes(search) ||
+          m.employee.employeeCode.toLowerCase().includes(search) ||
+          m.socialInsuranceNumber.includes(search) ||
+          m.employee.department?.toLowerCase().includes(search)
+      );
+    }
+
+    const total = list.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const items = list.slice(startIndex, startIndex + pageSize);
+
+    const response: SocialInsuranceMemberListResponse = {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+    return okV3(response, "Lấy danh sách thành viên BHXH thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/members/:employeeCode/history", async ({ params }) => {
+    await delay(100);
+    const code = String(params.employeeCode);
+    return okV3({
+      employeeCode: code,
+      history: [
+        {
+          id: 1,
+          changeType: "ADJUST_SALARY",
+          effectiveMonth: "2026-08",
+          oldSalary: 6000000,
+          newSalary: 6300000,
+          status: "APPROVED",
+          reconciliationCode: "BHXH-7901-202608-0054",
+          approvedAt: "2026-08-05T14:30:00Z",
+        },
+      ],
+    }, "Lấy lịch sử biến động BHXH của nhân viên thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/members/:employeeCode", async ({ params }) => {
+    await delay(100);
+    const code = String(params.employeeCode);
+    const database = readMockDatabase();
+    const list = database.socialInsuranceMembersV3 ?? initialSocialInsuranceMembersV3;
+    const member = list.find((m) => m.employee.employeeCode.toUpperCase() === code.toUpperCase());
+    if (!member) {
+      return errorV3(404, "Không tìm thấy thông tin BHXH của nhân viên.", "MEMBER_NOT_FOUND");
+    }
+    return okV3(member, "Lấy thông tin chi tiết BHXH nhân viên thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/changes", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const search = url.searchParams.get("search")?.toLowerCase().trim();
+    const changeType = url.searchParams.get("changeType");
+    const status = url.searchParams.get("status");
+    const page = Number(url.searchParams.get("page") || "1");
+    const pageSize = Number(url.searchParams.get("pageSize") || "10");
+
+    const database = readMockDatabase();
+    let list = database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3;
+
+    if (projectId) {
+      list = list.filter((c) => String(c.employee.project?.projectId) === String(projectId));
+    }
+    if (changeType && changeType !== "ALL") {
+      list = list.filter((c) => c.changeType === changeType);
+    }
+    if (status && status !== "ALL") {
+      list = list.filter((c) => c.status === status);
+    }
+    if (search) {
+      list = list.filter(
+        (c) =>
+          c.employee.fullName.toLowerCase().includes(search) ||
+          c.employee.employeeCode.toLowerCase().includes(search) ||
+          c.reason.toLowerCase().includes(search) ||
+          c.reconciliationCode?.toLowerCase().includes(search)
+      );
+    }
+
+    const total = list.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const items = list.slice(startIndex, startIndex + pageSize);
+
+    const response: SocialInsuranceChangeListResponse = {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+    return okV3(response, "Lấy danh sách biến động BHXH thành công.");
+  }),
+
+  http.post("/api/web/payroll/social-insurance/changes", async ({ request }) => {
+    await delay(200);
+    const payload = (await request.json()) as any;
+    const database = readMockDatabase();
+    const employees = database.employees;
+    const emp = employees.find((e) => e.code.toUpperCase() === payload.employeeCode?.toUpperCase());
+    const empSummary = emp ? {
+      employeeCode: emp.code,
+      fullName: emp.name,
+      project: { projectId: Number(emp.projectId || 1017), projectCode: emp.projectCode || "JSS-ST", projectName: "Jabil Smart Solutions" },
+      email: emp.email,
+      phone: emp.phone,
+      department: emp.department,
+      position: emp.position,
+      status: (emp.status === "active" ? "ACTIVE" : emp.status === "resigned" ? "TERMINATED" : "PROBATION") as any,
+    } : {
+      employeeCode: payload.employeeCode || "NV-00124",
+      fullName: "Nguyễn Văn An",
+      project: { projectId: 1017, projectCode: "JSS-ST", projectName: "Jabil Smart Solutions" },
+      email: "an.nguyen@greenspeed.vn",
+      phone: "0912 345 001",
+      department: "Khối Sản xuất",
+      position: "Công nhân bậc 3",
+      status: "ACTIVE",
+    };
+
+    const newChange: SocialInsuranceChangeV3 = {
+      id: Date.now(),
+      employee: empSummary,
+      changeType: payload.changeType || "INCREASE",
+      effectiveMonth: payload.effectiveMonth || new Date().toISOString().slice(0, 7),
+      oldSalary: payload.oldSalary !== undefined ? Number(payload.oldSalary) : null,
+      newSalary: payload.newSalary !== undefined ? Number(payload.newSalary) : 6300000,
+      status: "SUBMITTED",
+      reason: payload.reason || "Kê khai biến động bảo hiểm",
+      documents: payload.documents || [],
+      createdAt: new Date().toISOString(),
+    };
+
+    mutateMockDatabase((db) => {
+      const copy = [...(db.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3)];
+      copy.unshift(newChange);
+      db.socialInsuranceChangesV3 = copy;
+    });
+
+    return okV3(newChange, "Tạo hồ sơ biến động BHXH thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/changes/:changeId", async ({ params }) => {
+    await delay(100);
+    const id = Number(params.changeId);
+    const database = readMockDatabase();
+    const list = database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3;
+    const item = list.find((c) => c.id === id);
+    if (!item) {
+      return errorV3(404, "Không tìm thấy hồ sơ biến động BHXH.", "CHANGE_NOT_FOUND");
+    }
+    return okV3(item, "Lấy thông tin biến động BHXH thành công.");
+  }),
+
+  http.put("/api/web/payroll/social-insurance/changes/:changeId", async ({ params, request }) => {
+    await delay(200);
+    const id = Number(params.changeId);
+    const payload = (await request.json()) as any;
+    const database = readMockDatabase();
+    const list = database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3;
+    const index = list.findIndex((c) => c.id === id);
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy hồ sơ biến động BHXH.", "CHANGE_NOT_FOUND");
+    }
+    const current = list[index];
+    const updated: SocialInsuranceChangeV3 = {
+      ...current,
+      ...payload,
+      id: current.id,
+      employee: current.employee,
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3)];
+      copy[index] = updated;
+      db.socialInsuranceChangesV3 = copy;
+    });
+    return okV3(updated, "Cập nhật hồ sơ biến động BHXH thành công.");
+  }),
+
+  http.delete("/api/web/payroll/social-insurance/changes/:changeId", async ({ params }) => {
+    await delay(150);
+    const id = Number(params.changeId);
+    mutateMockDatabase((db) => {
+      const copy = (db.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3).filter((c) => c.id !== id);
+      db.socialInsuranceChangesV3 = copy;
+    });
+    return okV3({ id }, "Xóa hồ sơ biến động BHXH thành công.");
+  }),
+
+  http.post("/api/web/payroll/social-insurance/changes/:changeId/confirm-reconciliation", async ({ params, request }) => {
+    await delay(200);
+    const id = Number(params.changeId);
+    const payload = (await request.json()) as any;
+    const database = readMockDatabase();
+    const list = database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3;
+    const index = list.findIndex((c) => c.id === id);
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy hồ sơ biến động.", "CHANGE_NOT_FOUND");
+    }
+    const current = list[index];
+    const updated: SocialInsuranceChangeV3 = {
+      ...current,
+      status: "RECONCILED",
+      reconciliationCode: payload.reconciliationCode || `BHXH-REC-${id}`,
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3)];
+      copy[index] = updated;
+      db.socialInsuranceChangesV3 = copy;
+    });
+    return okV3(updated, "Xác nhận đối soát mã BHXH thành công.");
+  }),
+
+  http.post("/api/web/payroll/social-insurance/changes/:changeId/approve", async ({ params }) => {
+    await delay(200);
+    const id = Number(params.changeId);
+    const database = readMockDatabase();
+    const list = database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3;
+    const index = list.findIndex((c) => c.id === id);
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy hồ sơ biến động.", "CHANGE_NOT_FOUND");
+    }
+    const current = list[index];
+    const updated: SocialInsuranceChangeV3 = {
+      ...current,
+      status: "APPROVED",
+      approvedAt: new Date().toISOString(),
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3)];
+      copy[index] = updated;
+      db.socialInsuranceChangesV3 = copy;
+
+      // Also reflect in member list
+      const members = [...(db.socialInsuranceMembersV3 ?? initialSocialInsuranceMembersV3)];
+      const mIdx = members.findIndex((m) => m.employee.employeeCode.toUpperCase() === current.employee.employeeCode.toUpperCase());
+      if (mIdx !== -1) {
+        const m = members[mIdx];
+        const newSal = current.newSalary || m.contributionSalary;
+        members[mIdx] = {
+          ...m,
+          contributionSalary: newSal,
+          employeeContribution: Math.round(newSal * 0.105),
+          employerContribution: Math.round(newSal * 0.215),
+          totalContribution: Math.round(newSal * 0.32),
+          status: current.changeType === "DECREASE" ? "STOPPED" : "ACTIVE",
+          effectiveMonth: current.effectiveMonth,
+        };
+        db.socialInsuranceMembersV3 = members;
+      }
+    });
+    return okV3(updated, "Phê duyệt biến động BHXH thành công.");
+  }),
+
+  http.post("/api/web/payroll/social-insurance/changes/:changeId/reject", async ({ params, request }) => {
+    await delay(200);
+    const id = Number(params.changeId);
+    const payload = (await request.json()) as any;
+    const database = readMockDatabase();
+    const list = database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3;
+    const index = list.findIndex((c) => c.id === id);
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy hồ sơ biến động.", "CHANGE_NOT_FOUND");
+    }
+    const current = list[index];
+    const updated: SocialInsuranceChangeV3 = {
+      ...current,
+      status: "REJECTED",
+      reason: payload.reason ? `${current.reason} (Từ chối: ${payload.reason})` : current.reason,
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3)];
+      copy[index] = updated;
+      db.socialInsuranceChangesV3 = copy;
+    });
+    return okV3(updated, "Từ chối hồ sơ biến động BHXH thành công.");
+  }),
+
+  http.get("/api/web/payroll/social-insurance/changes/:changeId/documents", async ({ params }) => {
+    await delay(100);
+    const id = Number(params.changeId);
+    const database = readMockDatabase();
+    const list = database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3;
+    const item = list.find((c) => c.id === id);
+    return okV3(item?.documents || [], "Lấy danh sách hồ sơ đính kèm thành công.");
+  }),
+
+  http.post("/api/web/payroll/social-insurance/changes/:changeId/documents", async ({ params }) => {
+    await delay(200);
+    const id = Number(params.changeId);
+    const newDoc = {
+      id: String(Date.now()),
+      documentTypeId: 1,
+      documentTypeName: "Hợp đồng lao động / Quyết định",
+      fileName: `Chung_tu_BHXH_${id}.pdf`,
+      fileUrl: `https://example.com/docs/bhxh-${id}.pdf`,
+      fileSize: 450000,
+      mimeType: "application/pdf",
+      uploadedAt: new Date().toISOString(),
+    };
+    return okV3(newDoc, "Tải lên hồ sơ đính kèm thành công.");
+  }),
+
+  http.delete("/api/web/payroll/social-insurance/changes/:changeId/documents/:documentId", async () => {
+    await delay(100);
+    return okV3({ success: true }, "Xóa tài liệu đính kèm thành công.");
+  }),
+
+  // ================= 06. CHẾ ĐỘ PHỤ CẤP (BENEFITS & ALLOWANCES) =================
+  http.get("/api/web/payroll/benefits-allowances/summary", async ({ request }) => {
+    await delay(100);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const database = readMockDatabase();
+    let list = database.benefitsAllowanceEmployeesV3 ?? initialBenefitsAllowanceEmployeesV3;
+    if (projectId) {
+      list = list.filter((item) => String(item.employee.project?.projectId) === String(projectId));
+    }
+    const total = list.length;
+    const projectDefaultCount = list.filter((i) => i.mode === "PROJECT_DEFAULT").length;
+    const customCount = list.filter((i) => i.mode === "CUSTOM").length;
+    const totalMonthlyAllowanceAmount = list.reduce((sum, item) => sum + item.totalMonthlyAllowance, 0);
+
+    const summary: BenefitsAllowanceSummaryResponse = {
+      total,
+      projectDefaultCount,
+      customCount,
+      totalMonthlyAllowanceAmount,
+      counts: [
+        { status: "ALL", count: total, label: "Tất cả" },
+        { status: "PROJECT_DEFAULT", count: projectDefaultCount, label: "Mặc định dự án" },
+        { status: "CUSTOM", count: customCount, label: "Tùy chỉnh riêng" },
+      ],
+    };
+    return okV3(summary, "Lấy tổng quan chế độ phụ cấp thành công.");
+  }),
+
+  http.get("/api/web/payroll/master-data/allowance-types", async () => {
+    await delay(100);
+    return okV3([
+      { code: "MEAL", name: "Phụ cấp ăn trưa", defaultAmount: 730000, unit: "VNĐ/tháng" },
+      { code: "PETROL", name: "Phụ cấp xăng xe", defaultAmount: 500000, unit: "VNĐ/tháng" },
+      { code: "PHONE", name: "Phụ cấp điện thoại", defaultAmount: 300000, unit: "VNĐ/tháng" },
+      { code: "RESPONSIBILITY", name: "Phụ cấp trách nhiệm", defaultAmount: 1500000, unit: "VNĐ/tháng" },
+      { code: "ATTENDANCE", name: "Phụ cấp chuyên cần", defaultAmount: 400000, unit: "VNĐ/tháng" },
+    ], "Lấy danh mục các loại phụ cấp thành công.");
+  }),
+
+  http.get("/api/web/payroll/benefits-allowances/project-defaults", async () => {
+    await delay(100);
+    return okV3([
+      { policyId: "pol-meal", policyCode: "MEAL", policyName: "Phụ cấp ăn trưa", amount: 730000, unit: "VNĐ/tháng" },
+      { policyId: "pol-petrol", policyCode: "PETROL", policyName: "Phụ cấp xăng xe", amount: 500000, unit: "VNĐ/tháng" },
+    ], "Lấy phụ cấp mặc định dự án thành công.");
+  }),
+
+  http.get("/api/web/payroll/benefits-allowances/export", async () => {
+    await delay(200);
+    return okV3({
+      fileUrl: "https://example.com/exports/benefits-allowances-2026-08.xlsx",
+      fileName: "Danh_sach_phu_cap_nhan_vien_2026_08.xlsx",
+      totalRecords: 2,
+    }, "Xuất dữ liệu phụ cấp thành công.");
+  }),
+
+  http.get("/api/web/payroll/benefits-allowances/import/template", async () => {
+    await delay(100);
+    return okV3({
+      templateUrl: "https://example.com/templates/mau_import_phu_cap.xlsx",
+      fileName: "Mau_Import_Phu_Cap.xlsx",
+    }, "Tải mẫu import phụ cấp thành công.");
+  }),
+
+  http.post("/api/web/payroll/benefits-allowances/import", async () => {
+    await delay(300);
+    return okV3({
+      totalRows: 2,
+      successRows: 2,
+      errorRows: 0,
+      errors: [],
+    }, "Import danh sách phụ cấp thành công.");
+  }),
+
+  http.get("/api/web/payroll/benefits-allowances/audit-logs", async () => {
+    await delay(100);
+    return okV3({
+      items: [
+        {
+          id: "log-allw-1",
+          action: "UPDATE",
+          entityType: "BENEFITS_ALLOWANCE",
+          employeeCode: "NV-00125",
+          employeeName: "Trần Thị Mai",
+          oldValue: "730,000 đ",
+          newValue: "2,230,000 đ",
+          reason: "Bổ sung phụ cấp trách nhiệm tổ trưởng",
+          performedBy: { fullName: "Trần Minh Anh" },
+          createdAt: "2026-08-02T10:00:00Z",
+        }
+      ],
+      total: 1,
+    }, "Lấy lịch sử thay đổi phụ cấp thành công.");
+  }),
+
+  http.get("/api/web/payroll/benefits-allowances/employees", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const search = url.searchParams.get("search")?.toLowerCase().trim();
+    const mode = (url.searchParams.get("mode") || "ALL").toUpperCase();
+    const page = Number(url.searchParams.get("page") || "1");
+    const pageSize = Number(url.searchParams.get("pageSize") || "10");
+
+    const database = readMockDatabase();
+    let list = database.benefitsAllowanceEmployeesV3 ?? initialBenefitsAllowanceEmployeesV3;
+
+    if (projectId) {
+      list = list.filter((item) => String(item.employee.project?.projectId) === String(projectId));
+    }
+    if (mode === "CUSTOM") {
+      list = list.filter((item) => item.mode === "CUSTOM");
+    } else if (mode === "PROJECT_DEFAULT") {
+      list = list.filter((item) => item.mode === "PROJECT_DEFAULT");
+    }
+    if (search) {
+      list = list.filter(
+        (item) =>
+          item.employee.fullName.toLowerCase().includes(search) ||
+          item.employee.employeeCode.toLowerCase().includes(search) ||
+          item.employee.department?.toLowerCase().includes(search) ||
+          item.employee.position?.toLowerCase().includes(search)
+      );
+    }
+
+    const total = list.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const items = list.slice(startIndex, startIndex + pageSize);
+
+    const response: BenefitsAllowanceListResponse = {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+    return okV3(response, "Lấy danh sách phụ cấp nhân viên thành công.");
+  }),
+
+  http.get("/api/web/payroll/benefits-allowances/employees/:employeeCode/history", async ({ params }) => {
+    await delay(100);
+    const code = String(params.employeeCode);
+    return okV3({
+      employeeCode: code,
+      history: [
+        {
+          id: 1,
+          mode: "CUSTOM",
+          totalMonthlyAllowance: 2230000,
+          reason: "Bổ sung phụ cấp trách nhiệm tổ trưởng",
+          updatedAt: "2026-08-02T10:00:00Z",
+        }
+      ],
+    }, "Lấy lịch sử điều chỉnh phụ cấp thành công.");
+  }),
+
+  http.post("/api/web/payroll/benefits-allowances/employees/:employeeCode/restore-project-default", async ({ params }) => {
+    await delay(200);
+    const code = String(params.employeeCode);
+    const database = readMockDatabase();
+    const list = database.benefitsAllowanceEmployeesV3 ?? initialBenefitsAllowanceEmployeesV3;
+    const index = list.findIndex((item) => item.employee.employeeCode.toUpperCase() === code.toUpperCase());
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy nhân viên.", "EMPLOYEE_NOT_FOUND");
+    }
+    const current = list[index];
+    const defaultAllowances: EmployeeAllowanceItemV3[] = [
+      { policyId: "pol-meal", policyCode: "MEAL", policyName: "Phụ cấp ăn trưa", amount: 730000, isCustomized: false, unit: "VNĐ/tháng" },
+      { policyId: "pol-petrol", policyCode: "PETROL", policyName: "Phụ cấp xăng xe", amount: 500000, isCustomized: false, unit: "VNĐ/tháng" },
+    ];
+    const updated: BenefitsAllowanceEmployeeV3 = {
+      ...current,
+      mode: "PROJECT_DEFAULT",
+      allowances: defaultAllowances,
+      totalMonthlyAllowance: 1230000,
+      updatedAt: new Date().toISOString(),
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.benefitsAllowanceEmployeesV3 ?? initialBenefitsAllowanceEmployeesV3)];
+      copy[index] = updated;
+      db.benefitsAllowanceEmployeesV3 = copy;
+    });
+    return okV3(updated, "Khôi phục phụ cấp mặc định dự án thành công.");
+  }),
+
+  http.get("/api/web/payroll/benefits-allowances/employees/:employeeCode", async ({ params }) => {
+    await delay(100);
+    const code = String(params.employeeCode);
+    const database = readMockDatabase();
+    const list = database.benefitsAllowanceEmployeesV3 ?? initialBenefitsAllowanceEmployeesV3;
+    const item = list.find((i) => i.employee.employeeCode.toUpperCase() === code.toUpperCase());
+    if (!item) {
+      return errorV3(404, "Không tìm thấy nhân viên.", "EMPLOYEE_NOT_FOUND");
+    }
+    return okV3(item, "Lấy thông tin phụ cấp nhân viên thành công.");
+  }),
+
+  http.put("/api/web/payroll/benefits-allowances/employees/:employeeCode", async ({ params, request }) => {
+    await delay(200);
+    const code = String(params.employeeCode);
+    const payload = (await request.json()) as UpdateBenefitsAllowanceRequestV3;
+    const database = readMockDatabase();
+    const list = database.benefitsAllowanceEmployeesV3 ?? initialBenefitsAllowanceEmployeesV3;
+    const index = list.findIndex((item) => item.employee.employeeCode.toUpperCase() === code.toUpperCase());
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy nhân viên.", "EMPLOYEE_NOT_FOUND");
+    }
+    const current = list[index];
+    const newAllowances: EmployeeAllowanceItemV3[] = payload.allowances.map((a) => {
+      const existing = current.allowances.find((x) => String(x.policyId) === String(a.policyId));
+      return {
+        policyId: a.policyId,
+        policyCode: existing?.policyCode || "OTHER",
+        policyName: existing?.policyName || "Phụ cấp",
+        amount: Number(a.amount),
+        isCustomized: a.isCustomized ?? true,
+        unit: existing?.unit || "VNĐ/tháng",
+      };
+    });
+    const totalAmount = newAllowances.reduce((sum, a) => sum + a.amount, 0);
+    const updated: BenefitsAllowanceEmployeeV3 = {
+      ...current,
+      mode: "CUSTOM",
+      allowances: newAllowances,
+      totalMonthlyAllowance: totalAmount,
+      updatedAt: new Date().toISOString(),
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.benefitsAllowanceEmployeesV3 ?? initialBenefitsAllowanceEmployeesV3)];
+      copy[index] = updated;
+      db.benefitsAllowanceEmployeesV3 = copy;
+    });
+    return okV3(updated, "Cập nhật phụ cấp nhân viên thành công.");
+  }),
+
+  // ================= 07. KHOẢN GIẢM TRỪ KHÁC (OTHER DEDUCTIONS) =================
+  http.get("/api/web/payroll/other-deductions/summary", async ({ request }) => {
+    await delay(100);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const month = url.searchParams.get("month");
+    const database = readMockDatabase();
+    let list = database.otherDeductionsV3 ?? initialOtherDeductionsV3;
+    if (projectId) {
+      list = list.filter((i) => String(i.employee.project?.projectId) === String(projectId));
+    }
+    if (month) {
+      list = list.filter((i) => i.month === month);
+    }
+    const total = list.length;
+    const totalAmount = list.reduce((sum, i) => sum + i.amount, 0);
+    const disciplineFineCount = list.filter((i) => i.type === "DISCIPLINE_FINE").length;
+    const assetCompensationCount = list.filter((i) => i.type === "ASSET_COMPENSATION").length;
+    const advancePaymentCount = list.filter((i) => i.type === "ADVANCE_PAYMENT").length;
+    const otherCount = list.filter((i) => i.type === "OTHER").length;
+
+    const summary: OtherDeductionsSummaryResponse = {
+      total,
+      totalAmount,
+      disciplineFineCount,
+      assetCompensationCount,
+      advancePaymentCount,
+      otherCount,
+      counts: [
+        { status: "ALL", count: total, label: "Tất cả" },
+        { status: "ADVANCE_PAYMENT", count: advancePaymentCount, label: "Tạm ứng" },
+        { status: "ASSET_COMPENSATION", count: assetCompensationCount, label: "Bồi thường CCDC" },
+        { status: "DISCIPLINE_FINE", count: disciplineFineCount, label: "Phạt kỷ luật" },
+        { status: "OTHER", count: otherCount, label: "Giảm trừ khác" },
+      ],
+    };
+    return okV3(summary, "Lấy tổng quan khoản giảm trừ thành công.");
+  }),
+
+  http.get("/api/web/payroll/master-data/other-deduction-types", async () => {
+    await delay(100);
+    return okV3([
+      { code: "ADVANCE_PAYMENT", name: "Tạm ứng lương giữa kỳ" },
+      { code: "ASSET_COMPENSATION", name: "Bồi thường hư hỏng CCDC" },
+      { code: "DISCIPLINE_FINE", name: "Phạt vi phạm kỷ luật lao động" },
+      { code: "OTHER", name: "Khoản giảm trừ khác" },
+    ], "Lấy danh mục loại giảm trừ thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-deductions/export", async () => {
+    await delay(200);
+    return okV3({
+      fileUrl: "https://example.com/exports/other-deductions-2026-08.xlsx",
+      fileName: "Danh_sach_giam_tru_khac_2026_08.xlsx",
+      totalRecords: 2,
+    }, "Xuất dữ liệu giảm trừ thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-deductions/import/template", async () => {
+    await delay(100);
+    return okV3({
+      templateUrl: "https://example.com/templates/mau_import_giam_tru.xlsx",
+      fileName: "Mau_Import_Giam_Tru.xlsx",
+    }, "Tải mẫu import giảm trừ thành công.");
+  }),
+
+  http.post("/api/web/payroll/other-deductions/import", async () => {
+    await delay(300);
+    return okV3({
+      totalRows: 2,
+      successRows: 2,
+      errorRows: 0,
+      errors: [],
+    }, "Import danh sách giảm trừ thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-deductions/audit-logs", async () => {
+    await delay(100);
+    return okV3({
+      items: [
+        {
+          id: "log-ded-1",
+          action: "CREATE",
+          entityType: "OTHER_DEDUCTION",
+          employeeCode: "NV-00124",
+          employeeName: "Nguyễn Văn An",
+          newValue: "2,000,000 đ",
+          reason: "Tạm ứng theo đơn đề nghị số 12/TU",
+          performedBy: { fullName: "Trần Thu Trang" },
+          createdAt: "2026-08-15T10:00:00Z",
+        }
+      ],
+      total: 1,
+    }, "Lấy lịch sử thao tác giảm trừ thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-deductions", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const employeeCode = url.searchParams.get("employeeCode");
+    const month = url.searchParams.get("month");
+    const type = url.searchParams.get("type");
+    const search = url.searchParams.get("search")?.toLowerCase().trim();
+    const page = Number(url.searchParams.get("page") || "1");
+    const pageSize = Number(url.searchParams.get("pageSize") || "10");
+
+    const database = readMockDatabase();
+    let list = database.otherDeductionsV3 ?? initialOtherDeductionsV3;
+
+    if (projectId) {
+      list = list.filter((i) => String(i.employee.project?.projectId) === String(projectId));
+    }
+    if (employeeCode) {
+      list = list.filter((i) => i.employee.employeeCode.toUpperCase() === employeeCode.toUpperCase());
+    }
+    if (month) {
+      list = list.filter((i) => i.month === month);
+    }
+    if (type && type !== "ALL") {
+      list = list.filter((i) => i.type === type);
+    }
+    if (search) {
+      list = list.filter(
+        (i) =>
+          i.employee.fullName.toLowerCase().includes(search) ||
+          i.employee.employeeCode.toLowerCase().includes(search) ||
+          i.reason.toLowerCase().includes(search) ||
+          i.decisionNumber?.toLowerCase().includes(search)
+      );
+    }
+
+    const total = list.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const items = list.slice(startIndex, startIndex + pageSize);
+
+    const response: OtherDeductionsListResponse = {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+    return okV3(response, "Lấy danh sách khoản giảm trừ khác thành công.");
+  }),
+
+  http.post("/api/web/payroll/other-deductions", async ({ request }) => {
+    await delay(200);
+    const payload = (await request.json()) as CreateOtherDeductionRequestV3;
+    const database = readMockDatabase();
+    const employees = database.employees;
+    const emp = employees.find((e) => e.code.toUpperCase() === payload.employeeCode?.toUpperCase());
+    const empSummary = emp ? {
+      employeeCode: emp.code,
+      fullName: emp.name,
+      project: { projectId: Number(emp.projectId || 1017), projectCode: emp.projectCode || "JSS-ST", projectName: "Jabil Smart Solutions" },
+      email: emp.email,
+      phone: emp.phone,
+      department: emp.department,
+      position: emp.position,
+      status: (emp.status === "active" ? "ACTIVE" : emp.status === "resigned" ? "TERMINATED" : "PROBATION") as any,
+    } : {
+      employeeCode: payload.employeeCode || "NV-00124",
+      fullName: "Nguyễn Văn An",
+      project: { projectId: 1017, projectCode: "JSS-ST", projectName: "Jabil Smart Solutions" },
+      email: "an.nguyen@greenspeed.vn",
+      phone: "0912 345 001",
+      department: "Khối Sản xuất",
+      position: "Công nhân bậc 3",
+      status: "ACTIVE",
+    };
+
+    const typeNames: Record<string, string> = {
+      ADVANCE_PAYMENT: "Tạm ứng tiền lương giữa kỳ",
+      ASSET_COMPENSATION: "Bồi thường thiệt hại CCDC",
+      DISCIPLINE_FINE: "Phạt vi phạm kỷ luật",
+      OTHER: "Khoản giảm trừ khác",
+    };
+
+    const newDeduction: OtherDeductionV3 = {
+      id: Date.now(),
+      employee: empSummary,
+      month: payload.month || "2026-08",
+      type: payload.type || "OTHER",
+      typeName: typeNames[payload.type] || "Khoản giảm trừ khác",
+      amount: Number(payload.amount),
+      decisionNumber: payload.decisionNumber || null,
+      decisionDate: payload.decisionDate || null,
+      reason: payload.reason || "Giảm trừ tiền lương",
+      attachment: null,
+      updatedBy: { fullName: "Quản trị viên" },
+      updatedAt: new Date().toISOString(),
+    };
+
+    mutateMockDatabase((db) => {
+      const copy = [...(db.otherDeductionsV3 ?? initialOtherDeductionsV3)];
+      copy.unshift(newDeduction);
+      db.otherDeductionsV3 = copy;
+    });
+
+    return okV3(newDeduction, "Thêm mới khoản giảm trừ thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-deductions/:deductionId", async ({ params }) => {
+    await delay(100);
+    const id = Number(params.deductionId);
+    const database = readMockDatabase();
+    const list = database.otherDeductionsV3 ?? initialOtherDeductionsV3;
+    const item = list.find((i) => i.id === id);
+    if (!item) {
+      return errorV3(404, "Không tìm thấy khoản giảm trừ.", "DEDUCTION_NOT_FOUND");
+    }
+    return okV3(item, "Lấy thông tin khoản giảm trừ thành công.");
+  }),
+
+  http.put("/api/web/payroll/other-deductions/:deductionId", async ({ params, request }) => {
+    await delay(200);
+    const id = Number(params.deductionId);
+    const payload = (await request.json()) as any;
+    const database = readMockDatabase();
+    const list = database.otherDeductionsV3 ?? initialOtherDeductionsV3;
+    const index = list.findIndex((i) => i.id === id);
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy khoản giảm trừ.", "DEDUCTION_NOT_FOUND");
+    }
+    const current = list[index];
+    const updated: OtherDeductionV3 = {
+      ...current,
+      ...payload,
+      id: current.id,
+      employee: current.employee,
+      amount: payload.amount !== undefined ? Number(payload.amount) : current.amount,
+      updatedAt: new Date().toISOString(),
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.otherDeductionsV3 ?? initialOtherDeductionsV3)];
+      copy[index] = updated;
+      db.otherDeductionsV3 = copy;
+    });
+    return okV3(updated, "Cập nhật khoản giảm trừ thành công.");
+  }),
+
+  http.delete("/api/web/payroll/other-deductions/:deductionId", async ({ params }) => {
+    await delay(150);
+    const id = Number(params.deductionId);
+    mutateMockDatabase((db) => {
+      const copy = (db.otherDeductionsV3 ?? initialOtherDeductionsV3).filter((i) => i.id !== id);
+      db.otherDeductionsV3 = copy;
+    });
+    return okV3({ id }, "Xóa khoản giảm trừ thành công.");
+  }),
+
+  http.post("/api/web/payroll/other-deductions/:deductionId/attachment", async ({ params }) => {
+    await delay(200);
+    const id = Number(params.deductionId);
+    const attachment = {
+      id: Date.now(),
+      fileName: `Quyet_dinh_giam_tru_${id}.pdf`,
+      fileUrl: `https://example.com/docs/ded-${id}.pdf`,
+      fileSize: 420000,
+    };
+    mutateMockDatabase((db) => {
+      const list = [...(db.otherDeductionsV3 ?? initialOtherDeductionsV3)];
+      const index = list.findIndex((i) => i.id === id);
+      if (index !== -1) {
+        list[index] = { ...list[index], attachment };
+        db.otherDeductionsV3 = list;
+      }
+    });
+    return okV3(attachment, "Tải lên chứng từ đính kèm thành công.");
+  }),
+
+  http.delete("/api/web/payroll/other-deductions/:deductionId/attachment", async ({ params }) => {
+    await delay(100);
+    const id = Number(params.deductionId);
+    mutateMockDatabase((db) => {
+      const list = [...(db.otherDeductionsV3 ?? initialOtherDeductionsV3)];
+      const index = list.findIndex((i) => i.id === id);
+      if (index !== -1) {
+        list[index] = { ...list[index], attachment: null };
+        db.otherDeductionsV3 = list;
+      }
+    });
+    return okV3({ success: true }, "Xóa chứng từ đính kèm thành công.");
+  }),
+
+  // ================= 08. THU NHẬP KHÁC (OTHER INCOMES) =================
+  http.get("/api/web/payroll/other-incomes/summary", async ({ request }) => {
+    await delay(100);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const month = url.searchParams.get("month");
+    const database = readMockDatabase();
+    let list = database.otherIncomesV3 ?? initialOtherIncomesV3;
+    if (projectId) {
+      list = list.filter((i) => String(i.employee.project?.projectId) === String(projectId));
+    }
+    if (month) {
+      list = list.filter((i) => i.month === month);
+    }
+    const total = list.length;
+    const totalAmount = list.reduce((sum, i) => sum + i.amount, 0);
+    const hotBonusCount = list.filter((i) => i.type === "HOT_BONUS").length;
+    const performanceBonusCount = list.filter((i) => i.type === "PERFORMANCE_BONUS").length;
+    const holidayBonusCount = list.filter((i) => i.type === "HOLIDAY_BONUS").length;
+    const projectSupportCount = list.filter((i) => i.type === "PROJECT_SUPPORT").length;
+    const otherCount = list.filter((i) => i.type === "OTHER").length;
+
+    const summary: OtherIncomesSummaryResponse = {
+      total,
+      totalAmount,
+      hotBonusCount,
+      performanceBonusCount,
+      holidayBonusCount,
+      projectSupportCount,
+      otherCount,
+      counts: [
+        { status: "ALL", count: total, label: "Tất cả" },
+        { status: "HOT_BONUS", count: hotBonusCount, label: "Thưởng nóng" },
+        { status: "PERFORMANCE_BONUS", count: performanceBonusCount, label: "Thưởng hiệu quả" },
+        { status: "HOLIDAY_BONUS", count: holidayBonusCount, label: "Thưởng lễ tết" },
+        { status: "PROJECT_SUPPORT", count: projectSupportCount, label: "Hỗ trợ dự án" },
+        { status: "OTHER", count: otherCount, label: "Thu nhập khác" },
+      ],
+    };
+    return okV3(summary, "Lấy tổng quan thu nhập khác thành công.");
+  }),
+
+  http.get("/api/web/payroll/master-data/other-income-types", async () => {
+    await delay(100);
+    return okV3([
+      { code: "HOT_BONUS", name: "Thưởng nóng sáng kiến cải tiến" },
+      { code: "PERFORMANCE_BONUS", name: "Thưởng năng suất hiệu quả công việc" },
+      { code: "HOLIDAY_BONUS", name: "Thưởng lễ tết sự kiện" },
+      { code: "PROJECT_SUPPORT", name: "Hỗ trợ công tác dự án đặc thù" },
+      { code: "OTHER", name: "Khoản thu nhập khác" },
+    ], "Lấy danh mục loại thu nhập thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-incomes/export", async () => {
+    await delay(200);
+    return okV3({
+      fileUrl: "https://example.com/exports/other-incomes-2026-08.xlsx",
+      fileName: "Danh_sach_thu_nhap_khac_2026_08.xlsx",
+      totalRecords: 2,
+    }, "Xuất dữ liệu thu nhập khác thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-incomes/import/template", async () => {
+    await delay(100);
+    return okV3({
+      templateUrl: "https://example.com/templates/mau_import_thu_nhap.xlsx",
+      fileName: "Mau_Import_Thu_Nhap.xlsx",
+    }, "Tải mẫu import thu nhập khác thành công.");
+  }),
+
+  http.post("/api/web/payroll/other-incomes/import", async () => {
+    await delay(300);
+    return okV3({
+      totalRows: 2,
+      successRows: 2,
+      errorRows: 0,
+      errors: [],
+    }, "Import danh sách thu nhập khác thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-incomes/audit-logs", async () => {
+    await delay(100);
+    return okV3({
+      items: [
+        {
+          id: "log-inc-1",
+          action: "CREATE",
+          entityType: "OTHER_INCOME",
+          employeeCode: "NV-00124",
+          employeeName: "Nguyễn Văn An",
+          newValue: "1,500,000 đ",
+          reason: "Sáng kiến tối ưu hóa dây chuyền đóng gói",
+          performedBy: { fullName: "Trần Thu Trang" },
+          createdAt: "2026-08-10T09:00:00Z",
+        }
+      ],
+      total: 1,
+    }, "Lấy nhật ký thao tác thu nhập khác thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-incomes", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const employeeCode = url.searchParams.get("employeeCode");
+    const month = url.searchParams.get("month");
+    const type = url.searchParams.get("type");
+    const search = url.searchParams.get("search")?.toLowerCase().trim();
+    const page = Number(url.searchParams.get("page") || "1");
+    const pageSize = Number(url.searchParams.get("pageSize") || "10");
+
+    const database = readMockDatabase();
+    let list = database.otherIncomesV3 ?? initialOtherIncomesV3;
+
+    if (projectId) {
+      list = list.filter((i) => String(i.employee.project?.projectId) === String(projectId));
+    }
+    if (employeeCode) {
+      list = list.filter((i) => i.employee.employeeCode.toUpperCase() === employeeCode.toUpperCase());
+    }
+    if (month) {
+      list = list.filter((i) => i.month === month);
+    }
+    if (type && type !== "ALL") {
+      list = list.filter((i) => i.type === type);
+    }
+    if (search) {
+      list = list.filter(
+        (i) =>
+          i.employee.fullName.toLowerCase().includes(search) ||
+          i.employee.employeeCode.toLowerCase().includes(search) ||
+          i.reason.toLowerCase().includes(search) ||
+          i.decisionNumber?.toLowerCase().includes(search)
+      );
+    }
+
+    const total = list.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const items = list.slice(startIndex, startIndex + pageSize);
+
+    const response: OtherIncomesListResponse = {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+    return okV3(response, "Lấy danh sách khoản thu nhập khác thành công.");
+  }),
+
+  http.post("/api/web/payroll/other-incomes", async ({ request }) => {
+    await delay(200);
+    const payload = (await request.json()) as CreateOtherIncomeRequestV3;
+    const database = readMockDatabase();
+    const employees = database.employees;
+    const emp = employees.find((e) => e.code.toUpperCase() === payload.employeeCode?.toUpperCase());
+    const empSummary = emp ? {
+      employeeCode: emp.code,
+      fullName: emp.name,
+      project: { projectId: Number(emp.projectId || 1017), projectCode: emp.projectCode || "JSS-ST", projectName: "Jabil Smart Solutions" },
+      email: emp.email,
+      phone: emp.phone,
+      department: emp.department,
+      position: emp.position,
+      status: (emp.status === "active" ? "ACTIVE" : emp.status === "resigned" ? "TERMINATED" : "PROBATION") as any,
+    } : {
+      employeeCode: payload.employeeCode || "NV-00124",
+      fullName: "Nguyễn Văn An",
+      project: { projectId: 1017, projectCode: "JSS-ST", projectName: "Jabil Smart Solutions" },
+      email: "an.nguyen@greenspeed.vn",
+      phone: "0912 345 001",
+      department: "Khối Sản xuất",
+      position: "Công nhân bậc 3",
+      status: "ACTIVE",
+    };
+
+    const typeNames: Record<string, string> = {
+      HOT_BONUS: "Thưởng nóng sáng kiến cải tiến",
+      PERFORMANCE_BONUS: "Thưởng năng suất hiệu quả công việc",
+      HOLIDAY_BONUS: "Thưởng lễ tết sự kiện",
+      PROJECT_SUPPORT: "Hỗ trợ công tác dự án đặc thù",
+      OTHER: "Khoản thu nhập khác",
+    };
+
+    const newIncome: OtherIncomeV3 = {
+      id: Date.now(),
+      employee: empSummary,
+      month: payload.month || "2026-08",
+      type: payload.type || "OTHER",
+      typeName: typeNames[payload.type] || "Khoản thu nhập khác",
+      amount: Number(payload.amount),
+      decisionNumber: payload.decisionNumber || null,
+      decisionDate: payload.decisionDate || null,
+      reason: payload.reason || "Khen thưởng thu nhập",
+      attachment: null,
+      updatedBy: { fullName: "Quản trị viên" },
+      updatedAt: new Date().toISOString(),
+    };
+
+    mutateMockDatabase((db) => {
+      const copy = [...(db.otherIncomesV3 ?? initialOtherIncomesV3)];
+      copy.unshift(newIncome);
+      db.otherIncomesV3 = copy;
+    });
+
+    return okV3(newIncome, "Thêm mới khoản thu nhập khác thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-incomes/:incomeId", async ({ params }) => {
+    await delay(100);
+    const id = Number(params.incomeId);
+    const database = readMockDatabase();
+    const list = database.otherIncomesV3 ?? initialOtherIncomesV3;
+    const item = list.find((i) => i.id === id);
+    if (!item) {
+      return errorV3(404, "Không tìm thấy khoản thu nhập.", "INCOME_NOT_FOUND");
+    }
+    return okV3(item, "Lấy thông tin khoản thu nhập thành công.");
+  }),
+
+  http.put("/api/web/payroll/other-incomes/:incomeId", async ({ params, request }) => {
+    await delay(200);
+    const id = Number(params.incomeId);
+    const payload = (await request.json()) as any;
+    const database = readMockDatabase();
+    const list = database.otherIncomesV3 ?? initialOtherIncomesV3;
+    const index = list.findIndex((i) => i.id === id);
+    if (index === -1) {
+      return errorV3(404, "Không tìm thấy khoản thu nhập.", "INCOME_NOT_FOUND");
+    }
+    const current = list[index];
+    const updated: OtherIncomeV3 = {
+      ...current,
+      ...payload,
+      id: current.id,
+      employee: current.employee,
+      amount: payload.amount !== undefined ? Number(payload.amount) : current.amount,
+      updatedAt: new Date().toISOString(),
+    };
+    mutateMockDatabase((db) => {
+      const copy = [...(db.otherIncomesV3 ?? initialOtherIncomesV3)];
+      copy[index] = updated;
+      db.otherIncomesV3 = copy;
+    });
+    return okV3(updated, "Cập nhật khoản thu nhập thành công.");
+  }),
+
+  http.delete("/api/web/payroll/other-incomes/:incomeId", async ({ params }) => {
+    await delay(150);
+    const id = Number(params.incomeId);
+    mutateMockDatabase((db) => {
+      const copy = (db.otherIncomesV3 ?? initialOtherIncomesV3).filter((i) => i.id !== id);
+      db.otherIncomesV3 = copy;
+    });
+    return okV3({ id }, "Xóa khoản thu nhập thành công.");
+  }),
+
+  http.post("/api/web/payroll/other-incomes/:incomeId/attachment", async ({ params }) => {
+    await delay(200);
+    const id = Number(params.incomeId);
+    const attachment = {
+      id: Date.now(),
+      fileName: `Quyet_dinh_khen_thuong_${id}.pdf`,
+      fileUrl: `https://example.com/docs/inc-${id}.pdf`,
+      fileSize: 510000,
+    };
+    mutateMockDatabase((db) => {
+      const list = [...(db.otherIncomesV3 ?? initialOtherIncomesV3)];
+      const index = list.findIndex((i) => i.id === id);
+      if (index !== -1) {
+        list[index] = { ...list[index], attachment };
+        db.otherIncomesV3 = list;
+      }
+    });
+    return okV3(attachment, "Tải lên quyết định khen thưởng đính kèm thành công.");
+  }),
+
+  http.delete("/api/web/payroll/other-incomes/:incomeId/attachment", async ({ params }) => {
+    await delay(100);
+    const id = Number(params.incomeId);
+    mutateMockDatabase((db) => {
+      const list = [...(db.otherIncomesV3 ?? initialOtherIncomesV3)];
+      const index = list.findIndex((i) => i.id === id);
+      if (index !== -1) {
+        list[index] = { ...list[index], attachment: null };
+        db.otherIncomesV3 = list;
+      }
+    });
+    return okV3({ success: true }, "Xóa quyết định khen thưởng đính kèm thành công.");
+  }),
 ];
+
+function newDocId(depId: number) {
+  return `${depId}_${Math.floor(Math.random() * 10000)}`;
+}
+

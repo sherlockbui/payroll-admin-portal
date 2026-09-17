@@ -16,6 +16,7 @@ import {
   Paperclip,
   Pencil,
   Plus,
+  ReceiptText,
   Search,
   Sparkles,
   Trash2,
@@ -45,15 +46,20 @@ import {
   TableRowActions,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Employee, OtherIncomeCategory, OtherIncomeRecord } from "@/lib/types";
+import type {
+  CreateOtherIncomeRequestV3,
+  Employee,
+  OtherIncomeType,
+  OtherIncomeV3,
+} from "@/lib/types";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
 
-const INCOME_CATEGORIES: { value: OtherIncomeCategory; label: string; tone: "success" | "info" | "warning" | "neutral" }[] = [
-  { value: "spot_bonus", label: "Thưởng nóng thành tích", tone: "success" },
-  { value: "project_bonus", label: "Thưởng tiến độ dự án", tone: "info" },
-  { value: "support", label: "Hỗ trợ khó khăn", tone: "warning" },
-  { value: "incentive", label: "Khen thưởng chuyên cần", tone: "success" },
-  { value: "other", label: "Thu nhập khác", tone: "neutral" },
+const INCOME_TYPE_OPTIONS: { value: OtherIncomeType; label: string; tone: "success" | "info" | "warning" | "neutral" }[] = [
+  { value: "HOT_BONUS", label: "Thưởng nóng sáng kiến", tone: "success" },
+  { value: "PERFORMANCE_BONUS", label: "Thưởng năng suất hiệu quả", tone: "info" },
+  { value: "HOLIDAY_BONUS", label: "Thưởng lễ tết", tone: "warning" },
+  { value: "PROJECT_SUPPORT", label: "Hỗ trợ dự án", tone: "info" },
+  { value: "OTHER", label: "Thu nhập khác", tone: "neutral" },
 ];
 
 export function OtherIncomesSubtab({
@@ -68,11 +74,9 @@ export function OtherIncomesSubtab({
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
-  const employeeMap = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
-
   const [searchTerm, setSearchTerm] = useState("");
-  const [periodFilter, setPeriodFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [periodFilter, setPeriodFilter] = useState("2026-08");
+  const [typeFilter, setTypeFilter] = useState<string>("ALL");
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -80,42 +84,100 @@ export function OtherIncomesSubtab({
 
   // Modals state
   const [formModalOpen, setFormModalOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<OtherIncomeRecord | null>(null);
+  const [editingRecord, setEditingRecord] = useState<OtherIncomeV3 | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [targetDeleteRecord, setTargetDeleteRecord] = useState<OtherIncomeRecord | null>(null);
+  const [targetDeleteRecord, setTargetDeleteRecord] = useState<OtherIncomeV3 | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [previewFileModalOpen, setPreviewFileModalOpen] = useState(false);
-  const [previewingRecord, setPreviewingRecord] = useState<OtherIncomeRecord | null>(null);
+  const [previewingRecord, setPreviewingRecord] = useState<OtherIncomeV3 | null>(null);
 
-  // Form fields state
-  const [formEmployeeId, setFormEmployeeId] = useState("");
-  const [formPeriod, setFormPeriod] = useState("2026-08");
-  const [formCategory, setFormCategory] = useState<OtherIncomeCategory>("spot_bonus");
+  // Form state
+  const [formEmployeeCode, setFormEmployeeCode] = useState("");
+  const [formMonth, setFormMonth] = useState("2026-08");
+  const [formType, setFormType] = useState<OtherIncomeType>("HOT_BONUS");
   const [formAmount, setFormAmount] = useState<number>(1000000);
-  const [formDecisionNo, setFormDecisionNo] = useState("");
+  const [formDecisionNumber, setFormDecisionNumber] = useState("");
   const [formDecisionDate, setFormDecisionDate] = useState("2026-08-18");
   const [formReason, setFormReason] = useState("");
-  const [formAttachmentName, setFormAttachmentName] = useState("");
-  const [formAttachmentUrl, setFormAttachmentUrl] = useState("");
-  const [formAttachmentSize, setFormAttachmentSize] = useState("");
+  const [formSelectedFile, setFormSelectedFile] = useState<File | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Open Create Form
+  // Summary Query
+  const summaryQuery = useQuery({
+    queryKey: ["other-incomes-summary", projectId, periodFilter],
+    queryFn: () =>
+      api.getOtherIncomesSummaryV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        month: periodFilter === "all" ? undefined : periodFilter,
+      }),
+  });
+
+  // List Query
+  const listQuery = useQuery({
+    queryKey: ["other-incomes-list", projectId, periodFilter, typeFilter, searchTerm, page, pageSize],
+    queryFn: () =>
+      api.getOtherIncomesListV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        month: periodFilter === "all" ? undefined : periodFilter,
+        type: typeFilter === "ALL" ? undefined : typeFilter,
+        search: searchTerm || undefined,
+        page,
+        pageSize,
+      }),
+  });
+
+  // Master income types
+  const typesQuery = useQuery({
+    queryKey: ["master-other-income-types"],
+    queryFn: () => api.getMasterOtherIncomeTypesV3(),
+  });
+
+  const summary = summaryQuery.data;
+  const listData = listQuery.data;
+  const items = listData?.items ?? [];
+  const totalItems = listData?.total ?? 0;
+
+  // Open Create Modal
   const handleOpenCreate = () => {
     setEditingRecord(null);
-    setFormEmployeeId(employees[0]?.id || "");
-    setFormPeriod(periodFilter === "all" ? "2026-08" : periodFilter);
-    setFormCategory("spot_bonus");
+    setFormEmployeeCode(employees[0]?.code || "NV-00124");
+    setFormMonth(periodFilter === "all" ? "2026-08" : periodFilter);
+    setFormType("HOT_BONUS");
     setFormAmount(1000000);
-    setFormDecisionNo("QĐ-2026/08-02/KT");
+    setFormDecisionNumber("QĐ-2026/08-02/KT");
     setFormDecisionDate(new Date().toISOString().slice(0, 10));
     setFormReason("");
-    setFormAttachmentName("");
-    setFormAttachmentUrl("");
-    setFormAttachmentSize("");
+    setFormSelectedFile(null);
     setFormModalOpen(true);
+  };
+
+  // Open Edit Modal
+  const handleOpenEdit = (item: OtherIncomeV3) => {
+    setEditingRecord(item);
+    setFormEmployeeCode(item.employee.employeeCode);
+    setFormMonth(item.month);
+    setFormType(item.type);
+    setFormAmount(item.amount);
+    setFormDecisionNumber(item.decisionNumber || "");
+    setFormDecisionDate(item.decisionDate || new Date().toISOString().slice(0, 10));
+    setFormReason(item.reason);
+    setFormSelectedFile(null);
+    setFormModalOpen(true);
+  };
+
+  // Export Excel
+  const handleExportExcel = async () => {
+    try {
+      const res = await api.exportOtherIncomesExcelV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        month: periodFilter === "all" ? undefined : periodFilter,
+        type: typeFilter === "ALL" ? undefined : typeFilter,
+      });
+      notify(`Đã xuất báo cáo ${res.fileName} thành công (${res.totalRecords} bản ghi).`);
+    } catch (err: any) {
+      notify(err.message || "Lỗi khi xuất báo cáo Excel", "error");
+    }
   };
 
   // Register Header Action
@@ -123,6 +185,13 @@ export function OtherIncomesSubtab({
     if (!setHeaderAction) return;
     setHeaderAction(
       <div className="flex items-center gap-2">
+        <Button
+          variant="secondary"
+          onClick={handleExportExcel}
+          className="gap-1.5 font-semibold text-xs h-8 px-3"
+        >
+          <Download className="w-3.5 h-3.5" /> Xuất Excel
+        </Button>
         <Button
           variant="secondary"
           onClick={() => setImportModalOpen(true)}
@@ -135,135 +204,71 @@ export function OtherIncomesSubtab({
           onClick={handleOpenCreate}
           className="gap-1.5 font-semibold text-xs h-8 px-3"
         >
-          <Plus className="w-3.5 h-3.5" /> Thêm thu nhập
+          <Plus className="w-3.5 h-3.5" /> Thêm khoản thu nhập
         </Button>
       </div>
     );
     return () => setHeaderAction(null);
-  }, [setHeaderAction]);
+  }, [setHeaderAction, projectId, periodFilter, typeFilter]);
 
-  // Fetch incomes
-  const incomesQuery = useQuery({
-    queryKey: ["other-incomes", projectId, periodFilter],
-    queryFn: () =>
-      api.getOtherIncomes({
-        projectId: projectId === "all" ? undefined : projectId,
-        period: periodFilter === "all" ? undefined : periodFilter,
-      }),
-  });
-
-  const incomes = incomesQuery.data ?? [];
-
-  // Filtered incomes
-  const filteredIncomes = useMemo(() => {
-    return incomes.filter((item) => {
-      const q = searchTerm.toLowerCase().trim();
-      const matchSearch =
-        !q ||
-        (item.employeeName ?? "").toLowerCase().includes(q) ||
-        (item.employeeCode ?? "").toLowerCase().includes(q) ||
-        (item.decisionNo ?? "").toLowerCase().includes(q) ||
-        (item.categoryLabel ?? "").toLowerCase().includes(q) ||
-        (item.reason ?? "").toLowerCase().includes(q);
-
-      const matchCategory = categoryFilter === "all" || item.category === categoryFilter;
-
-      return matchSearch && matchCategory;
-    });
-  }, [incomes, searchTerm, categoryFilter]);
-
-  // Statistics
-  const stats = useMemo(() => {
-    const totalAmount = filteredIncomes.reduce((sum, item) => sum + item.amount, 0);
-    const uniqueEmployees = new Set(filteredIncomes.map((item) => item.employeeId)).size;
-    const withAttachmentCount = filteredIncomes.filter((item) => Boolean(item.attachmentName)).length;
-    return {
-      totalAmount,
-      uniqueEmployees,
-      withAttachmentCount,
-      totalCount: filteredIncomes.length,
-    };
-  }, [filteredIncomes]);
-
-  // Paginated records
-  const paginatedRecords = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredIncomes.slice(start, start + pageSize);
-  }, [filteredIncomes, page, pageSize]);
-
-  // Open Edit Form
-  const handleOpenEdit = (record: OtherIncomeRecord) => {
-    setEditingRecord(record);
-    setFormEmployeeId(record.employeeId);
-    setFormPeriod(record.period);
-    setFormCategory(record.category);
-    setFormAmount(record.amount);
-    setFormDecisionNo(record.decisionNo || "");
-    setFormDecisionDate(record.decisionDate || new Date().toISOString().slice(0, 10));
-    setFormReason(record.reason);
-    setFormAttachmentName(record.attachmentName || "");
-    setFormAttachmentUrl(record.attachmentUrl || "");
-    setFormAttachmentSize(record.attachmentSize || "");
-    setFormModalOpen(true);
-  };
-
-  // File Upload handler
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFormAttachmentName(file.name);
-      setFormAttachmentUrl(URL.createObjectURL(file));
-      const sizeKb = Math.round(file.size / 1024);
-      setFormAttachmentSize(sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`);
-      notify(`Đã đính kèm file: ${file.name}`);
-    }
-  };
-
-  // Save Mutation
+  // Save Mutation (Create / Update)
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const selectedEmp = employees.find((e) => e.id === formEmployeeId);
-      const payload: Partial<OtherIncomeRecord> = {
-        projectId: selectedEmp?.projectId || projectId || "prj-jss",
-        employeeId: formEmployeeId,
-        employeeCode: selectedEmp?.code || "",
-        employeeName: selectedEmp?.name || "",
-        position: selectedEmp?.position || "Nhân viên",
-        period: formPeriod,
-        category: formCategory,
-        amount: Number(formAmount) || 0,
-        decisionNo: formDecisionNo.trim(),
-        decisionDate: formDecisionDate,
-        attachmentName: formAttachmentName.trim(),
-        attachmentUrl: formAttachmentUrl,
-        attachmentSize: formAttachmentSize,
-        reason: formReason.trim() || "Khen thưởng / hỗ trợ theo quyết định ban hành",
-      };
-
       if (editingRecord) {
-        return api.updateOtherIncome(editingRecord.id, payload);
+        const updated = await api.updateOtherIncomeV3(editingRecord.id, {
+          month: formMonth,
+          type: formType,
+          amount: Number(formAmount) || 0,
+          decisionNumber: formDecisionNumber.trim() || undefined,
+          decisionDate: formDecisionDate || undefined,
+          reason: formReason.trim() || "Khoản khen thưởng / thu nhập khác",
+        });
+        if (formSelectedFile) {
+          await api.uploadOtherIncomeAttachmentV3(editingRecord.id, formSelectedFile);
+        }
+        return updated;
+      } else {
+        const payload: CreateOtherIncomeRequestV3 = {
+          employeeCode: formEmployeeCode,
+          month: formMonth,
+          type: formType,
+          amount: Number(formAmount) || 0,
+          decisionNumber: formDecisionNumber.trim() || undefined,
+          decisionDate: formDecisionDate || undefined,
+          reason: formReason.trim() || "Khoản khen thưởng / thu nhập khác",
+        };
+        const created = await api.createOtherIncomeV3(payload);
+        if (formSelectedFile && created.id) {
+          await api.uploadOtherIncomeAttachmentV3(created.id, formSelectedFile);
+        }
+        return created;
       }
-      return api.createOtherIncome(payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["other-incomes"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["other-incomes-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["other-incomes-list"] });
       setFormModalOpen(false);
-      notify(editingRecord ? "Đã cập nhật thông tin thu nhập thành công!" : "Đã thêm mới khoản thu nhập thành công!");
+      notify(editingRecord ? "Đã cập nhật khoản thu nhập thành công!" : "Đã thêm mới khoản thu nhập thành công!");
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi lưu khoản thu nhập", "error");
     },
   });
 
   // Delete Mutation
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return api.deleteOtherIncome(id);
+    mutationFn: async (id: number) => {
+      return api.deleteOtherIncomeV3(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["other-incomes"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["other-incomes-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["other-incomes-list"] });
       setDeleteModalOpen(false);
       setTargetDeleteRecord(null);
       notify("Đã xóa khoản thu nhập thành công!");
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi xóa khoản thu nhập", "error");
     },
   });
 
@@ -271,70 +276,63 @@ export function OtherIncomesSubtab({
   const [importPreviewRows, setImportPreviewRows] = useState<any[]>([]);
   const excelColumns: ExcelImportColumn[] = [
     { key: "employeeCode", label: "Mã NLĐ", width: "120px" },
-    { key: "employeeName", label: "Họ và tên NLĐ", width: "160px" },
+    { key: "fullName", label: "Họ và tên NLĐ", width: "160px" },
     {
-      key: "period",
+      key: "month",
       label: "Tháng",
       width: "100px",
       align: "center",
-      render: (row) => <Badge tone="neutral">{formatMonthYear(row.period)}</Badge>,
+      render: (row) => <Badge tone="neutral">{formatMonthYear(row.month)}</Badge>,
     },
     {
-      key: "categoryLabel",
+      key: "typeName",
       label: "Loại thu nhập",
-      render: (row) => <span className="font-medium text-primary">{row.categoryLabel || "Thưởng nóng"}</span>,
+      render: (row) => <span className="font-medium">{row.typeName || "Thưởng nóng"}</span>,
     },
     {
       key: "amount",
       label: "Số tiền (VND)",
       align: "right",
-      render: (row) => (
-        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-          +{formatCurrency(row.amount)}
-        </span>
-      ),
+      render: (row) => <span className="font-mono text-success font-semibold">+{formatCurrency(row.amount)}</span>,
     },
-    { key: "decisionNo", label: "Số QĐ", width: "130px" },
+    { key: "decisionNumber", label: "Số QĐ", width: "130px" },
     { key: "reason", label: "Lý do / Nội dung" },
   ];
 
   const handleSimulateExcelUpload = () => {
     const mockExcelData = [
       {
-        employeeCode: employees[2]?.code || "NV-JSS-003",
-        employeeName: employees[2]?.name || "Lê Hoàng Nam",
-        period: "2026-08",
-        category: "spot_bonus",
-        categoryLabel: "Thưởng nóng thành tích",
-        amount: 1000000,
-        decisionNo: "QĐ-2026/08-02/KT",
-        decisionDate: "2026-08-18",
-        attachmentName: "Quyet_dinh_khen_thuong_dot_xuat_Nam.pdf",
-        reason: "Cải tiến thao tác đóng gói",
-      },
-      {
-        employeeCode: employees[3]?.code || "NV-JSS-004",
-        employeeName: employees[3]?.name || "Phạm Thị Hương",
-        period: "2026-08",
-        category: "project_bonus",
-        categoryLabel: "Thưởng tiến độ dự án",
+        employeeCode: "NV-00124",
+        fullName: "Nguyễn Văn An",
+        month: "2026-08",
+        type: "HOT_BONUS",
+        typeName: "Thưởng nóng sáng kiến cải tiến",
         amount: 1500000,
-        decisionNo: "QĐ-2026/08-05/TD",
-        decisionDate: "2026-08-20",
-        attachmentName: "Quyet_dinh_thuong_tien_do_Jabil.pdf",
-        reason: "Vượt chỉ tiêu đơn hàng xuất khẩu",
+        decisionNumber: "QĐ-2026/08-02/KT",
+        decisionDate: "2026-08-10",
+        reason: "Sáng kiến tối ưu hóa dây chuyền đóng gói",
       },
       {
-        employeeCode: employees[0]?.code || "NV-JSS-001",
-        employeeName: employees[0]?.name || "Nguyễn Văn An",
-        period: "2026-08",
-        category: "incentive",
-        categoryLabel: "Khen thưởng chuyên cần",
-        amount: 500000,
-        decisionNo: "QĐ-2026/08-21/CC",
-        decisionDate: "2026-08-21",
-        attachmentName: "Khen_thuong_chuyen_can.pdf",
-        reason: "Đạt chuẩn chuyên cần xuất sắc quý",
+        employeeCode: "NV-00125",
+        fullName: "Trần Thị Mai",
+        month: "2026-08",
+        type: "PERFORMANCE_BONUS",
+        typeName: "Thưởng năng suất vượt trội",
+        amount: 2000000,
+        decisionNumber: "QĐ-2026/08-08/NS",
+        decisionDate: "2026-08-15",
+        reason: "Vượt 120% chỉ tiêu sản lượng đóng gói xuất khẩu",
+      },
+      {
+        employeeCode: "NV-00127",
+        fullName: "Phạm Quốc Bảo",
+        month: "2026-08",
+        type: "HOLIDAY_BONUS",
+        typeName: "Thưởng lễ kỷ niệm công ty",
+        amount: 1000000,
+        decisionNumber: "QĐ-2026/08-19/LE",
+        decisionDate: "2026-08-19",
+        reason: "Khen thưởng ngày thành lập tập đoàn",
       },
     ];
     setImportPreviewRows(mockExcelData);
@@ -343,23 +341,91 @@ export function OtherIncomesSubtab({
 
   const importBatchMutation = useMutation({
     mutationFn: async () => {
-      return api.batchImportOtherIncomes({
-        projectId: projectId === "all" ? "prj-jss" : projectId,
-        period: periodFilter === "all" ? "2026-08" : periodFilter,
-        items: importPreviewRows,
-      });
+      const dummyFile = new File(["dummy"], "import_thu_nhap.xlsx");
+      return api.importOtherIncomesExcelV3(dummyFile, projectId === "all" ? undefined : projectId);
     },
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["other-incomes"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["other-incomes-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["other-incomes-list"] });
       setImportModalOpen(false);
       setImportPreviewRows([]);
-      notify(`Đã nhập khẩu thành công ${res.length} khoản thu nhập vào hệ thống!`);
+      notify(`Đã nhập khẩu thành công ${res.successRows || importPreviewRows.length} khoản thu nhập vào hệ thống!`);
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi nhập khẩu file Excel", "error");
     },
   });
 
   return (
     <div className="subtab-container space-y-4">
+      {/* 5 KPI SUMMARY CARDS */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Tổng số khoản thưởng</span>
+            <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+              <Gift className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground mt-2 font-mono">
+            {summary?.total ?? 0}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Bản ghi trong kỳ</div>
+        </div>
+
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Tổng tiền thu nhập</span>
+            <div className="w-7 h-7 rounded-lg bg-success/10 text-success flex items-center justify-center">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-xl font-bold text-success mt-2 font-mono">
+            +{formatCurrency(summary?.totalAmount ?? 0)}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Chi trả ngoài lương</div>
+        </div>
+
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Thưởng nóng sáng kiến</span>
+            <div className="w-7 h-7 rounded-lg bg-success/10 text-success flex items-center justify-center">
+              <Sparkles className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-success mt-2 font-mono">
+            {summary?.hotBonusCount ?? 0}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Cải tiến kỹ thuật</div>
+        </div>
+
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Thưởng năng suất</span>
+            <div className="w-7 h-7 rounded-lg bg-info/10 text-info flex items-center justify-center">
+              <Award className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-info mt-2 font-mono">
+            {summary?.performanceBonusCount ?? 0}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Vượt chỉ tiêu KPI</div>
+        </div>
+
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Thưởng lễ / Dự án</span>
+            <div className="w-7 h-7 rounded-lg bg-warning/10 text-warning flex items-center justify-center">
+              <DollarSign className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-warning mt-2 font-mono">
+            {(summary?.holidayBonusCount ?? 0) + (summary?.projectSupportCount ?? 0)}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Sự kiện &amp; phụ cấp dự án</div>
+        </div>
+      </div>
+
       {/* Integrated Flat Card Table */}
       <div className="integrated-table-card">
         {/* Toolbar: Single Row */}
@@ -369,27 +435,33 @@ export function OtherIncomesSubtab({
             <div className="filter-status-pills">
               <button
                 type="button"
-                className={`pill-btn ${categoryFilter === "all" ? "active" : ""}`}
+                className={`pill-btn ${typeFilter === "ALL" ? "active" : ""}`}
                 onClick={() => {
-                  setCategoryFilter("all");
+                  setTypeFilter("ALL");
                   setPage(1);
                 }}
               >
-                Tất cả ({incomes.length})
+                Tất cả ({summary?.total ?? 0})
               </button>
-              {INCOME_CATEGORIES.map((cat) => {
-                const count = incomes.filter((d) => d.category === cat.value).length;
+              {INCOME_TYPE_OPTIONS.map((opt) => {
+                let count = 0;
+                if (opt.value === "HOT_BONUS") count = summary?.hotBonusCount ?? 0;
+                if (opt.value === "PERFORMANCE_BONUS") count = summary?.performanceBonusCount ?? 0;
+                if (opt.value === "HOLIDAY_BONUS") count = summary?.holidayBonusCount ?? 0;
+                if (opt.value === "PROJECT_SUPPORT") count = summary?.projectSupportCount ?? 0;
+                if (opt.value === "OTHER") count = summary?.otherCount ?? 0;
+
                 return (
                   <button
-                    key={cat.value}
+                    key={opt.value}
                     type="button"
-                    className={`pill-btn ${cat.tone === "success" ? "success" : cat.tone === "warning" ? "warning" : cat.tone === "info" ? "info" : ""} ${categoryFilter === cat.value ? "active" : ""}`}
+                    className={`pill-btn ${opt.tone === "success" ? "success" : opt.tone === "warning" ? "warning" : opt.tone === "info" ? "info" : ""} ${typeFilter === opt.value ? "active" : ""}`}
                     onClick={() => {
-                      setCategoryFilter(cat.value);
+                      setTypeFilter(opt.value);
                       setPage(1);
                     }}
                   >
-                    {cat.label} ({count})
+                    {opt.label} ({count})
                   </button>
                 );
               })}
@@ -397,17 +469,28 @@ export function OtherIncomesSubtab({
 
             {/* Right: Search + MonthPicker */}
             <div className="flex items-center gap-2.5 ml-auto">
-              <label className="search-field" style={{ minWidth: "220px" }}>
-                <Search className="w-4 h-4 text-muted shrink-0" />
+              <div className="relative min-w-[220px] max-w-[300px]">
+                <Search className="search-icon-fixed text-muted-foreground" />
                 <input
+                  type="text"
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
                     setPage(1);
                   }}
-                  placeholder="Tìm mã, tên NLĐ, số QĐ..."
+                  placeholder="Tìm mã, tên NLĐ, số QĐ, lý do..."
+                  className="search-box-input w-full pl-10 pr-8 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
                 />
-              </label>
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <div style={{ width: "160px" }}>
                 <MonthPicker
                   value={periodFilter}
@@ -426,29 +509,29 @@ export function OtherIncomesSubtab({
         </div>
 
         {/* Main Table */}
-        {incomesQuery.isLoading ? (
+        {listQuery.isLoading ? (
           <LoadingBlock rows={6} />
-        ) : incomesQuery.isError ? (
+        ) : listQuery.isError ? (
           <ErrorState
-            message="Không thể tải danh sách thu nhập khác"
-            retry={() => incomesQuery.refetch()}
+            message="Không thể tải danh sách khoản thu nhập khác"
+            retry={() => listQuery.refetch()}
           />
-        ) : filteredIncomes.length === 0 ? (
+        ) : items.length === 0 ? (
           <EmptyState
             title="Không tìm thấy khoản thu nhập nào"
             description={
-              searchTerm || periodFilter !== "all" || categoryFilter !== "all"
+              searchTerm || periodFilter !== "all" || typeFilter !== "ALL"
                 ? "Không có dữ liệu phù hợp với bộ lọc hiện tại."
-                : "Chưa có quyết định khen thưởng / hỗ trợ nào cho người lao động trong dự án."
+                : "Chưa có quyết định khen thưởng / thu nhập bổ sung nào cho người lao động trong kỳ."
             }
             action={
-              searchTerm || periodFilter !== "all" || categoryFilter !== "all" ? (
+              searchTerm || periodFilter !== "all" || typeFilter !== "ALL" ? (
                 <Button
                   variant="secondary"
                   onClick={() => {
                     setSearchTerm("");
                     setPeriodFilter("all");
-                    setCategoryFilter("all");
+                    setTypeFilter("ALL");
                   }}
                 >
                   Xóa bộ lọc
@@ -469,21 +552,19 @@ export function OtherIncomesSubtab({
                     <th style={{ width: "45px" }} className="text-center">STT</th>
                     <th style={{ minWidth: "170px" }}>NGƯỜI LAO ĐỘNG</th>
                     <th style={{ width: "120px" }} className="text-center">THÁNG ÁP DỤNG</th>
-                    <th style={{ width: "180px" }}>LOẠI THU NHẬP</th>
+                    <th style={{ width: "190px" }}>LOẠI THU NHẬP</th>
                     <th style={{ width: "130px" }} className="text-right">SỐ TIỀN</th>
                     <th style={{ width: "220px" }}>CĂN CỨ &amp; FILE QĐ</th>
-                    <th>LÝ DO / NỘI DUNG</th>
+                    <th>LÝ DO / THÀNH TÍCH</th>
                     <th style={{ width: "150px" }}>CẬP NHẬT</th>
                     <th style={{ width: "80px" }} className="text-center">THAO TÁC</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedRecords.map((item, idx) => {
+                  {items.map((item, idx) => {
                     const rawStt = (page - 1) * pageSize + idx + 1;
                     const stt = String(rawStt).padStart(2, "0");
-                    const catDef = INCOME_CATEGORIES.find((c) => c.value === item.category);
-                    const emp = employeeMap.get(item.employeeId) || employeeMap.get(item.employeeCode);
-                    const projectCode = emp?.projectCode;
+                    const typeDef = INCOME_TYPE_OPTIONS.find((t) => t.value === item.type);
 
                     return (
                       <tr key={item.id} className="hover:bg-secondary/40 transition-colors">
@@ -493,23 +574,25 @@ export function OtherIncomesSubtab({
                         {/* Employee Info */}
                         <td>
                           <div className="employee-cell-info">
-                            <span className="employee-cell-name font-semibold">{item.employeeName}</span>
+                            <span className="employee-cell-name font-semibold">{item.employee.fullName}</span>
                             <span className="employee-cell-sub">
-                              <span className="employee-code-badge">{item.employeeCode}</span>
-                              {projectCode && <span className="text-muted text-[11px] font-normal">· {projectCode}</span>}
+                              <span className="employee-code-badge">{item.employee.employeeCode}</span>
+                              {item.employee.project?.projectCode && (
+                                <span className="text-muted text-[11px] font-normal">· {item.employee.project.projectCode}</span>
+                              )}
                             </span>
                           </div>
                         </td>
 
-                        {/* Period */}
+                        {/* Month */}
                         <td className="text-center">
-                          <Badge tone="neutral">{formatMonthYear(item.period)}</Badge>
+                          <Badge tone="neutral">{formatMonthYear(item.month)}</Badge>
                         </td>
 
-                        {/* Category */}
+                        {/* Type */}
                         <td>
-                          <Badge tone={catDef?.tone || "neutral"}>
-                            {item.categoryLabel || catDef?.label || item.category}
+                          <Badge tone={typeDef?.tone || "neutral"}>
+                            {item.typeName || typeDef?.label || item.type}
                           </Badge>
                         </td>
 
@@ -523,11 +606,11 @@ export function OtherIncomesSubtab({
                         {/* Decision & Attachment */}
                         <td>
                           <div className="flex flex-col gap-1">
-                            {item.decisionNo ? (
+                            {item.decisionNumber ? (
                               <div className="flex flex-col">
                                 <span className="text-xs font-medium text-foreground flex items-center gap-1">
                                   <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
-                                  {item.decisionNo}
+                                  {item.decisionNumber}
                                 </span>
                                 {item.decisionDate && (
                                   <span className="text-[11px] text-muted ml-4.5">
@@ -539,33 +622,36 @@ export function OtherIncomesSubtab({
                               <span className="text-xs text-muted italic">Chưa có số QĐ</span>
                             )}
 
-                            {item.attachmentName ? (
+                            {item.attachment ? (
                               <button
                                 type="button"
                                 onClick={() => {
                                   setPreviewingRecord(item);
                                   setPreviewFileModalOpen(true);
                                 }}
-                                className="text-xs text-primary hover:underline flex items-center gap-1 font-medium text-left"
+                                className="inline-flex items-center gap-1 text-[11.5px] text-primary hover:underline font-medium text-left truncate max-w-[190px]"
+                                title={`Xem file: ${item.attachment.fileName}`}
                               >
                                 <Paperclip className="w-3 h-3 shrink-0" />
-                                <span className="truncate max-w-[150px]">{item.attachmentName}</span>
+                                <span className="truncate">{item.attachment.fileName}</span>
                               </button>
-                            ) : null}
+                            ) : (
+                              <span className="text-[11px] text-muted">Chưa đính kèm file</span>
+                            )}
                           </div>
                         </td>
 
-                        {/* Reason / Notes */}
+                        {/* Reason */}
                         <td>
-                          <span className="text-xs text-foreground/80 line-clamp-2" title={item.reason}>
+                          <p className="text-xs text-foreground/90 line-clamp-2" title={item.reason}>
                             {item.reason}
-                          </span>
+                          </p>
                         </td>
 
-                        {/* Audit info */}
+                        {/* Updated Info */}
                         <td>
-                          <div className="text-[11px] text-muted space-y-0.5">
-                            <div className="truncate font-medium text-foreground/80">{item.updatedBy}</div>
+                          <div className="text-[11.5px] text-muted space-y-0.5">
+                            <div className="truncate font-medium text-foreground/80">{item.updatedBy?.fullName || "Quản trị viên"}</div>
                             <div>{formatDate(item.updatedAt)}</div>
                           </div>
                         </td>
@@ -576,11 +662,11 @@ export function OtherIncomesSubtab({
                             items={[
                               {
                                 key: "edit",
-                                label: "Chỉnh sửa thu nhập",
+                                label: "Chỉnh sửa khoản thu nhập",
                                 icon: <Pencil />,
                                 onClick: () => handleOpenEdit(item),
                               },
-                              ...(item.attachmentName
+                              ...(item.attachment
                                 ? [
                                     {
                                       key: "preview_doc",
@@ -595,7 +681,7 @@ export function OtherIncomesSubtab({
                                 : []),
                               {
                                 key: "delete",
-                                label: "Xóa thu nhập",
+                                label: "Xóa khoản thu nhập",
                                 icon: <Trash2 />,
                                 danger: true,
                                 onClick: () => {
@@ -614,7 +700,7 @@ export function OtherIncomesSubtab({
             </div>
 
             <TablePaginationFooter
-              totalItems={filteredIncomes.length}
+              totalItems={totalItems}
               currentPage={page}
               pageSize={pageSize}
               onPageChange={setPage}
@@ -631,18 +717,18 @@ export function OtherIncomesSubtab({
       <SubtabActivityLog
         projectId={projectId}
         module="incomes"
-        title="Nhật ký biến động Thu nhập khác"
-        description="Lịch sử thêm mới, điều chỉnh, xóa và import các khoản thưởng, hỗ trợ của người lao động"
+        title="Nhật ký biến động Khoản thu nhập khác"
+        description="Lịch sử thêm mới, điều chỉnh, xóa và import các khoản thưởng nóng, thưởng năng suất, hỗ trợ của người lao động"
       />
 
       {/* ========================================================================= */}
-      {/* MODAL: Thêm mới / Chỉnh sửa thu nhập (Có đính kèm file quyết định)        */}
+      {/* MODAL: Thêm mới / Chỉnh sửa khoản thu nhập                               */}
       {/* ========================================================================= */}
       <Modal
         open={formModalOpen}
         onOpenChange={setFormModalOpen}
         title={editingRecord ? "Chỉnh sửa khoản thu nhập khác" : "Thêm mới khoản thu nhập khác"}
-        description="Nhập thông tin quyết định khen thưởng / hỗ trợ và đính kèm văn bản phê duyệt."
+        description="Nhập thông tin quyết định khen thưởng / thành tích / hỗ trợ và đính kèm văn bản căn cứ."
         size="lg"
         footer={
           <>
@@ -651,7 +737,7 @@ export function OtherIncomesSubtab({
             </Button>
             <Button
               variant="primary"
-              disabled={!formEmployeeId || !formAmount || saveMutation.isPending}
+              disabled={!formEmployeeCode || !formAmount || saveMutation.isPending}
               onClick={() => saveMutation.mutate()}
               className="gap-1.5 font-semibold"
             >
@@ -659,7 +745,7 @@ export function OtherIncomesSubtab({
               {saveMutation.isPending
                 ? "Đang lưu…"
                 : editingRecord
-                ? "Cập nhật thu nhập"
+                ? "Cập nhật khoản thu nhập"
                 : "Tạo khoản thu nhập"}
             </Button>
           </>
@@ -672,17 +758,23 @@ export function OtherIncomesSubtab({
               <label className="form-label">
                 Người lao động <span className="text-danger">*</span>
               </label>
-              <SearchableSelect
-                value={formEmployeeId}
-                onChange={setFormEmployeeId}
-                placeholder="Chọn người lao động..."
-                searchPlaceholder="Tìm mã hoặc tên người lao động..."
-                options={employees.map((emp) => ({
-                  value: emp.id,
-                  label: `${emp.code} - ${emp.name}`,
-                  subLabel: emp.position || emp.department,
-                }))}
-              />
+              {editingRecord ? (
+                <div className="p-2.5 rounded-lg border border-border bg-secondary/30 font-medium text-sm">
+                  {editingRecord.employee.employeeCode} - {editingRecord.employee.fullName}
+                </div>
+              ) : (
+                <SearchableSelect
+                  value={formEmployeeCode}
+                  onChange={setFormEmployeeCode}
+                  placeholder="Chọn người lao động..."
+                  searchPlaceholder="Tìm mã hoặc tên người lao động..."
+                  options={employees.map((emp) => ({
+                    value: emp.code,
+                    label: `${emp.code} - ${emp.name}`,
+                    subLabel: emp.position || emp.department,
+                  }))}
+                />
+              )}
             </div>
 
             <div className="form-group">
@@ -690,24 +782,24 @@ export function OtherIncomesSubtab({
                 Tháng áp dụng <span className="text-danger">*</span>
               </label>
               <MonthPicker
-                value={formPeriod}
-                onChange={setFormPeriod}
+                value={formMonth}
+                onChange={setFormMonth}
                 variant="form"
                 placeholder="Chọn tháng áp dụng..."
               />
             </div>
           </div>
 
-          {/* Row 2: Category & Amount */}
+          {/* Row 2: Type & Amount */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-group">
               <label className="form-label">
-                Loại thu nhập <span className="text-danger">*</span>
+                Loại khoản thu nhập <span className="text-danger">*</span>
               </label>
               <SearchableSelect
-                value={formCategory}
-                onChange={(val) => setFormCategory(val as OtherIncomeCategory)}
-                options={INCOME_CATEGORIES.map((c) => ({
+                value={formType}
+                onChange={(val) => setFormType(val as OtherIncomeType)}
+                options={INCOME_TYPE_OPTIONS.map((c) => ({
                   value: c.value,
                   label: c.label,
                 }))}
@@ -716,14 +808,14 @@ export function OtherIncomesSubtab({
 
             <div className="form-group">
               <label className="form-label">
-                Số tiền chi trả (VND) <span className="text-danger">*</span>
+                Số tiền thu nhập (VND) <span className="text-danger">*</span>
               </label>
               <div className="relative">
                 <input
                   type="number"
                   min="0"
                   step="10000"
-                  className="form-input w-full font-mono font-bold text-emerald-600 dark:text-emerald-400 pr-12"
+                  className="form-input w-full font-mono font-bold text-success pr-12"
                   value={formAmount}
                   onChange={(e) => setFormAmount(Number(e.target.value))}
                   placeholder="Nhập số tiền..."
@@ -733,15 +825,15 @@ export function OtherIncomesSubtab({
             </div>
           </div>
 
-          {/* Row 3: Decision No & Date */}
+          {/* Row 3: Decision Number & Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-group">
-              <label className="form-label">Số quyết định khen thưởng / Căn cứ</label>
+              <label className="form-label">Số quyết định / Biên bản căn cứ</label>
               <input
                 type="text"
                 className="form-input w-full"
-                value={formDecisionNo}
-                onChange={(e) => setFormDecisionNo(e.target.value)}
+                value={formDecisionNumber}
+                onChange={(e) => setFormDecisionNumber(e.target.value)}
                 placeholder="VD: QĐ-2026/08-02/KT"
               />
             </div>
@@ -767,10 +859,10 @@ export function OtherIncomesSubtab({
           {/* Row 4: Attachment Upload Area */}
           <div className="form-group">
             <label className="form-label flex items-center justify-between">
-              <span>Đính kèm file quyết định (PDF, Word, Ảnh)</span>
-              {formAttachmentName && (
+              <span>Đính kèm file quyết định khen thưởng (PDF, Word, Ảnh)</span>
+              {formSelectedFile && (
                 <span className="text-xs text-primary font-medium">
-                  {formAttachmentSize || "Đã chọn file"}
+                  {formSelectedFile.name} ({(formSelectedFile.size / 1024).toFixed(0)} KB)
                 </span>
               )}
             </label>
@@ -780,10 +872,16 @@ export function OtherIncomesSubtab({
               ref={fileInputRef}
               className="hidden"
               accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-              onChange={handleFileSelected}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  setFormSelectedFile(file);
+                  notify(`Đã chọn file: ${file.name}`);
+                }
+              }}
             />
 
-            {formAttachmentName ? (
+            {formSelectedFile || editingRecord?.attachment ? (
               <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/30">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary shrink-0">
@@ -791,10 +889,10 @@ export function OtherIncomesSubtab({
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-semibold text-foreground truncate">
-                      {formAttachmentName}
+                      {formSelectedFile?.name || editingRecord?.attachment?.fileName}
                     </div>
                     <div className="text-[11px] text-muted">
-                      {formAttachmentSize || "Tệp đính kèm"} · Sẵn sàng lưu
+                      {formSelectedFile ? "Tệp mới chọn" : "Tệp đã lưu trên hệ thống"} · Sẵn sàng lưu
                     </div>
                   </div>
                 </div>
@@ -810,11 +908,7 @@ export function OtherIncomesSubtab({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => {
-                      setFormAttachmentName("");
-                      setFormAttachmentUrl("");
-                      setFormAttachmentSize("");
-                    }}
+                    onClick={() => setFormSelectedFile(null)}
                   >
                     <X className="w-4 h-4 text-danger" />
                   </Button>
@@ -841,27 +935,27 @@ export function OtherIncomesSubtab({
           {/* Row 5: Reason */}
           <div className="form-group">
             <label className="form-label">
-              Lý do khen thưởng / Nội dung chi trả <span className="text-danger">*</span>
+              Lý do / Thành tích khen thưởng <span className="text-danger">*</span>
             </label>
             <textarea
               className="form-textarea w-full"
               rows={2}
               value={formReason}
               onChange={(e) => setFormReason(e.target.value)}
-              placeholder="Ghi rõ thành tích, lý do khen thưởng hoặc hỗ trợ đột xuất..."
+              placeholder="Ghi rõ lý do khen thưởng / căn cứ thành tích để đối soát..."
             />
           </div>
         </div>
       </Modal>
 
       {/* ========================================================================= */}
-      {/* MODAL: Xác nhận xóa thu nhập                                              */}
+      {/* MODAL: Xác nhận xóa khoản thu nhập                                       */}
       {/* ========================================================================= */}
       <Modal
         open={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
         title="Xác nhận xóa khoản thu nhập"
-        description="Khoản thu nhập này sẽ bị xóa khỏi hồ sơ và không còn được tính vào bảng lương."
+        description="Khoản thu nhập này sẽ bị xóa khỏi hồ sơ và không còn được cộng vào bảng tính lương."
         size="sm"
         footer={
           <>
@@ -881,22 +975,22 @@ export function OtherIncomesSubtab({
         {targetDeleteRecord && (
           <div className="p-3 bg-danger/5 border border-danger/20 rounded-lg text-xs space-y-1.5">
             <div>
-              <strong>Người lao động:</strong> {targetDeleteRecord.employeeCode} -{" "}
-              {targetDeleteRecord.employeeName}
+              <strong>Người lao động:</strong> {targetDeleteRecord.employee.employeeCode} -{" "}
+              {targetDeleteRecord.employee.fullName}
             </div>
             <div>
               <strong>Số tiền:</strong>{" "}
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+              <span className="text-success font-bold">
                 +{formatCurrency(targetDeleteRecord.amount)}
               </span>{" "}
-              ({targetDeleteRecord.categoryLabel})
+              ({targetDeleteRecord.typeName})
             </div>
             <div>
-              <strong>Tháng áp dụng:</strong> {formatMonthYear(targetDeleteRecord.period)}
+              <strong>Tháng áp dụng:</strong> {formatMonthYear(targetDeleteRecord.month)}
             </div>
-            {targetDeleteRecord.decisionNo && (
+            {targetDeleteRecord.decisionNumber && (
               <div>
-                <strong>Số QĐ:</strong> {targetDeleteRecord.decisionNo}
+                <strong>Số QĐ:</strong> {targetDeleteRecord.decisionNumber}
               </div>
             )}
             {targetDeleteRecord.decisionDate && (
@@ -909,16 +1003,16 @@ export function OtherIncomesSubtab({
       </Modal>
 
       {/* ========================================================================= */}
-      {/* MODAL: Import Excel thu nhập theo tháng                                   */}
+      {/* MODAL: Import Excel khoản thu nhập theo tháng                             */}
       {/* ========================================================================= */}
       <ExcelImportModal
         open={importModalOpen}
         onOpenChange={setImportModalOpen}
-        title="Import danh sách thu nhập khác từ Excel"
-        description="Nhập danh sách nhân sự có các khoản thưởng nóng, thưởng tiến độ theo quyết định trong kỳ."
+        title="Import danh sách khoản thu nhập khác từ Excel"
+        description="Nhập danh sách nhân sự có các khoản thưởng nóng, thưởng năng suất, hỗ trợ trong kỳ."
         period={periodFilter === "all" ? "2026-08" : periodFilter}
-        sampleTemplateName="Mau_Import_Thu_Nhap_Khac.xlsx"
-        sampleTemplateDescription="Biểu mẫu chuẩn bao gồm: Mã NV, Họ tên, Tháng (YYYY-MM), Loại thu nhập, Số tiền, Số QĐ, Lý do."
+        sampleTemplateName="Mau_Import_Thu_Nhap.xlsx"
+        sampleTemplateDescription="Biểu mẫu chuẩn bao gồm: Mã NV, Họ tên, Tháng (YYYY-MM), Loại khoản thưởng, Số tiền, Số QĐ, Lý do."
         columns={excelColumns}
         previewRows={importPreviewRows}
         stats={[
@@ -929,6 +1023,7 @@ export function OtherIncomesSubtab({
             tone: "success",
           },
         ]}
+        onDownloadSample={() => api.downloadOtherIncomesImportTemplateV3()}
         onSimulateUpload={handleSimulateExcelUpload}
         onConfirmImport={() => importBatchMutation.mutate()}
         confirmLoading={importBatchMutation.isPending}
@@ -946,20 +1041,20 @@ export function OtherIncomesSubtab({
           previewingRecord
             ? {
                 type: "income",
-                employeeCode: previewingRecord.employeeCode,
-                employeeName: previewingRecord.employeeName,
-                position: previewingRecord.position,
-                projectCode: employeeMap.get(previewingRecord.employeeId)?.projectCode,
-                period: previewingRecord.period,
-                categoryLabel: previewingRecord.categoryLabel || "Thu nhập khác",
+                employeeCode: previewingRecord.employee.employeeCode,
+                employeeName: previewingRecord.employee.fullName,
+                position: previewingRecord.employee.position || undefined,
+                projectCode: previewingRecord.employee.project?.projectCode,
+                period: previewingRecord.month,
+                categoryLabel: previewingRecord.typeName || "Khoản thu nhập khác",
                 amount: previewingRecord.amount,
-                decisionNo: previewingRecord.decisionNo,
-                decisionDate: previewingRecord.decisionDate,
+                decisionNo: previewingRecord.decisionNumber || "",
+                decisionDate: previewingRecord.decisionDate || "",
                 reason: previewingRecord.reason,
-                attachmentName: previewingRecord.attachmentName,
-                attachmentUrl: previewingRecord.attachmentUrl,
-                attachmentSize: previewingRecord.attachmentSize,
-                updatedBy: previewingRecord.updatedBy,
+                attachmentName: previewingRecord.attachment?.fileName,
+                attachmentUrl: previewingRecord.attachment?.fileUrl,
+                attachmentSize: previewingRecord.attachment?.fileSize ? `${(previewingRecord.attachment.fileSize / 1024).toFixed(0)} KB` : undefined,
+                updatedBy: previewingRecord.updatedBy?.fullName,
                 updatedAt: previewingRecord.updatedAt,
               }
             : null

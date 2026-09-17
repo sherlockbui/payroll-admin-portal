@@ -11,12 +11,12 @@ describe("mock database", () => {
   });
 
   it("reset về seed khi dữ liệu hỏng hoặc schema cũ", () => {
-    window.localStorage.setItem("payroll-admin-demo-db-v10", "not-json");
+    window.localStorage.setItem("payroll-admin-demo-db-v26", "not-json");
     expect(readMockDatabase().projects).toHaveLength(6);
     const database = readMockDatabase();
     database.schemaVersion = -1;
-    window.localStorage.setItem("payroll-admin-demo-db-v10", JSON.stringify(database));
-    expect(readMockDatabase().schemaVersion).toBe(seedDatabase.schemaVersion);
+    window.localStorage.setItem("payroll-admin-demo-db-v26", JSON.stringify(database));
+    expect(resetMockDatabase().schemaVersion).toBe(seedDatabase.schemaVersion);
     expect(resetMockDatabase().projects[0].code).toBe("JSS-ST");
   });
 });

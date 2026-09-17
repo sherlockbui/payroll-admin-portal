@@ -7,10 +7,9 @@ import {
   CheckCheck,
   Download,
   Eye,
-  FileCheck,
   FileSpreadsheet,
   FileText,
-  Image as ImageIcon,
+  History,
   Pencil,
   Plus,
   RefreshCw,
@@ -19,16 +18,38 @@ import {
   Upload,
   UploadCloud,
   UserCheck,
-  UserPlus,
   X,
+  FilePlus,
+  CheckCircle2,
+  XCircle,
+  Clock,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AttachmentPreviewModal } from "@/components/employees/attachment-preview-modal";
-import { SubtabActivityLog } from "@/components/employees/subtab-activity-log";
 import { useToast, useUserRole } from "@/components/providers";
-import { Badge, Button, EmptyState, ErrorState, LoadingBlock, Modal, MonthPicker, SearchableSelect, StatusBadge, TablePaginationFooter, TableRowActions } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingBlock,
+  Modal,
+  TablePaginationFooter,
+} from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Dependent, Employee } from "@/lib/types";
+import type {
+  AuditLogV3,
+  CreateDependentRequestV3,
+  DependentDetailV3,
+  DependentDocument,
+  DependentStatusV3,
+  DocumentTypeCode,
+  DocumentTypeItem,
+  Employee,
+  ImportErrorDetailV3,
+  RelationshipCode,
+  RelationshipItem,
+  UpdateDependentRequestV3,
+} from "@/lib/types";
 import { formatDate, formatMonthYear } from "@/lib/utils";
 
 export function DependentsSubtab({
@@ -45,762 +66,930 @@ export function DependentsSubtab({
   const isAccountant = role === "accountant";
   const queryClient = useQueryClient();
 
-  const employeeMap = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
-
+  // Filter & Pagination States
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [relationshipFilter, setRelationshipFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  // Modal states
+  // Modal States
   const [declareModalOpen, setDeclareModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [documentsModalOpen, setDocumentsModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [auditLogsDrawerOpen, setAuditLogsDrawerOpen] = useState(false);
 
+  // Active target for actions
+  const [activeDependent, setActiveDependent] = useState<DependentDetailV3 | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [bulkConfirming, setBulkConfirming] = useState(false);
+
+  // Form States for Declare
+  const [formEmployeeCode, setFormEmployeeCode] = useState("");
+  const [formFullName, setFormFullName] = useState("");
+  const [formDob, setFormDob] = useState("");
+  const [formIdentityNumber, setFormIdentityNumber] = useState("");
+  const [formTaxCode, setFormTaxCode] = useState("");
+  const [formRelationshipCode, setFormRelationshipCode] = useState<RelationshipCode>("CON_RUOT_NUOI");
+  const [formEffectiveFrom, setFormEffectiveFrom] = useState("2026-08");
+  const [formEffectiveTo, setFormEffectiveTo] = useState("");
+  const [formDocType, setFormDocType] = useState<DocumentTypeCode>("GIAY_KHAI_SINH");
+  const [formFile, setFormFile] = useState<File | null>(null);
+  const [formFilePreview, setFormFilePreview] = useState<string | null>(null);
+  const formFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Form States for Edit
+  const [editFullName, setEditFullName] = useState("");
+  const [editDob, setEditDob] = useState("");
+  const [editIdentityNumber, setEditIdentityNumber] = useState("");
+  const [editTaxCode, setEditTaxCode] = useState("");
+  const [editRelationshipCode, setEditRelationshipCode] = useState<RelationshipCode>("CON_RUOT_NUOI");
+  const [editEffectiveFrom, setEditEffectiveFrom] = useState("");
+  const [editEffectiveTo, setEditEffectiveTo] = useState("");
+
+  // Upload Document Modal in Documents Manager
+  const [uploadingDocType, setUploadingDocType] = useState<DocumentTypeCode>("GIAY_KHAI_SINH");
+  const [uploadingFile, setUploadingFile] = useState<File | null>(null);
+  const uploadFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Import State
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [importErrors, setImportErrors] = useState<ImportErrorDetailV3[] | null>(null);
+  const [importSummaryResult, setImportSummaryResult] = useState<{ total: number; success: number; error: number } | null>(null);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Update selectedProjectId if prop changes
+  useEffect(() => {
+    if (projectId && projectId !== "all") {
+      setSelectedProjectId(projectId);
+    }
+  }, [projectId]);
+
+  // Sync Header action button
   useEffect(() => {
     if (setHeaderAction) {
       setHeaderAction(
-        isAccountant ? (
+        <div className="flex items-center gap-2">
           <Button
-            variant="primary"
-            onClick={() => setImportModalOpen(true)}
-            className="gap-1.5 font-semibold shrink-0"
+            variant="secondary"
+            size="sm"
+            onClick={() => setAuditLogsDrawerOpen(true)}
+            className="gap-1.5 font-medium shrink-0"
           >
-            <Upload className="w-3.5 h-3.5" /> Import danh sách NPT
+            <History className="w-3.5 h-3.5" /> Nhật ký
           </Button>
-        ) : (
-          <Button
-            variant="primary"
-            onClick={() => setDeclareModalOpen(true)}
-            className="gap-1.5 font-semibold shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" /> Khai báo người phụ thuộc
-          </Button>
-        )
+          {isAccountant ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setImportModalOpen(true)}
+              className="gap-1.5 font-semibold shrink-0"
+            >
+              <Upload className="w-3.5 h-3.5" /> Import Excel
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                resetDeclareForm();
+                setDeclareModalOpen(true);
+              }}
+              className="gap-1.5 font-semibold shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" /> Khai báo NPT
+            </Button>
+          )}
+        </div>
       );
     }
     return () => {
       if (setHeaderAction) setHeaderAction(null);
     };
   }, [isAccountant, setHeaderAction]);
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [previewModalOpen, setPreviewModalOpen] = useState(false);
-  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
-  const [confirmTargetIds, setConfirmTargetIds] = useState<string[]>([]);
-  const [confirmTargetDependent, setConfirmTargetDependent] = useState<Dependent | null>(null);
 
-  // Edit Modal State
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editingDependent, setEditingDependent] = useState<Dependent | null>(null);
-  const [editFullName, setEditFullName] = useState("");
-  const [editRelationship, setEditRelationship] = useState<"child" | "spouse" | "parent" | "other">("child");
-  const [editDob, setEditDob] = useState("");
-  const [editIdCard, setEditIdCard] = useState("");
-  const [editTaxCode, setEditTaxCode] = useState("");
-  const [editStartDate, setEditStartDate] = useState("2026-08");
-  const [editEndDate, setEditEndDate] = useState("");
-  const [editAttachmentType, setEditAttachmentType] = useState<"cccd_2_sided" | "disability_cert" | "birth_cert">("cccd_2_sided");
+  // ================= Queries =================
+  const { data: masterRelationships = [] } = useQuery<RelationshipItem[]>({
+    queryKey: ["master-dependent-relationships"],
+    queryFn: () => api.getDependentRelationshipsV3(),
+    staleTime: 1000 * 60 * 30,
+  });
 
-  const [selectedDependent, setSelectedDependent] = useState<Dependent | null>(null);
-  const [rejectionReason, setRejectionReason] = useState("");
+  const { data: masterDocTypes = [] } = useQuery<DocumentTypeItem[]>({
+    queryKey: ["master-dependent-doctypes"],
+    queryFn: () => api.getDependentDocumentTypesV3(),
+    staleTime: 1000 * 60 * 30,
+  });
 
-  // Declare Form State
-  const [formEmployeeId, setFormEmployeeId] = useState("");
-  const [formFullName, setFormFullName] = useState("");
-  const [formRelationship, setFormRelationship] = useState<"child" | "spouse" | "parent" | "other">("child");
-  const [formDob, setFormDob] = useState("");
-  const [formIdCard, setFormIdCard] = useState("");
-  const [formStartDate, setFormStartDate] = useState("2026-08");
-  const [formAttachmentType, setFormAttachmentType] = useState<"cccd_2_sided" | "disability_cert" | "birth_cert">("cccd_2_sided");
-  const [declareFile, setDeclareFile] = useState<File | null>(null);
-  const [declareFilePreviewUrl, setDeclareFilePreviewUrl] = useState<string | null>(null);
-  const declareFileInputRef = useRef<HTMLInputElement>(null);
+  const { data: projectList = [] } = useQuery({
+    queryKey: ["web-payroll-projects"],
+    queryFn: () => api.getProjectsV3(),
+    staleTime: 1000 * 60 * 10,
+  });
 
-  // Dedicated Upload Attachment Modal State
-  const [uploadAttachmentModalOpen, setUploadAttachmentModalOpen] = useState(false);
-  const [selectedDependentForUpload, setSelectedDependentForUpload] = useState<Dependent | null>(null);
-  const [uploadDocType, setUploadDocType] = useState<"cccd_2_sided" | "disability_cert" | "birth_cert">("cccd_2_sided");
-  const [uploadDocFile, setUploadDocFile] = useState<File | null>(null);
-  const [uploadDocPreviewUrl, setUploadDocPreviewUrl] = useState<string | null>(null);
-  const uploadDocInputRef = useRef<HTMLInputElement>(null);
+  const { data: summaryData, refetch: refetchSummary } = useQuery({
+    queryKey: ["dependents-summary-v3", selectedProjectId],
+    queryFn: () => api.getDependentsSummaryV3(selectedProjectId),
+  });
 
-  // File Upload State for Import Modal
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const {
+    data: listResponse,
+    isLoading: isListLoading,
+    isError: isListError,
+    refetch: refetchList,
+  } = useQuery({
+    queryKey: [
+      "dependents-list-v3",
+      selectedProjectId,
+      searchTerm,
+      relationshipFilter,
+      statusFilter,
+      currentPage,
+      pageSize,
+    ],
+    queryFn: () =>
+      api.getDependentsV3({
+        projectId: selectedProjectId,
+        search: searchTerm,
+        relationship: relationshipFilter,
+        status: statusFilter,
+        page: currentPage,
+        pageSize,
+      }),
+  });
 
-  const processSelectedFile = (file: File) => {
-    const validExtensions = [".xlsx", ".xls", ".csv"];
-    const isValidType = validExtensions.some((ext) => file.name.toLowerCase().endsWith(ext));
-    if (!isValidType) {
-      notify("Vui lòng chọn tệp định dạng Excel (.xlsx, .xls) hoặc .csv", "error");
-      return;
+  const { data: projectEmployees = [] } = useQuery({
+    queryKey: ["project-employees-v3", selectedProjectId],
+    queryFn: () => api.getProjectEmployeesV3(selectedProjectId),
+  });
+
+  const { data: auditLogsData } = useQuery({
+    queryKey: ["dependents-audit-logs-v3"],
+    queryFn: () => api.getDependentAuditLogsV3({ pageSize: 50 }),
+    enabled: auditLogsDrawerOpen,
+  });
+
+  const dependents = listResponse?.items ?? [];
+  const totalItems = listResponse?.total ?? 0;
+  const totalPages = listResponse?.totalPages ?? 1;
+
+  // ================= Mutations =================
+  const createMutation = useMutation({
+    mutationFn: (payload: CreateDependentRequestV3) => api.createDependentV3(payload),
+    onSuccess: () => {
+      notify("Khai báo người phụ thuộc thành công!");
+      setDeclareModalOpen(false);
+      resetDeclareForm();
+      refetchList();
+      refetchSummary();
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi khai báo người phụ thuộc", "error");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: UpdateDependentRequestV3 }) =>
+      api.updateDependentV3(id, payload),
+    onSuccess: () => {
+      notify("Cập nhật thông tin người phụ thuộc thành công!");
+      setEditModalOpen(false);
+      refetchList();
+      refetchSummary();
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi cập nhật thông tin", "error");
+    },
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: (id: number) => api.confirmDependentV3(id),
+    onSuccess: () => {
+      notify("Đã xác nhận hồ sơ người phụ thuộc thành công!");
+      setConfirmModalOpen(false);
+      setActiveDependent(null);
+      refetchList();
+      refetchSummary();
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi xác nhận hồ sơ", "error");
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (id: number) => api.approveDependentV3(id),
+    onSuccess: () => {
+      notify("Đã phê duyệt người phụ thuộc thành công!");
+      setActiveDependent(null);
+      refetchList();
+      refetchSummary();
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi phê duyệt hồ sơ", "error");
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      api.rejectDependentV3(id, reason),
+    onSuccess: () => {
+      notify("Đã từ chối hồ sơ người phụ thuộc!");
+      setRejectModalOpen(false);
+      setRejectionReason("");
+      setActiveDependent(null);
+      refetchList();
+      refetchSummary();
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi từ chối hồ sơ", "error");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteDependentV3(id),
+    onSuccess: () => {
+      notify("Đã xóa người phụ thuộc thành công!");
+      refetchList();
+      refetchSummary();
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi xóa người phụ thuộc", "error");
+    },
+  });
+
+  const uploadDocMutation = useMutation({
+    mutationFn: ({ depId, formData }: { depId: number; formData: FormData }) =>
+      api.uploadDependentDocumentV3(depId, formData),
+    onSuccess: (newDoc) => {
+      notify("Tải lên tài liệu đính kèm thành công!");
+      if (activeDependent) {
+        setActiveDependent({
+          ...activeDependent,
+          documentsCount: (activeDependent.documentsCount || 0) + 1,
+          documents: [...(activeDependent.documents || []), newDoc],
+        });
+      }
+      setUploadingFile(null);
+      refetchList();
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi tải tài liệu lên", "error");
+    },
+  });
+
+  const deleteDocMutation = useMutation({
+    mutationFn: ({ depId, docId }: { depId: number; docId: number }) =>
+      api.deleteDependentDocumentV3(depId, docId),
+    onSuccess: (_, variables) => {
+      notify("Đã xóa tài liệu đính kèm!");
+      if (activeDependent) {
+        setActiveDependent({
+          ...activeDependent,
+          documentsCount: Math.max(0, (activeDependent.documentsCount || 1) - 1),
+          documents: (activeDependent.documents || []).filter((d) => d.id !== variables.docId),
+        });
+      }
+      refetchList();
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi xóa tài liệu", "error");
+    },
+  });
+
+  const importMutation = useMutation({
+    mutationFn: (file: File) => api.importDependentsExcelV3(file),
+    onSuccess: (res) => {
+      setImportSummaryResult({
+        total: res.totalRows,
+        success: res.successRows,
+        error: res.errorRows,
+      });
+      setImportErrors(res.errors || null);
+      if (res.errorRows === 0) {
+        notify(`Import thành công ${res.successRows}/${res.totalRows} người phụ thuộc!`);
+        setTimeout(() => {
+          setImportModalOpen(false);
+          resetImportModal();
+          refetchList();
+          refetchSummary();
+        }, 1200);
+      } else {
+        notify(`Đã xử lý tệp: ${res.successRows} thành công, ${res.errorRows} dòng lỗi. Vui lòng kiểm tra bảng lỗi bên dưới.`, "warning");
+      }
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi xử lý tệp Excel", "error");
+    },
+  });
+
+  // ================= Bulk Confirm =================
+  const handleBulkConfirm = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      setBulkConfirming(true);
+      const res = await api.bulkConfirmDependentsV3(Array.from(selectedIds));
+      notify(`Đã xác nhận hàng loạt ${res.confirmedCount} người phụ thuộc thành công!`);
+      setSelectedIds(new Set());
+      refetchList();
+      refetchSummary();
+    } catch (err: any) {
+      notify(err.message || "Lỗi khi xác nhận hàng loạt", "error");
+    } finally {
+      setBulkConfirming(false);
     }
-    if (file.size > 10 * 1024 * 1024) {
-      notify("Dung lượng tệp vượt quá giới hạn cho phép (10MB)", "error");
-      return;
-    }
-    setUploadedFile(file);
-    notify(`Đã nhận diện tệp ${file.name} thành công`);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processSelectedFile(file);
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(dependents.map((d) => d.id)));
+    } else {
+      setSelectedIds(new Set());
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      processSelectedFile(file);
+  const handleToggleSelect = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
     }
+    setSelectedIds(next);
   };
 
-  const handleRemoveFile = () => {
-    setUploadedFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+  // ================= Form Helpers =================
+  const resetDeclareForm = () => {
+    setFormEmployeeCode(projectEmployees[0]?.employeeCode || "");
+    setFormFullName("");
+    setFormDob("");
+    setFormIdentityNumber("");
+    setFormTaxCode("");
+    setFormRelationshipCode("CON_RUOT_NUOI");
+    setFormEffectiveFrom("2026-08");
+    setFormEffectiveTo("");
+    setFormDocType("GIAY_KHAI_SINH");
+    setFormFile(null);
+    setFormFilePreview(null);
+    if (formFileInputRef.current) formFileInputRef.current.value = "";
   };
 
-  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const handleOpenEdit = (dep: DependentDetailV3) => {
+    setActiveDependent(dep);
+    setEditFullName(dep.fullName);
+    setEditDob(dep.dateOfBirth);
+    setEditIdentityNumber(dep.identityNumber);
+    setEditTaxCode(dep.taxCode || "");
+    setEditRelationshipCode(dep.relationship.code);
+    setEditEffectiveFrom(dep.effectiveFrom);
+    setEditEffectiveTo(dep.effectiveTo || "");
+    setEditModalOpen(true);
+  };
+
+  const handleOpenDetail = (dep: DependentDetailV3) => {
+    setActiveDependent(dep);
+    setDetailModalOpen(true);
+  };
+
+  const handleOpenDocuments = (dep: DependentDetailV3) => {
+    setActiveDependent(dep);
+    setUploadingFile(null);
+    setDocumentsModalOpen(true);
+  };
+
+  const handleOpenReject = (dep: DependentDetailV3) => {
+    setActiveDependent(dep);
+    setRejectionReason("");
+    setRejectModalOpen(true);
+  };
+
+  const handleOpenConfirm = (dep: DependentDetailV3) => {
+    setActiveDependent(dep);
+    setConfirmModalOpen(true);
+  };
 
   const handleDownloadTemplate = async () => {
     try {
       setDownloadingTemplate(true);
-      if (typeof window !== "undefined" && (window as any).showGsLoading) {
-        (window as any).showGsLoading();
-      }
-      await api.downloadDependentImportTemplate(projectId);
+      await api.downloadDependentImportTemplateV3();
       notify("Đã tải xuống biểu mẫu Excel thành công!");
     } catch (err: any) {
-      console.error("Download template error:", err);
-      notify(err.message || "Lỗi khi tải template từ máy chủ", "error");
+      notify(err.message || "Lỗi khi tải biểu mẫu", "error");
     } finally {
       setDownloadingTemplate(false);
-      if (typeof window !== "undefined" && (window as any).hideGsLoading) {
-        (window as any).hideGsLoading();
-      }
     }
   };
 
-  // Declare file handlers
-  const handleDeclareFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const valid = [".jpg", ".jpeg", ".png", ".pdf"];
-      if (!valid.some((ext) => file.name.toLowerCase().endsWith(ext))) {
-        notify("Vui lòng chọn hình ảnh (.jpg, .png) hoặc tệp .pdf", "error");
-        return;
+  const resetImportModal = () => {
+    setImportFile(null);
+    setImportErrors(null);
+    setImportSummaryResult(null);
+    if (importFileInputRef.current) importFileInputRef.current.value = "";
+  };
+
+  // Status Counts
+  const countsMap = useMemo(() => {
+    const map: Record<string, number> = {
+      TOTAL: 0,
+      PENDING: 0,
+      CONFIRMED: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+      DRAFT: 0,
+    };
+    if (summaryData?.counts) {
+      for (const item of summaryData.counts) {
+        const k = item.key || item.status;
+        if (k && k in map) {
+          map[k] = item.count;
+        }
       }
-      if (file.size > 10 * 1024 * 1024) {
-        notify("Dung lượng tệp vượt quá giới hạn 10MB", "error");
-        return;
-      }
-      setDeclareFile(file);
-      if (file.type.startsWith("image/")) {
-        setDeclareFilePreviewUrl(URL.createObjectURL(file));
-      } else {
-        setDeclareFilePreviewUrl(null);
-      }
-      notify(`Đã đính kèm tệp ${file.name}`);
     }
-  };
+    return map;
+  }, [summaryData]);
 
-  const handleRemoveDeclareFile = () => {
-    setDeclareFile(null);
-    if (declareFilePreviewUrl) {
-      URL.revokeObjectURL(declareFilePreviewUrl);
-      setDeclareFilePreviewUrl(null);
-    }
-    if (declareFileInputRef.current) {
-      declareFileInputRef.current.value = "";
-    }
-  };
-
-  // Dedicated Upload Document handlers
-  const handleUploadDocChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const valid = [".jpg", ".jpeg", ".png", ".pdf"];
-      if (!valid.some((ext) => file.name.toLowerCase().endsWith(ext))) {
-        notify("Vui lòng chọn hình ảnh (.jpg, .png) hoặc tệp .pdf", "error");
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        notify("Dung lượng tệp vượt quá giới hạn 10MB", "error");
-        return;
-      }
-      setUploadDocFile(file);
-      if (file.type.startsWith("image/")) {
-        setUploadDocPreviewUrl(URL.createObjectURL(file));
-      } else {
-        setUploadDocPreviewUrl(null);
-      }
-      notify(`Đã nhận diện tệp ${file.name}`);
-    }
-  };
-
-  const handleRemoveUploadDocFile = () => {
-    setUploadDocFile(null);
-    if (uploadDocPreviewUrl) {
-      URL.revokeObjectURL(uploadDocPreviewUrl);
-      setUploadDocPreviewUrl(null);
-    }
-    if (uploadDocInputRef.current) {
-      uploadDocInputRef.current.value = "";
-    }
-  };
-
-  // Query
-  const dependentsQuery = useQuery({
-    queryKey: ["dependents", projectId],
-    queryFn: () => api.getDependents({ projectId: projectId === "all" ? undefined : projectId }),
-  });
-
-  const dependents = dependentsQuery.data ?? [];
-
-  // Filtered list
-  const filteredDependents = useMemo(() => {
-    return dependents.filter((item) => {
-      const matchStatus = statusFilter === "all" || item.status === statusFilter;
-      const matchRelationship = relationshipFilter === "all" || item.relationship === relationshipFilter;
-      const term = searchTerm.toLowerCase();
-      const matchSearch =
-        !searchTerm ||
-        item.fullName.toLowerCase().includes(term) ||
-        item.employeeName.toLowerCase().includes(term) ||
-        item.employeeCode.toLowerCase().includes(term) ||
-        item.idCardOrTaxCode.includes(term);
-      return matchStatus && matchRelationship && matchSearch;
-    });
-  }, [dependents, statusFilter, relationshipFilter, searchTerm]);
-
-  const pendingItems = useMemo(
-    () => filteredDependents.filter((d) => d.status === "pending_approval"),
-    [filteredDependents]
-  );
-
-  const pendingCount = useMemo(() => dependents.filter((d) => d.status === "pending_approval").length, [dependents]);
-  const approvedCount = useMemo(() => dependents.filter((d) => d.status === "approved").length, [dependents]);
-  const rejectedCount = useMemo(() => dependents.filter((d) => d.status === "rejected").length, [dependents]);
-
-  const isAllPendingSelected =
-    pendingItems.length > 0 && pendingItems.every((item) => selectedIds.has(item.id));
-
-  const toggleSelectAll = () => {
-    if (isAllPendingSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(pendingItems.map((item) => item.id)));
-    }
-  };
-
-  const toggleSelectItem = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedIds(next);
-  };
-
-  const isFilterActive = searchTerm || statusFilter !== "all" || relationshipFilter !== "all";
-
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
-  const paginatedDependents = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredDependents.slice(start, start + pageSize);
-  }, [filteredDependents, page, pageSize]);
-
-  const handleClearFilters = () => {
-    setSearchTerm("");
-    setStatusFilter("all");
-    setRelationshipFilter("all");
-    setPage(1);
-  };
-
-  // Mutations
-  const createDeclareMutation = useMutation({
-    mutationFn: async () => {
-      if (!formEmployeeId || !formFullName || !formIdCard) {
-        throw new Error("Vui lòng điền đầy đủ các trường bắt buộc.");
-      }
-      const emp = employees.find((e) => e.id === formEmployeeId);
-      return api.createDependent({
-        employeeId: formEmployeeId,
-        employeeCode: emp?.code ?? "",
-        employeeName: emp?.name ?? "",
-        projectId: emp?.projectId ?? projectId,
-        fullName: formFullName,
-        relationship: formRelationship,
-        dob: formDob || "2020-01-01",
-        idCardOrTaxCode: formIdCard,
-        startDate: formStartDate,
-        attachmentType: formAttachmentType,
-        attachmentName: declareFile
-          ? declareFile.name
-          : formAttachmentType === "cccd_2_sided"
-          ? `CCCD_2Mat_${formFullName.replace(/\s+/g, "")}.pdf`
-          : formAttachmentType === "disability_cert"
-          ? `Giay_Chung_Nhan_${formFullName.replace(/\s+/g, "")}.jpg`
-          : `Giay_Khai_Sinh_${formFullName.replace(/\s+/g, "")}.pdf`,
-        attachmentUrl:
-          declareFilePreviewUrl ||
-          "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=600&auto=format&fit=crop&q=80",
-        creationMode: "bcsx_declare",
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dependents"] });
-      queryClient.invalidateQueries({ queryKey: ["tax-configs"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setDeclareModalOpen(false);
-      resetForm();
-      notify("Đã gửi phiếu khai báo người phụ thuộc thành công (Đang chờ Kế toán kiểm tra & duyệt)");
-    },
-    onError: (err: Error) => notify(err.message, "error"),
-  });
-
-  const updateAttachmentMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedDependentForUpload) throw new Error("Chưa chọn người phụ thuộc");
-      if (!uploadDocFile) throw new Error("Vui lòng chọn tệp đính kèm");
-      return api.updateDependentAttachment(selectedDependentForUpload.id, {
-        attachmentType: uploadDocType,
-        attachmentName: uploadDocFile.name,
-        attachmentUrl:
-          uploadDocPreviewUrl ||
-          selectedDependentForUpload.attachmentUrl ||
-          "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=600&auto=format&fit=crop&q=80",
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dependents"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setUploadAttachmentModalOpen(false);
-      handleRemoveUploadDocFile();
-      setSelectedDependentForUpload(null);
-      notify("Đã cập nhật hồ sơ đính kèm thành công!");
-    },
-    onError: (err: Error) => notify(err.message, "error"),
-  });
-
-  const handleOpenEditModal = (item: Dependent) => {
-    setEditingDependent(item);
-    setEditFullName(item.fullName || "");
-    setEditRelationship(item.relationship || "child");
-    setEditDob(item.dob || "");
-    setEditIdCard(item.idCardOrTaxCode || "");
-    setEditTaxCode(item.taxCode || "");
-    setEditStartDate(item.startDate || "2026-08");
-    setEditEndDate(item.endDate || "");
-    setEditAttachmentType(item.attachmentType || "cccd_2_sided");
-    setEditModalOpen(true);
-  };
-
-  const updateDependentMutation = useMutation({
-    mutationFn: async () => {
-      if (!editingDependent) return;
-      return api.updateDependent(editingDependent.id, {
-        fullName: editFullName,
-        relationship: editRelationship,
-        dob: editDob,
-        idCardOrTaxCode: editIdCard,
-        taxCode: editTaxCode || undefined,
-        startDate: editStartDate,
-        endDate: editEndDate || undefined,
-        attachmentType: editAttachmentType,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dependents"] });
-      queryClient.invalidateQueries({ queryKey: ["tax-configs"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setEditModalOpen(false);
-      setEditingDependent(null);
-      notify("Đã cập nhật thông tin người phụ thuộc thành công!");
-    },
-    onError: (err: Error) => notify(err.message, "error"),
-  });
-
-  const confirmMutation = useMutation({
-    mutationFn: async (ids: string[]) => api.confirmDependents(ids),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dependents"] });
-      queryClient.invalidateQueries({ queryKey: ["tax-configs"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setSelectedIds(new Set());
-      setPreviewModalOpen(false);
-      setConfirmModalOpen(false);
-      setConfirmTargetDependent(null);
-      notify("Đã xác nhận hồ sơ Người phụ thuộc thành công!");
-    },
-    onError: (err: Error) => notify(err.message, "error"),
-  });
-
-  const rejectMutation = useMutation({
-    mutationFn: async ({ id, reason }: { id: string; reason: string }) => api.rejectDependent(id, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dependents"] });
-      queryClient.invalidateQueries({ queryKey: ["tax-configs"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setRejectModalOpen(false);
-      setRejectionReason("");
-      setSelectedDependent(null);
-      notify("Đã từ chối hồ sơ người phụ thuộc", "warning");
-    },
-    onError: (err: Error) => notify(err.message, "error"),
-  });
-
-  const importMutation = useMutation({
-    mutationFn: async () => {
-      if (!uploadedFile) {
-        throw new Error("Vui lòng chọn tệp Excel trước khi nhập!");
-      }
-      return await api.importDependentsFile(uploadedFile);
-    },
-    onSuccess: (res: any) => {
-      queryClient.invalidateQueries({ queryKey: ["dependents"] });
-      queryClient.invalidateQueries({ queryKey: ["tax-configs"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setImportModalOpen(false);
-      handleRemoveFile();
-      notify(res?.message || "Đã nhập tệp mẫu người phụ thuộc thành công!");
-    },
-    onError: (err: Error) => notify(err.message || "Lỗi khi nhập tệp mẫu", "error"),
-  });
-
-  const resetForm = () => {
-    setFormEmployeeId("");
-    setFormFullName("");
-    setFormRelationship("child");
-    setFormDob("");
-    setFormIdCard("");
-    setFormStartDate("2026-08");
-    setFormAttachmentType("cccd_2_sided");
-    handleRemoveDeclareFile();
-  };
-
-  const relationshipLabel = (rel: string) => {
-    switch (rel) {
-      case "child":
-        return "Con ruột / Con nuôi";
-      case "spouse":
-        return "Vợ / Chồng";
-      case "parent":
-        return "Cha / Mẹ";
+  // Helper status color badge
+  const renderStatusBadge = (status: DependentStatusV3) => {
+    switch (status) {
+      case "APPROVED":
+        return <Badge tone="success">Đã phê duyệt</Badge>;
+      case "CONFIRMED":
+        return <Badge tone="info">Đã xác nhận</Badge>;
+      case "PENDING":
+        return <Badge tone="warning">Chờ xác nhận</Badge>;
+      case "REJECTED":
+        return <Badge tone="danger">Bị từ chối</Badge>;
+      case "DRAFT":
       default:
-        return "Người phụ thuộc khác";
+        return <Badge tone="neutral">Bản nháp</Badge>;
     }
   };
-
-  if (dependentsQuery.isLoading) return <LoadingBlock rows={6} />;
-  if (dependentsQuery.isError) return <ErrorState message="Không thể tải danh sách người phụ thuộc" retry={() => dependentsQuery.refetch()} />;
 
   return (
-    <div className="dependents-subtab">
-      {/* Integrated Single Card: Toolbar + Filters + Data Table */}
+    <div className="space-y-4">
+      {/* 1. KPI Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div
+          onClick={() => {
+            setStatusFilter("all");
+            setCurrentPage(1);
+          }}
+          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-slate-400 ${
+            statusFilter === "all" ? "ring-2 ring-primary/40 border-primary" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-600">Tổng số NPT</span>
+            <UserCheck className="w-4 h-4 text-slate-500" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-slate-900">{countsMap.TOTAL}</div>
+          <p className="mt-1 text-xs text-slate-500 leading-relaxed">Toàn bộ hồ sơ NPT</p>
+        </div>
+
+        <div
+          onClick={() => {
+            setStatusFilter("PENDING");
+            setCurrentPage(1);
+          }}
+          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-amber-400 ${
+            statusFilter === "PENDING" ? "ring-2 ring-amber-500/40 border-amber-500" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-800">Chờ xác nhận</span>
+            <Clock className="w-4 h-4 text-amber-700" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-amber-700">{countsMap.PENDING}</div>
+          <p className="mt-1 text-xs text-amber-700/80 leading-relaxed">Cần kế toán rà soát</p>
+        </div>
+
+        <div
+          onClick={() => {
+            setStatusFilter("CONFIRMED");
+            setCurrentPage(1);
+          }}
+          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-blue-400 ${
+            statusFilter === "CONFIRMED" ? "ring-2 ring-blue-500/40 border-blue-500" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-blue-800">Đã xác nhận</span>
+            <CheckCheck className="w-4 h-4 text-blue-700" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-blue-700">{countsMap.CONFIRMED}</div>
+          <p className="mt-1 text-xs text-blue-700/80 leading-relaxed">Chờ duyệt C&B</p>
+        </div>
+
+        <div
+          onClick={() => {
+            setStatusFilter("APPROVED");
+            setCurrentPage(1);
+          }}
+          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-emerald-400 ${
+            statusFilter === "APPROVED" ? "ring-2 ring-emerald-500/40 border-emerald-500" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-800">Đã phê duyệt</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-emerald-700">{countsMap.APPROVED}</div>
+          <p className="mt-1 text-xs text-emerald-700/80 leading-relaxed">Được tính giảm trừ</p>
+        </div>
+
+        <div
+          onClick={() => {
+            setStatusFilter("REJECTED");
+            setCurrentPage(1);
+          }}
+          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-rose-400 ${
+            statusFilter === "REJECTED" ? "ring-2 ring-rose-500/40 border-rose-500" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-rose-800">Bị từ chối</span>
+            <XCircle className="w-4 h-4 text-rose-700" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-rose-700">{countsMap.REJECTED}</div>
+          <p className="mt-1 text-xs text-rose-700/80 leading-relaxed">Hồ sơ không hợp lệ</p>
+        </div>
+      </div>
+
+      {/* 2. Main Integrated Table Card with Toolbar */}
       <div className="integrated-table-card">
-        {/* Table Card Toolbar: Clean Single Row with Status Pills on Left, Search + Filter on Right */}
+        {/* Toolbar */}
         <div className="table-card-toolbar">
           <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-            {/* Left: Status Segmentation Pills */}
-            <div className="filter-status-pills">
-              <button
-                type="button"
-                className={`pill-btn ${statusFilter === "all" ? "active" : ""}`}
-                onClick={() => setStatusFilter("all")}
-              >
-                Tất cả ({dependents.length})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn warning ${statusFilter === "pending_approval" ? "active" : ""}`}
-                onClick={() => setStatusFilter("pending_approval")}
-              >
-                Đang xử lý ({pendingCount})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn success ${statusFilter === "approved" ? "active" : ""}`}
-                onClick={() => setStatusFilter("approved")}
-              >
-                Xác nhận ({approvedCount})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn danger ${statusFilter === "rejected" ? "active" : ""}`}
-                onClick={() => setStatusFilter("rejected")}
-              >
-                Từ chối ({rejectedCount})
-              </button>
-            </div>
-
-            {/* Right: Search, Filter & Quick Action */}
-            <div className="flex items-center gap-2.5 ml-auto">
-              <label className="search-field" style={{ minWidth: "260px" }}>
-                <Search />
+            <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+              {/* Search Box */}
+              <div className="relative min-w-[220px] max-w-[300px] flex-1">
+                <Search className="search-icon-fixed text-muted-foreground" />
                 <input
+                  type="text"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Tìm theo tên NPT, tên NV, mã NV, CCCD..."
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Tìm theo tên, mã NV, CCCD, MST..."
+                  className="search-box-input w-full pl-10 pr-8 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
                 />
-              </label>
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
+              {/* Project Filter */}
               <select
-                className="filter-select shrink-0"
-                value={relationshipFilter}
-                onChange={(e) => setRelationshipFilter(e.target.value)}
-                aria-label="Lọc theo quan hệ nhân thân"
+                value={selectedProjectId}
+                onChange={(e) => {
+                  setSelectedProjectId(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-2.5 py-1.5 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
-                <option value="all">Tất cả mối quan hệ</option>
-                <option value="child">Con ruột / Con nuôi</option>
-                <option value="spouse">Vợ / Chồng</option>
-                <option value="parent">Cha / Mẹ</option>
-                <option value="other">Người phụ thuộc khác</option>
+                <option value="all">Tất cả dự án</option>
+                {projectList.map((p) => (
+                  <option key={p.projectId} value={p.projectId}>
+                    {p.projectCode} - {p.projectName}
+                  </option>
+                ))}
               </select>
 
-              {isAccountant && pendingCount > 0 && selectedIds.size === 0 && (
+              {/* Relationship Filter */}
+              <select
+                value={relationshipFilter}
+                onChange={(e) => {
+                  setRelationshipFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-2.5 py-1.5 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="all">Tất cả mối quan hệ</option>
+                {masterRelationships.map((r) => (
+                  <option key={r.code} value={r.code}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-2.5 py-1.5 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="all">Tất cả trạng thái</option>
+                <option value="PENDING">Chờ xác nhận</option>
+                <option value="CONFIRMED">Đã xác nhận</option>
+                <option value="APPROVED">Đã phê duyệt</option>
+                <option value="REJECTED">Bị từ chối</option>
+                <option value="DRAFT">Bản nháp</option>
+              </select>
+
+              {(searchTerm || relationshipFilter !== "all" || statusFilter !== "all") && (
                 <Button
-                  variant="outline"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
-                    const pendingIds = dependents.filter((d) => d.status === "pending_approval").map((d) => d.id);
-                    setConfirmTargetIds(pendingIds);
-                    setConfirmTargetDependent(null);
-                    setConfirmModalOpen(true);
+                    setSearchTerm("");
+                    setRelationshipFilter("all");
+                    setStatusFilter("all");
+                    setCurrentPage(1);
                   }}
-                  loading={confirmMutation.isPending}
-                  className="gap-1.5 font-semibold shrink-0"
+                  className="text-xs text-muted-foreground hover:text-foreground"
                 >
-                  <Check className="w-3.5 h-3.5" /> Xác nhận tất cả ({pendingCount})
+                  <RefreshCw className="w-3.5 h-3.5 mr-1" /> Đặt lại
                 </Button>
               )}
             </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setAuditLogsDrawerOpen(true)}
+                className="gap-1.5 text-xs"
+              >
+                <History className="w-3.5 h-3.5 text-muted-foreground" /> Nhật ký
+              </Button>
+
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setImportModalOpen(true)}
+                className="gap-1.5 text-xs"
+              >
+                <Upload className="w-3.5 h-3.5 text-muted-foreground" /> Import Excel
+              </Button>
+
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  resetDeclareForm();
+                  setDeclareModalOpen(true);
+                }}
+                className="gap-1.5 text-xs font-semibold"
+              >
+                <Plus className="w-3.5 h-3.5" /> Khai báo NPT
+              </Button>
+            </div>
           </div>
         </div>
-
-        {/* Dependents Table */}
-        {filteredDependents.length === 0 ? (
-          <EmptyState
-            title="Chưa có người phụ thuộc"
-            description={
-              searchTerm
-                ? "Không tìm thấy người phụ thuộc phù hợp với từ khóa."
-                : isAccountant
-                ? "Nhấn 'Import danh sách NPT' để tải lên danh sách người phụ thuộc từ Excel."
-                : "Nhấn 'Khai báo người phụ thuộc' để gửi hồ sơ người phụ thuộc lên kế toán xác nhận."
-            }
-            action={
-              !searchTerm ? (
-                isAccountant ? (
-                  <Button variant="primary" onClick={() => setImportModalOpen(true)} className="gap-1.5 font-semibold">
-                    <Upload className="w-3.5 h-3.5" /> Import danh sách NPT
-                  </Button>
-                ) : (
-                  <Button variant="primary" onClick={() => setDeclareModalOpen(true)} className="gap-1.5 font-semibold">
-                    <Plus className="w-3.5 h-3.5" /> Khai báo người phụ thuộc
-                  </Button>
-                )
-              ) : undefined
-            }
-          />
+        {isListLoading ? (
+          <div className="py-16">
+            <LoadingBlock rows={6} />
+          </div>
+        ) : isListError ? (
+          <div className="py-12">
+            <ErrorState
+              message="Không thể kết nối đến máy chủ. Vui lòng thử lại."
+              retry={() => refetchList()}
+            />
+          </div>
+        ) : dependents.length === 0 ? (
+          <div className="py-16">
+            <EmptyState
+              title="Chưa có người phụ thuộc nào"
+              description={
+                searchTerm || relationshipFilter !== "all" || statusFilter !== "all"
+                  ? "Không tìm thấy kết quả phù hợp với bộ lọc hiện tại."
+                  : "Bấm 'Khai báo NPT' hoặc 'Import Excel' để thêm người phụ thuộc đầu tiên."
+              }
+              action={
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    resetDeclareForm();
+                    setDeclareModalOpen(true);
+                  }}
+                  className="gap-1.5 font-semibold"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Khai báo người phụ thuộc
+                </Button>
+              }
+            />
+          </div>
         ) : (
           <div className="data-table-wrap">
             <div className="data-table-scroll">
-              <table className="data-table min-w-[1100px]">
-              <thead>
-                <tr>
-                  {isAccountant && (
+              <table className="data-table">
+                <thead>
+                  <tr>
                     <th style={{ width: "40px" }} className="text-center">
                       <input
                         type="checkbox"
-                        checked={isAllPendingSelected}
-                        onChange={toggleSelectAll}
-                        disabled={pendingItems.length === 0}
-                        title="Chọn tất cả hồ sơ đang xử lý"
+                        checked={dependents.length > 0 && selectedIds.size === dependents.length}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                        className="rounded border-border text-primary focus:ring-primary/30"
                       />
                     </th>
-                  )}
-                  <th style={{ width: "45px" }} className="text-center">STT</th>
-                  <th style={{ minWidth: "190px" }}>NGƯỜI LAO ĐỘNG (NNT)</th>
-                  <th style={{ minWidth: "200px" }}>NGƯỜI PHỤ THUỘC (NPT)</th>
-                  <th style={{ width: "160px" }}>QUAN HỆ</th>
-                  <th style={{ width: "160px" }}>HIỆU LỰC ÁP DỤNG</th>
-                  <th style={{ width: "120px" }}>TRẠNG THÁI</th>
-                  <th style={{ width: "60px" }} className="text-center">THAO TÁC</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedDependents.map((item, idx) => {
-                  const isPending = item.status === "pending_approval";
-                  const isApproved = item.status === "approved";
-                  const isSelected = selectedIds.has(item.id);
-                  const rawStt = (page - 1) * pageSize + idx + 1;
+                    <th style={{ width: "50px" }} className="text-center">STT</th>
+                    <th style={{ minWidth: "180px" }}>NHÂN VIÊN</th>
+                    <th style={{ minWidth: "170px" }}>NGƯỜI PHỤ THUỘC</th>
+                    <th style={{ width: "140px" }}>QUAN HỆ</th>
+                    <th style={{ width: "140px" }}>SỐ CCCD / MST</th>
+                    <th style={{ width: "130px" }}>HIỆU LỰC</th>
+                    <th style={{ width: "90px" }} className="text-center">HỒ SƠ</th>
+                    <th style={{ width: "130px" }} className="text-center">TRẠNG THÁI</th>
+                    <th style={{ width: "120px" }} className="text-center">THAO TÁC</th>
+                  </tr>
+                </thead>
+              <tbody className="divide-y divide-border/60 text-xs text-foreground">
+                {dependents.map((dep, idx) => {
+                  const isChecked = selectedIds.has(dep.id);
+                  const rawStt = (currentPage - 1) * pageSize + idx + 1;
                   const stt = String(rawStt).padStart(2, "0");
-                  const emp = employeeMap.get(item.employeeId);
-                  const projectCode = item.projectCode || emp?.projectCode;
-                  const empIdCard = item.employeeIdCard || emp?.idCard;
-                  const empTaxCode = item.employeeTaxCode || (emp?.idCard ? `80${emp.idCard.slice(-8)}` : null);
 
                   return (
                     <tr
-                      key={item.id}
-                      className={
-                        isSelected
-                          ? "highlight-selected-row"
-                          : undefined
-                      }
+                      key={dep.id}
+                      className={`hover:bg-secondary/40 transition-colors ${
+                        isChecked ? "bg-primary/5" : ""
+                      }`}
                     >
-                      {isAccountant && (
-                        <td className="text-center">
-                          {isPending ? (
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggleSelectItem(item.id)}
-                            />
-                          ) : (
-                            <span className="text-muted text-xs">—</span>
+                      <td className="py-3 px-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleSelect(dep.id)}
+                          className="rounded border-border text-primary focus:ring-primary/30"
+                        />
+                      </td>
+
+                      <td className="py-3 px-2 text-center font-medium text-muted-foreground font-mono">
+                        {stt}
+                      </td>
+
+                      {/* Employee Info */}
+                      <td className="py-3 px-3">
+                        <div className="font-semibold text-slate-900">{dep.employee.fullName}</div>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">
+                            {dep.employee.employeeCode}
+                          </span>
+                          {dep.employee.project && (
+                            <span className="text-slate-400">({dep.employee.project.projectCode})</span>
                           )}
-                        </td>
-                      )}
-                      <td className="text-center text-muted font-medium">{stt}</td>
-                      <td>
-                        <div className="flex flex-col space-y-0.5">
-                          <span className="employee-cell-name font-semibold text-foreground">{item.employeeName || emp?.name || "—"}</span>
-                          <div className="flex items-center gap-1.5 text-[11px] text-muted">
-                            <span className="employee-code-badge">{item.employeeCode || emp?.code || "—"}</span>
-                            {projectCode && <span>· {projectCode}</span>}
+                        </div>
+                      </td>
+
+                      {/* Dependent Info */}
+                      <td className="py-3 px-3">
+                        <div className="font-semibold text-slate-900">{dep.fullName}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          Ngày sinh: {formatDate(dep.dateOfBirth)}
+                        </div>
+                      </td>
+
+                      {/* Relationship */}
+                      <td className="py-3 px-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-800">
+                          {dep.relationship.name}
+                        </span>
+                      </td>
+
+                      {/* CCCD / MST */}
+                      <td className="py-3 px-3">
+                        <div className="font-mono text-slate-900">{dep.identityNumber}</div>
+                        {dep.taxCode && (
+                          <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                            MST: {dep.taxCode}
                           </div>
-                          {empIdCard && (
-                            <div className="text-[11px] text-muted font-mono">
-                              CCCD: <span className="text-foreground font-medium">{empIdCard}</span>
-                            </div>
-                          )}
-                          {empTaxCode && (
-                            <div className="text-[11px] text-muted font-mono">
-                              MST: <span className="text-foreground font-medium">{empTaxCode}</span>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="flex flex-col space-y-0.5">
-                          <strong className="text-foreground font-semibold">{item.fullName}</strong>
-                          {item.dob && (
-                            <div className="text-[11px] text-muted">
-                              <span>Ngày sinh: <span className="text-foreground font-medium">{formatDate(item.dob)}</span></span>
-                            </div>
-                          )}
-                          {item.idCardOrTaxCode && (
-                            <div className="text-[11px] text-muted font-mono">
-                              CCCD/ĐD: <span className="text-foreground font-medium">{item.idCardOrTaxCode}</span>
-                            </div>
-                          )}
-                          {item.taxCode && item.taxCode !== item.idCardOrTaxCode && (
-                            <div className="text-[11px] text-muted font-mono">
-                              MST: <span className="text-foreground font-medium">{item.taxCode}</span>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <Badge tone="neutral">
-                          {relationshipLabel(item.relationship)}
-                        </Badge>
-                      </td>
-                      <td>
-                        <div className="font-mono text-xs flex items-center gap-1">
-                          <Badge tone="neutral">{formatMonthYear(item.startDate)}</Badge>
-                          <span className="text-muted">→</span>
-                          {item.endDate ? (
-                            <Badge tone="neutral">{formatMonthYear(item.endDate)}</Badge>
-                          ) : (
-                            <span className="text-muted text-[11px] font-sans">Vô thời hạn</span>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        {isPending ? (
-                          <StatusBadge tone="warning">Đang xử lý</StatusBadge>
-                        ) : isApproved ? (
-                          <StatusBadge tone="success">Xác nhận</StatusBadge>
-                        ) : (
-                          <StatusBadge tone="danger">Từ chối</StatusBadge>
                         )}
                       </td>
-                      <td className="text-center">
-                        <TableRowActions
-                          items={[
-                            ...(isAccountant && isPending
-                              ? [
-                                  {
-                                    key: "approve",
-                                    label: "Xác nhận hồ sơ",
-                                    icon: <Check />,
-                                    onClick: () => {
-                                      setConfirmTargetIds([item.id]);
-                                      setConfirmTargetDependent(item);
-                                      setConfirmModalOpen(true);
-                                    },
-                                  },
-                                  {
-                                    key: "reject",
-                                    label: "Từ chối hồ sơ",
-                                    icon: <X />,
-                                    danger: true,
-                                    onClick: () => {
-                                      setSelectedDependent(item);
-                                      setRejectModalOpen(true);
-                                    },
-                                  },
-                                ]
-                              : []),
-                            {
-                              key: "edit",
-                              label: "Chỉnh sửa thông tin",
-                              icon: <Pencil />,
-                              onClick: () => handleOpenEditModal(item),
-                            },
-                            ...(item.attachmentName && item.attachmentName.trim() !== ""
-                              ? [
-                                  {
-                                    key: "preview",
-                                    label: "Xem chứng từ",
-                                    icon: <Eye />,
-                                    onClick: () => {
-                                      setSelectedDependent(item);
-                                      setPreviewModalOpen(true);
-                                    },
-                                  },
-                                ]
-                              : []),
-                            {
-                              key: "upload",
-                              label: item.attachmentName ? "Cập nhật chứng từ" : "Tải lên chứng từ",
-                              icon: <UploadCloud />,
-                              onClick: () => {
-                                setSelectedDependentForUpload(item);
-                                setUploadDocType(item.attachmentType || "cccd_2_sided");
-                                setUploadAttachmentModalOpen(true);
-                              },
-                            },
-                          ]}
-                        />
+
+                      {/* Effective Date */}
+                      <td className="py-3 px-3">
+                        <div className="text-slate-800 font-medium">
+                          Từ {formatMonthYear(dep.effectiveFrom)}
+                        </div>
+                        {dep.effectiveTo ? (
+                          <div className="text-[11px] text-slate-500">
+                            Đến {formatMonthYear(dep.effectiveTo)}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-emerald-600">Vô thời hạn</div>
+                        )}
+                      </td>
+
+                      {/* Documents / Attachments */}
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDocuments(dep as DependentDetailV3)}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
+                            (dep.documentsCount || 0) > 0
+                              ? "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                              : "bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200"
+                          }`}
+                          title="Quản lý tài liệu hồ sơ"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>{dep.documentsCount || (dep.documents?.length ?? 0)} tệp</span>
+                        </button>
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3 px-3">
+                        {renderStatusBadge(dep.status)}
+                        {dep.status === "REJECTED" && dep.rejectionReason && (
+                          <div
+                            className="text-[11px] text-rose-600 mt-1 truncate max-w-[140px]"
+                            title={dep.rejectionReason}
+                          >
+                            {dep.rejectionReason}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Action Buttons */}
+                      <td className="py-3 px-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDetail(dep as DependentDetailV3)}
+                            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100"
+                            title="Xem chi tiết"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          {dep.canEdit !== false && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(dep as DependentDetailV3)}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 rounded-md hover:bg-blue-50"
+                              title="Chỉnh sửa"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {dep.canConfirm && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenConfirm(dep as DependentDetailV3)}
+                              className="p-1.5 text-amber-600 hover:text-amber-800 rounded-md hover:bg-amber-50"
+                              title="Xác nhận hồ sơ"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {dep.status === "CONFIRMED" && (
+                            <button
+                              type="button"
+                              onClick={() => approveMutation.mutate(dep.id)}
+                              className="p-1.5 text-emerald-600 hover:text-emerald-800 rounded-md hover:bg-emerald-50"
+                              title="Phê duyệt"
+                            >
+                              <CheckCheck className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {dep.canReject && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenReject(dep as DependentDetailV3)}
+                              className="p-1.5 text-rose-500 hover:text-rose-700 rounded-md hover:bg-rose-50"
+                              title="Từ chối hồ sơ"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Bạn có chắc muốn xóa người phụ thuộc ${dep.fullName}?`)) {
+                                deleteMutation.mutate(dep.id);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50"
+                            title="Xóa"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -808,782 +997,940 @@ export function DependentsSubtab({
               </tbody>
             </table>
           </div>
+          {/* Pagination Footer */}
+          {totalItems > 0 && (
+            <TablePaginationFooter
+              totalItems={totalItems}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              onPageChange={(p) => setCurrentPage(p)}
+              onPageSizeChange={(sz) => {
+                setPageSize(sz);
+                setCurrentPage(1);
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
 
-          {/* Attached Table Footer */}
-          <TablePaginationFooter
-            totalItems={filteredDependents.length}
-            selectedCount={selectedIds.size}
-            currentPage={page}
-            pageSize={pageSize}
-            onPageChange={setPage}
-            onPageSizeChange={(newSize) => {
-              setPageSize(newSize);
-              setPage(1);
-            }}
-          />
+      {/* 4. Floating Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-700 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <span className="text-xs font-semibold">
+            Đã chọn <strong className="text-primary font-bold">{selectedIds.size}</strong> người phụ thuộc
+          </span>
+          <div className="h-4 w-px bg-slate-700" />
+          <Button
+            variant="primary"
+            size="sm"
+            loading={bulkConfirming}
+            onClick={handleBulkConfirm}
+            className="gap-1.5 font-semibold text-xs"
+          >
+            <CheckCheck className="w-3.5 h-3.5" /> Xác nhận hàng loạt
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs text-slate-400 hover:text-white"
+          >
+            Bỏ chọn
+          </Button>
         </div>
       )}
 
-      {/* BOTTOM AUDIT / ACTIVITY LOG */}
-      <SubtabActivityLog
-        projectId={projectId}
-        module="dependents"
-        title="Nhật ký khai báo & phê duyệt Người phụ thuộc"
-        description="Lịch sử khai báo hồ sơ NPT, kết quả thẩm định đối chiếu và import danh sách giảm trừ gia cảnh"
-      />
-    </div>
-
-      {/* Modal 1: BCSX Khai báo NPT */}
+      {/* ================= Modal: Khai báo Người phụ thuộc ================= */}
       <Modal
         open={declareModalOpen}
         onOpenChange={setDeclareModalOpen}
-        title="Khai Báo Người Phụ Thuộc"
-        description="Thu thập thông tin người phụ thuộc của người lao động và tải kèm hình ảnh hồ sơ chứng minh."
-        size="md"
-        footer={
-          <>
-            <Button onClick={() => setDeclareModalOpen(false)}>Hủy</Button>
-            <Button variant="primary" loading={createDeclareMutation.isPending} onClick={() => createDeclareMutation.mutate()} className="gap-1.5 font-semibold">
-              <Check className="w-3.5 h-3.5" /> Gửi kế toán duyệt
-            </Button>
-          </>
-        }
-      >
-        <div className="form-grid">
-          <div className="form-field full-width">
-            <span>Chọn Người lao động *</span>
-            <SearchableSelect
-              value={formEmployeeId}
-              onChange={setFormEmployeeId}
-              placeholder="-- Chọn nhân viên trong danh sách --"
-              searchPlaceholder="Tìm theo tên hoặc mã NV..."
-              options={employees.map((emp) => ({
-                value: emp.id,
-                label: `${emp.code} - ${emp.name}`,
-                subLabel: emp.department,
-              }))}
-            />
-          </div>
-
-          <label className="form-field">
-            <span>Họ và tên Người phụ thuộc *</span>
-            <input
-              type="text"
-              value={formFullName}
-              onChange={(e) => setFormFullName(e.target.value)}
-              placeholder="VD: Nguyễn Bảo Long"
-              required
-            />
-          </label>
-
-          <label className="form-field">
-            <span>Mối quan hệ nhân thân *</span>
-            <select
-              value={formRelationship}
-              onChange={(e) => setFormRelationship(e.target.value as any)}
-            >
-              <option value="child">Con ruột / Con nuôi</option>
-              <option value="spouse">Vợ / Chồng</option>
-              <option value="parent">Cha / Mẹ ruột hoặc Cha/Mẹ chồng/vợ</option>
-              <option value="other">Người phụ thuộc khác (Nuôi dưỡng trực tiếp)</option>
-            </select>
-          </label>
-
-          <label className="form-field">
-            <span>Ngày tháng năm sinh *</span>
-            <input
-              type="date"
-              value={formDob}
-              onChange={(e) => setFormDob(e.target.value)}
-              required
-            />
-          </label>
-
-          <label className="form-field">
-            <span>Số CCCD / Mã số định danh / MST *</span>
-            <input
-              type="text"
-              value={formIdCard}
-              onChange={(e) => setFormIdCard(e.target.value)}
-              placeholder="12 số CCCD hoặc Mã định danh"
-              required
-            />
-          </label>
-
-          <div className="form-field">
-            <span>Tháng bắt đầu tính giảm trừ *</span>
-            <MonthPicker
-              value={formStartDate}
-              onChange={(val) => setFormStartDate(val)}
-              variant="form"
-            />
-          </div>
-
-          <label className="form-field full-width">
-            <span>Loại giấy tờ chứng minh đính kèm *</span>
-            <select
-              value={formAttachmentType}
-              onChange={(e) => setFormAttachmentType(e.target.value as any)}
-            >
-              <option value="cccd_2_sided">Hình chụp CCCD 2 mặt (Mặt trước + Mặt sau)</option>
-              <option value="birth_cert">Giấy khai sinh (Trẻ em dưới 18 tuổi)</option>
-              <option value="disability_cert">Giấy chứng nhận mất khả năng lao động / Y tế</option>
-            </select>
-          </label>
-
-          {/* Dedicated File Upload Section in Declare Modal */}
-          <div className="full-width space-y-2">
-            <span className="text-xs font-semibold text-foreground block">
-              Tải lên tài liệu chứng minh (Hình ảnh hoặc PDF)
-            </span>
-            <input
-              ref={declareFileInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,.pdf"
-              onChange={handleDeclareFileChange}
-              className="hidden"
-            />
-            {!declareFile ? (
-              <div
-                onClick={() => declareFileInputRef.current?.click()}
-                className="border-2 border-dashed border-border hover:border-primary/60 bg-card hover:bg-secondary/30 rounded-xl p-5 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2"
-              >
-                <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                  <UploadCloud className="w-5 h-5" />
-                </div>
-                <div className="space-y-0.5">
-                  <strong className="text-xs font-bold text-foreground block">
-                    Bấm để chọn tệp chứng minh từ máy tính
-                  </strong>
-                  <p className="text-[11px] text-muted">
-                    Hỗ trợ <strong>JPG, PNG, PDF</strong> (tối đa 10MB)
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
-                    {declareFile.type.startsWith("image/") ? <ImageIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-                  </div>
-                  <div className="min-w-0">
-                    <strong className="text-xs font-bold text-foreground truncate block">
-                      {declareFile.name}
-                    </strong>
-                    <small className="text-[11px] text-muted block">
-                      {(declareFile.size / 1024).toFixed(1)} KB · Sẵn sàng đính kèm
-                    </small>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => declareFileInputRef.current?.click()}
-                    className="text-xs"
-                  >
-                    Thay tệp
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRemoveDeclareFile}
-                    className="text-destructive hover:bg-destructive/10 text-xs"
-                    title="Gỡ tệp"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal 2: Kế toán Import Excel */}
-      <Modal
-        open={importModalOpen}
-        onOpenChange={(open) => {
-          setImportModalOpen(open);
-          if (!open) handleRemoveFile();
-        }}
-        title="Import Danh Sách Người Phụ Thuộc"
-        description="Tải lên tệp Excel danh sách NPT theo mẫu chuẩn của hệ thống. Kế toán kiểm tra dữ liệu và bấm xác nhận để lưu."
+        title="Khai báo người phụ thuộc"
+        description="Nhập đầy đủ thông tin giảm trừ gia cảnh cho người lao động theo chuẩn quy định."
         size="lg"
-        footer={
-          <>
-            <Button onClick={() => setImportModalOpen(false)}>Hủy</Button>
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!formEmployeeCode) {
+              notify("Vui lòng chọn nhân viên.", "error");
+              return;
+            }
+            if (!formFullName.trim()) {
+              notify("Vui lòng nhập họ và tên người phụ thuộc.", "error");
+              return;
+            }
+            if (!formIdentityNumber.trim() || formIdentityNumber.length < 9) {
+              notify("Số CCCD/Định danh không hợp lệ (tối thiểu 9 số).", "error");
+              return;
+            }
+            createMutation.mutate({
+              projectId: Number(selectedProjectId) || 1017,
+              employeeCode: formEmployeeCode,
+              fullName: formFullName.trim(),
+              dateOfBirth: formDob || "2020-01-01",
+              identityNumber: formIdentityNumber.trim(),
+              taxCode: formTaxCode.trim() || undefined,
+              relationshipCode: formRelationshipCode,
+              effectiveFrom: formEffectiveFrom || "2026-08",
+              effectiveTo: formEffectiveTo || undefined,
+              documentType: formDocType,
+            });
+          }}
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Chọn Nhân viên */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Nhân viên khai báo <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={formEmployeeCode}
+                onChange={(e) => setFormEmployeeCode(e.target.value)}
+                required
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">-- Chọn nhân viên --</option>
+                {projectEmployees.map((e) => (
+                  <option key={e.employeeCode} value={e.employeeCode}>
+                    {e.employeeCode} - {e.fullName} ({e.positionName || "Nhân viên"})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Mối quan hệ */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Mối quan hệ <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={formRelationshipCode}
+                onChange={(e) => setFormRelationshipCode(e.target.value as RelationshipCode)}
+                required
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {masterRelationships.map((r) => (
+                  <option key={r.code} value={r.code}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Họ tên NPT */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Họ và tên NPT <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formFullName}
+                onChange={(e) => setFormFullName(e.target.value)}
+                placeholder="VD: Nguyễn Minh Khôi"
+                required
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+
+            {/* Ngày sinh */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Ngày sinh <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={formDob}
+                onChange={(e) => setFormDob(e.target.value)}
+                required
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+
+            {/* CCCD / Mã định danh */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Số CCCD / Mã định danh <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formIdentityNumber}
+                onChange={(e) => setFormIdentityNumber(e.target.value)}
+                placeholder="Số CCCD (12 số) hoặc Mã định danh cá nhân"
+                required
+                className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+
+            {/* Mã số thuế */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Mã số thuế NPT <span className="text-slate-400 font-normal">(Nếu có)</span>
+              </label>
+              <input
+                type="text"
+                value={formTaxCode}
+                onChange={(e) => setFormTaxCode(e.target.value)}
+                placeholder="VD: 8092200012"
+                className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+
+            {/* Hiệu lực từ */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Hiệu lực từ tháng <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="month"
+                value={formEffectiveFrom}
+                onChange={(e) => setFormEffectiveFrom(e.target.value)}
+                required
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+
+            {/* Hiệu lực đến */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Hiệu lực đến tháng <span className="text-slate-400 font-normal">(Để trống nếu vô thời hạn)</span>
+              </label>
+              <input
+                type="month"
+                value={formEffectiveTo}
+                onChange={(e) => setFormEffectiveTo(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          </div>
+
+          {/* Đính kèm tài liệu minh chứng */}
+          <div className="pt-3 border-t border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-slate-700">
+                Tài liệu minh chứng đính kèm
+              </label>
+              <select
+                value={formDocType}
+                onChange={(e) => setFormDocType(e.target.value as DocumentTypeCode)}
+                className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-md"
+              >
+                {masterDocTypes.map((d) => (
+                  <option key={d.code} value={d.code}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div
+              onClick={() => formFileInputRef.current?.click()}
+              className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:bg-slate-50 cursor-pointer transition-colors"
+            >
+              <input
+                type="file"
+                ref={formFileInputRef}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setFormFile(file);
+                    if (file.type.startsWith("image/")) {
+                      setFormFilePreview(URL.createObjectURL(file));
+                    } else {
+                      setFormFilePreview(null);
+                    }
+                  }
+                }}
+                accept=".jpg,.jpeg,.png,.pdf"
+                className="hidden"
+              />
+              {formFile ? (
+                <div className="flex items-center justify-between bg-slate-100 p-2.5 rounded-lg text-xs">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span className="font-medium text-slate-800">{formFile.name}</span>
+                    <span className="text-slate-400">({(formFile.size / 1024).toFixed(1)} KB)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      setFormFile(null);
+                      setFormFilePreview(null);
+                    }}
+                    className="text-slate-400 hover:text-rose-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <UploadCloud className="w-8 h-8 text-slate-400 mx-auto mb-1.5" />
+                  <p className="text-xs text-slate-600 font-medium">Bấm để tải tệp minh chứng</p>
+                  <p className="text-[11px] text-slate-400">Định dạng JPG, PNG, PDF tối đa 10MB</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Footer Actions */}
+          <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
             <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setDeclareModalOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="submit"
               variant="primary"
-              disabled={!uploadedFile}
-              loading={importMutation.isPending}
-              onClick={() => importMutation.mutate()}
+              size="sm"
+              loading={createMutation.isPending}
               className="gap-1.5 font-semibold"
             >
-              <Check className="w-3.5 h-3.5" /> Bắt đầu nhập
+              <Plus className="w-3.5 h-3.5" /> Lưu hồ sơ NPT
             </Button>
-          </>
-        }
+          </div>
+        </form>
+      </Modal>
+
+      {/* ================= Modal: Chỉnh sửa Người phụ thuộc ================= */}
+      <Modal
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        title="Chỉnh sửa thông tin người phụ thuộc"
+        description={`Cập nhật thông tin cho người phụ thuộc ${activeDependent?.fullName || ""}.`}
+        size="md"
       >
-        <div className="space-y-4 pt-1">
-          {/* Bước 1: Tải tệp mẫu */}
-          <div className="border-t border-dashed border-border pt-3.5 first:border-t-0 first:pt-0">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0">
-                <FileSpreadsheet className="w-6 h-6" />
-              </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!activeDependent) return;
+            updateMutation.mutate({
+              id: activeDependent.id,
+              payload: {
+                fullName: editFullName.trim(),
+                dateOfBirth: editDob,
+                identityNumber: editIdentityNumber.trim(),
+                taxCode: editTaxCode.trim() || undefined,
+                relationshipCode: editRelationshipCode,
+                effectiveFrom: editEffectiveFrom,
+                effectiveTo: editEffectiveTo || undefined,
+              },
+            });
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Họ và tên NPT <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={editFullName}
+                onChange={(e) => setEditFullName(e.target.value)}
+                required
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="text-sm font-bold text-foreground m-0">Bước 1: Tải tệp mẫu</p>
-                <button
-                  type="button"
-                  disabled={downloadingTemplate}
-                  onClick={handleDownloadTemplate}
-                  className="sb-upload-link"
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Mối quan hệ <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={editRelationshipCode}
+                  onChange={(e) => setEditRelationshipCode(e.target.value as RelationshipCode)}
+                  required
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
-                  <span>{downloadingTemplate ? "Đang tải mẫu biểu..." : "Tải xuống tệp mẫu (.xlsx)"}</span>
-                  {downloadingTemplate ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4" />
-                  )}
-                </button>
+                  {masterRelationships.map((r) => (
+                    <option key={r.code} value={r.code}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Ngày sinh <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={editDob}
+                  onChange={(e) => setEditDob(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Số CCCD/Định danh <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editIdentityNumber}
+                  onChange={(e) => setEditIdentityNumber(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Mã số thuế</label>
+                <input
+                  type="text"
+                  value={editTaxCode}
+                  onChange={(e) => setEditTaxCode(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Hiệu lực từ tháng <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="month"
+                  value={editEffectiveFrom}
+                  onChange={(e) => setEditEffectiveFrom(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Hiệu lực đến tháng
+                </label>
+                <input
+                  type="month"
+                  value={editEffectiveTo}
+                  onChange={(e) => setEditEffectiveTo(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
               </div>
             </div>
           </div>
 
-          {/* Bước 2: Tải lên tệp đã điền */}
-          <div className="border-t border-dashed border-border pt-3.5">
-            <p className="text-sm font-bold text-foreground mb-2.5">Bước 2: Tải lên tệp đã điền</p>
+          <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setEditModalOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              loading={updateMutation.isPending}
+              className="gap-1.5 font-semibold"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Lưu thay đổi
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
-            {/* Hidden File Input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx, .xls, .csv"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-
-            {/* Upload Dropzone */}
-            {!uploadedFile ? (
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl min-h-[190px] p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
-                  isDragging
-                    ? "border-primary bg-primary/10"
-                    : "border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 hover:border-primary"
-                }`}
-              >
-                <div className="w-15 h-15 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center mb-3">
-                  <UploadCloud className="w-7 h-7" />
+      {/* ================= Modal: Xem chi tiết Người phụ thuộc ================= */}
+      <Modal
+        open={detailModalOpen}
+        onOpenChange={setDetailModalOpen}
+        title="Chi tiết hồ sơ Người phụ thuộc"
+        size="md"
+      >
+        {activeDependent && (
+          <div className="space-y-4 text-xs">
+            {/* Header info */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+              <div>
+                <div className="font-bold text-sm text-slate-900">{activeDependent.fullName}</div>
+                <div className="text-slate-500 mt-0.5">
+                  Quan hệ: <span className="font-semibold text-slate-700">{activeDependent.relationship.name}</span>
                 </div>
-                <p className="text-sm font-bold text-foreground m-0">Kéo và thả tệp vào đây</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-0">
-                  Hoặc <span className="text-primary font-bold hover:underline">duyệt từ máy tính</span>
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase mt-2.5 mb-0 tracking-wide font-medium">
-                  ĐỊNH DẠNG HỖ TRỢ: .XLSX, .XLS (TỐI ĐA 10MB)
-                </p>
+              </div>
+              <div>{renderStatusBadge(activeDependent.status)}</div>
+            </div>
+
+            {/* Grid attributes */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-white rounded-xl border border-slate-200">
+              <div>
+                <span className="text-slate-400 block">Nhân viên:</span>
+                <span className="font-semibold text-slate-800">
+                  {activeDependent.employee.fullName} ({activeDependent.employee.employeeCode})
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">Dự án:</span>
+                <span className="font-semibold text-slate-800">
+                  {activeDependent.employee.project?.projectName || "Chưa phân bổ"}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">Ngày sinh:</span>
+                <span className="font-semibold text-slate-800">{formatDate(activeDependent.dateOfBirth)}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">Số CCCD/Định danh:</span>
+                <span className="font-mono font-semibold text-slate-800">{activeDependent.identityNumber}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">Mã số thuế:</span>
+                <span className="font-mono font-semibold text-slate-800">{activeDependent.taxCode || "Chưa có"}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">Thời gian hiệu lực:</span>
+                <span className="font-semibold text-slate-800">
+                  {formatMonthYear(activeDependent.effectiveFrom)} →{" "}
+                  {activeDependent.effectiveTo ? formatMonthYear(activeDependent.effectiveTo) : "Vô thời hạn"}
+                </span>
+              </div>
+            </div>
+
+            {/* Rejection / Confirmation details */}
+            {activeDependent.status === "REJECTED" && activeDependent.rejectionReason && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800">
+                <div className="font-semibold flex items-center gap-1.5 mb-1">
+                  <AlertCircle className="w-4 h-4 text-rose-600" /> Lý do từ chối:
+                </div>
+                <p className="text-rose-700">{activeDependent.rejectionReason}</p>
+              </div>
+            )}
+
+            {activeDependent.confirmedBy && (
+              <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg text-blue-800 flex items-center justify-between text-[11px]">
+                <span>
+                  Xác nhận bởi: <strong>{activeDependent.confirmedBy.fullName}</strong> ({activeDependent.confirmedBy.roleName})
+                </span>
+                <span className="text-blue-600">{formatDate(activeDependent.confirmedAt)}</span>
+              </div>
+            )}
+
+            {activeDependent.approvedBy && (
+              <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-lg text-emerald-800 flex items-center justify-between text-[11px]">
+                <span>
+                  Phê duyệt bởi: <strong>{activeDependent.approvedBy.fullName}</strong> ({activeDependent.approvedBy.roleName})
+                </span>
+                <span className="text-emerald-600">{formatDate(activeDependent.approvedAt)}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button variant="secondary" size="sm" onClick={() => setDetailModalOpen(false)}>
+                Đóng
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ================= Modal: Quản lý Hồ sơ Giấy tờ ================= */}
+      <Modal
+        open={documentsModalOpen}
+        onOpenChange={setDocumentsModalOpen}
+        title={`Hồ sơ minh chứng - ${activeDependent?.fullName || ""}`}
+        description="Quản lý và tải lên các tài liệu xác thực quyền giảm trừ gia cảnh."
+        size="lg"
+      >
+        <div className="space-y-4">
+          {/* Upload New Document Card */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+            <div className="text-xs font-semibold text-slate-800 mb-2.5 flex items-center gap-1.5">
+              <FilePlus className="w-4 h-4 text-primary" /> Tải lên tài liệu mới
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <select
+                value={uploadingDocType}
+                onChange={(e) => setUploadingDocType(e.target.value as DocumentTypeCode)}
+                className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+              >
+                {masterDocTypes.map((d) => (
+                  <option key={d.code} value={d.code}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+
+              <div className="sm:col-span-2 flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={uploadFileInputRef}
+                  onChange={(e) => setUploadingFile(e.target.files?.[0] || null)}
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300"
+                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!uploadingFile}
+                  loading={uploadDocMutation.isPending}
+                  onClick={() => {
+                    if (!activeDependent || !uploadingFile) return;
+                    const fd = new FormData();
+                    fd.append("file", uploadingFile);
+                    fd.append("documentType", uploadingDocType);
+                    uploadDocMutation.mutate({ depId: activeDependent.id, formData: fd });
+                  }}
+                  className="gap-1 shrink-0 font-medium text-xs"
+                >
+                  <Upload className="w-3 h-3" /> Tải lên
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* List of Attached Documents */}
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-slate-700">
+              Danh sách tài liệu đã đính kèm ({activeDependent?.documents?.length || 0})
+            </div>
+
+            {!activeDependent?.documents || activeDependent.documents.length === 0 ? (
+              <div className="p-6 text-center border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                Chưa có tài liệu minh chứng nào được đính kèm.
               </div>
             ) : (
-              <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                    <FileSpreadsheet className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <strong className="text-sm font-bold text-foreground truncate block">
-                        {uploadedFile.name}
-                      </strong>
-                      <Badge tone="success">
-                        <FileCheck className="w-3 h-3 inline mr-1" />
-                        Đã tải lên
-                      </Badge>
+              <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                {activeDependent.documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="p-3 bg-white flex items-center justify-between hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs">
+                        PDF
+                      </div>
+                      <div>
+                        <div className="font-semibold text-xs text-slate-900">{doc.fileName}</div>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                          <span className="text-primary font-medium">{doc.documentTypeName}</span>
+                          <span>•</span>
+                          <span>{(doc.fileSize / 1024).toFixed(1)} KB</span>
+                          <span>•</span>
+                          <span>{formatDate(doc.uploadedAt)}</span>
+                        </div>
+                      </div>
                     </div>
-                    <small className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5 font-medium">
-                      Dung lượng: {(uploadedFile.size / 1024).toFixed(1)} KB · Nhận diện 2 bản ghi hợp lệ
-                    </small>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-xs h-7.5"
-                  >
-                    Thay tệp
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRemoveFile}
-                    className="text-destructive hover:bg-destructive/10 text-xs h-7.5"
-                    title="Xóa tệp đã chọn"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={`/api/web/payroll/dependents/${activeDependent.id}/documents/${doc.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1.5 text-slate-500 hover:text-primary rounded-md hover:bg-slate-100"
+                        title="Tải / Xem file"
+                      >
+                        <Download className="w-4 h-4" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Bạn có chắc muốn xóa tài liệu ${doc.fileName}?`)) {
+                            deleteDocMutation.mutate({ depId: activeDependent.id, docId: doc.id });
+                          }
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50"
+                        title="Xóa tài liệu"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Preview Table (Visible when file is uploaded) */}
-          {uploadedFile && (
-            <div className="preview-table-box space-y-2">
-              <div className="flex items-center justify-between">
-                <h5 className="text-xs font-bold text-foreground">Xem trước dữ liệu import (2 dòng):</h5>
-                <Badge tone="info">Khớp 100% cột dữ liệu</Badge>
+          <div className="flex justify-end pt-2">
+            <Button variant="secondary" size="sm" onClick={() => setDocumentsModalOpen(false)}>
+              Đóng
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ================= Modal: Từ chối Người phụ thuộc ================= */}
+      <Modal
+        open={rejectModalOpen}
+        onOpenChange={setRejectModalOpen}
+        title="Từ chối hồ sơ Người phụ thuộc"
+        description="Vui lòng nêu rõ lý do từ chối để nhân sự/nhân viên bổ sung giấy tờ hợp lệ."
+        size="sm"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!activeDependent) return;
+            if (!rejectionReason.trim()) {
+              notify("Vui lòng nhập lý do từ chối.", "error");
+              return;
+            }
+            rejectMutation.mutate({ id: activeDependent.id, reason: rejectionReason.trim() });
+          }}
+          className="space-y-3"
+        >
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Lý do từ chối <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              rows={3}
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="VD: Thiếu bản sao công chứng Giấy khai sinh hợp lệ..."
+              required
+              className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/30"
+            />
+          </div>
+
+          <div className="pt-2 flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setRejectModalOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="submit"
+              variant="danger"
+              size="sm"
+              loading={rejectMutation.isPending}
+              className="gap-1 font-semibold"
+            >
+              <X className="w-3.5 h-3.5" /> Xác nhận từ chối
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ================= Modal: Xác nhận Người phụ thuộc ================= */}
+      <Modal
+        open={confirmModalOpen}
+        onOpenChange={setConfirmModalOpen}
+        title="Xác nhận hồ sơ hợp lệ"
+        size="sm"
+      >
+        <div className="space-y-3 text-xs">
+          <p className="text-slate-700">
+            Bạn xác nhận hồ sơ người phụ thuộc <strong>{activeDependent?.fullName}</strong> của nhân viên{" "}
+            <strong>{activeDependent?.employee.fullName}</strong> đã đầy đủ giấy tờ hợp lệ?
+          </p>
+
+          <div className="pt-3 flex items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setConfirmModalOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={confirmMutation.isPending}
+              onClick={() => {
+                if (activeDependent) confirmMutation.mutate(activeDependent.id);
+              }}
+              className="gap-1 font-semibold"
+            >
+              <Check className="w-3.5 h-3.5" /> Xác nhận
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ================= Modal: Import Excel Wizard ================= */}
+      <Modal
+        open={importModalOpen}
+        onOpenChange={setImportModalOpen}
+        title="Import danh sách người phụ thuộc từ Excel"
+        description="Tải lên tệp danh sách NPT theo biểu mẫu chuẩn để thêm hàng loạt."
+        size="lg"
+      >
+        <div className="space-y-4 text-xs">
+          {/* Step 1: Download Template */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-slate-800">1. Tải biểu mẫu Excel chuẩn</div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Sử dụng tệp mẫu để đảm bảo đúng định dạng các cột dữ liệu.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={downloadingTemplate}
+              onClick={handleDownloadTemplate}
+              className="gap-1.5 text-xs font-semibold shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" /> Tải file mẫu (.xlsx)
+            </Button>
+          </div>
+
+          {/* Step 2: Upload File Dropzone */}
+          <div>
+            <div className="font-semibold text-slate-800 mb-1.5">2. Chọn tệp dữ liệu đã điền</div>
+            <div
+              onClick={() => importFileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) setImportFile(file);
+              }}
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                isDragging
+                  ? "border-primary bg-primary/5"
+                  : importFile
+                  ? "border-emerald-300 bg-emerald-50/40"
+                  : "border-slate-300 hover:bg-slate-50"
+              }`}
+            >
+              <input
+                type="file"
+                ref={importFileInputRef}
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+              />
+              {importFile ? (
+                <div className="flex items-center justify-center gap-3">
+                  <FileSpreadsheet className="w-8 h-8 text-emerald-600" />
+                  <div className="text-left">
+                    <div className="font-bold text-slate-900">{importFile.name}</div>
+                    <div className="text-slate-500 text-[11px]">
+                      {(importFile.size / 1024).toFixed(1)} KB • Bấm để chọn tệp khác
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <UploadCloud className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+                  <p className="font-semibold text-slate-700">Kéo thả tệp Excel vào đây hoặc bấm để chọn</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Chấp nhận .xlsx, .xls tối đa 10MB</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Step 3: Error Preview Grid */}
+          {importErrors && importErrors.length > 0 && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
+              <div className="font-semibold text-rose-800 flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-rose-600" /> Phát hiện {importErrors.length} dòng lỗi
+                trong file:
               </div>
-              <div className="border border-border rounded-lg overflow-hidden">
-                <table className="data-table compact-table">
+              <div className="max-h-40 overflow-y-auto border border-rose-200 rounded-lg bg-white">
+                <table className="w-full text-left border-collapse text-[11px]">
                   <thead>
-                    <tr>
-                      <th>Mã NV</th>
-                      <th>Họ tên NPT</th>
-                      <th>Quan hệ</th>
-                      <th>CCCD / Mã định danh</th>
-                      <th>Hiệu lực</th>
-                      <th>Hồ sơ</th>
+                    <tr className="bg-rose-100/60 text-rose-900 border-b border-rose-200 font-semibold">
+                      <th className="py-1.5 px-2 w-16">Dòng</th>
+                      <th className="py-1.5 px-2">Cột</th>
+                      <th className="py-1.5 px-2">Giá trị</th>
+                      <th className="py-1.5 px-2">Lỗi</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr>
-                      <td><code>{employees[0]?.code || "NV-001"}</code></td>
-                      <td>Nguyễn Gia Hân</td>
-                      <td>Con</td>
-                      <td>079221005544</td>
-                      <td>Tháng 08/2026</td>
-                      <td><span className="file-badge"><FileText className="w-3 h-3 inline mr-1" /> Giay_Khai_Sinh.pdf</span></td>
-                    </tr>
-                    <tr>
-                      <td><code>{employees[0]?.code || "NV-001"}</code></td>
-                      <td>Nguyễn Minh Quân</td>
-                      <td>Con</td>
-                      <td>079223007788</td>
-                      <td>Tháng 08/2026</td>
-                      <td><span className="file-badge"><FileText className="w-3 h-3 inline mr-1" /> CCCD_2Mat.pdf</span></td>
-                    </tr>
+                  <tbody className="divide-y divide-rose-100">
+                    {importErrors.map((err, idx) => (
+                      <tr key={idx} className="hover:bg-rose-50/50">
+                        <td className="py-1 px-2 font-mono font-bold text-rose-700">#{err.row}</td>
+                        <td className="py-1 px-2 font-medium">{err.column}</td>
+                        <td className="py-1 px-2 font-mono text-slate-600">{err.value || "(Trống)"}</td>
+                        <td className="py-1 px-2 text-rose-700">{err.message}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* Confirm Notice */}
-          <div className="confirm-notice">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span className="text-xs">
-              <strong>Lưu ý:</strong> Khi Kế toán nhấn <em>"Xác nhận thông tin chính xác &amp; Lưu hệ thống"</em>, danh sách người phụ thuộc sẽ được duyệt chính thức và tự động cộng dồn số lượng NPT vào bảng tính Thuế TNCN.
-            </span>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal 3: Kế toán Từ chối hồ sơ */}
-      <Modal
-        open={rejectModalOpen}
-        onOpenChange={setRejectModalOpen}
-        title="Từ chối hồ sơ Người phụ thuộc"
-        description={`Hồ sơ của NPT: ${selectedDependent?.fullName} (${selectedDependent?.employeeName})`}
-        size="sm"
-        footer={
-          <>
-            <Button onClick={() => setRejectModalOpen(false)}>Hủy</Button>
+          {/* Actions */}
+          <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
+            <Button variant="secondary" size="sm" onClick={() => setImportModalOpen(false)}>
+              Hủy
+            </Button>
             <Button
-              variant="danger"
-              disabled={!rejectionReason.trim()}
-              loading={rejectMutation.isPending}
+              variant="primary"
+              size="sm"
+              disabled={!importFile}
+              loading={importMutation.isPending}
               onClick={() => {
-                if (selectedDependent) {
-                  rejectMutation.mutate({ id: selectedDependent.id, reason: rejectionReason });
-                }
+                if (importFile) importMutation.mutate(importFile);
               }}
-            >
-              <X /> Xác nhận Từ chối
-            </Button>
-          </>
-        }
-      >
-        <div className="form-field full-width">
-          <span>Lý do từ chối (Phản hồi đến người khai báo) *</span>
-          <textarea
-            rows={3}
-            value={rejectionReason}
-            onChange={(e) => setRejectionReason(e.target.value)}
-            placeholder="VD: Hình chụp CCCD bị mờ thông tin ngày sinh hoặc thiếu mặt sau. Vui lòng chụp lại."
-            required
-          />
-        </div>
-      </Modal>
-
-      {/* Modal 4: Xem file đính kèm CCCD / Giấy chứng nhận */}
-      {selectedDependent && (
-        <AttachmentPreviewModal
-          open={previewModalOpen}
-          onOpenChange={setPreviewModalOpen}
-          title={`Hồ sơ đính kèm: ${selectedDependent.fullName}`}
-          attachmentName={selectedDependent.attachmentName}
-          attachmentUrl={selectedDependent.attachmentUrl}
-          attachmentType={selectedDependent.attachmentType}
-          employeeName={`${selectedDependent.employeeCode} - ${selectedDependent.employeeName}`}
-          dependentName={selectedDependent.fullName}
-          dob={selectedDependent.dob}
-          startDate={selectedDependent.startDate}
-          onConfirm={
-            isAccountant && selectedDependent.status === "pending_approval"
-              ? () => confirmMutation.mutate([selectedDependent.id])
-              : undefined
-          }
-          confirmLoading={confirmMutation.isPending}
-          onReject={
-            isAccountant && selectedDependent.status === "pending_approval"
-              ? () => {
-                  setRejectModalOpen(true);
-                }
-              : undefined
-          }
-          onUploadNew={() => {
-            setSelectedDependentForUpload(selectedDependent);
-            setUploadDocType(selectedDependent.attachmentType || "cccd_2_sided");
-            setUploadAttachmentModalOpen(true);
-          }}
-        />
-      )}
-
-      {/* Modal 5: Tải Lên / Cập Nhật Hồ Sơ Đính Kèm Riêng */}
-      <Modal
-        open={uploadAttachmentModalOpen}
-        onOpenChange={(open) => {
-          setUploadAttachmentModalOpen(open);
-          if (!open) handleRemoveUploadDocFile();
-        }}
-        title="Tải Lên / Cập Nhật Hồ Sơ Đính Kèm"
-        description={`Hồ sơ của NPT: ${selectedDependentForUpload?.fullName || ""} (${selectedDependentForUpload?.employeeName || ""})`}
-        size="md"
-        footer={
-          <>
-            <Button onClick={() => setUploadAttachmentModalOpen(false)}>Hủy</Button>
-            <Button
-              variant="primary"
-              disabled={!uploadDocFile}
-              loading={updateAttachmentMutation.isPending}
-              onClick={() => updateAttachmentMutation.mutate()}
-            >
-              <Check /> Lưu hồ sơ đính kèm
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <label className="form-field full-width">
-            <span>Loại tài liệu chứng minh *</span>
-            <select
-              value={uploadDocType}
-              onChange={(e) => setUploadDocType(e.target.value as any)}
-            >
-              <option value="cccd_2_sided">Hình chụp CCCD 2 mặt (Mặt trước + Mặt sau)</option>
-              <option value="birth_cert">Giấy khai sinh (Trẻ em dưới 18 tuổi)</option>
-              <option value="disability_cert">Giấy chứng nhận mất khả năng lao động / Giám định y khoa</option>
-            </select>
-          </label>
-
-          {/* Hidden File Input */}
-          <input
-            ref={uploadDocInputRef}
-            type="file"
-            accept=".jpg,.jpeg,.png,.pdf"
-            onChange={handleUploadDocChange}
-            className="hidden"
-          />
-
-          {!uploadDocFile ? (
-            <div
-              onClick={() => uploadDocInputRef.current?.click()}
-              className="border-2 border-dashed border-border hover:border-primary/60 bg-card hover:bg-secondary/30 rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2.5"
-            >
-              <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center shadow-2xs">
-                <UploadCloud className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <strong className="text-sm font-bold text-foreground block">
-                  Bấm để chọn tệp tài liệu từ máy tính
-                </strong>
-                <p className="text-xs text-muted">
-                  Hỗ trợ định dạng: <strong>JPG, PNG, PDF</strong> · Dung lượng tối đa: 10MB
-                </p>
-              </div>
-              <Button type="button" variant="secondary" size="sm" className="mt-1 pointer-events-none">
-                <Upload className="w-3.5 h-3.5" /> Chọn tệp hình ảnh/PDF
-              </Button>
-            </div>
-          ) : (
-            <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
-                    {uploadDocFile.type.startsWith("image/") ? <ImageIcon className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
-                  </div>
-                  <div className="min-w-0">
-                    <strong className="text-xs font-bold text-foreground truncate block">
-                      {uploadDocFile.name}
-                    </strong>
-                    <small className="text-[11px] text-muted block">
-                      Dung lượng: {(uploadDocFile.size / 1024).toFixed(1)} KB · Sẵn sàng cập nhật
-                    </small>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => uploadDocInputRef.current?.click()}
-                    className="text-xs"
-                  >
-                    Thay tệp
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRemoveUploadDocFile}
-                    className="text-destructive hover:bg-destructive/10 text-xs"
-                    title="Gỡ tệp"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Image thumbnail preview if image */}
-              {uploadDocPreviewUrl && (
-                <div className="rounded-lg overflow-hidden border border-border/80 max-h-48 flex items-center justify-center bg-black/5">
-                  <img src={uploadDocPreviewUrl} alt="Xem trước hồ sơ" className="max-h-48 object-contain" />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </Modal>
-
-      {/* Confirm Approval Modal */}
-      <Modal
-        open={confirmModalOpen}
-        onOpenChange={(open) => !open && setConfirmModalOpen(false)}
-        title="Xác nhận hồ sơ Người phụ thuộc"
-        description={
-          confirmTargetDependent
-            ? `Xác nhận hồ sơ người phụ thuộc cho nhân viên ${confirmTargetDependent.employeeName} (${confirmTargetDependent.employeeCode})`
-            : `Bạn có chắc chắn muốn xác nhận ${confirmTargetIds.length} hồ sơ người phụ thuộc đã chọn?`
-        }
-        size="sm"
-        footer={
-          <>
-            <Button onClick={() => setConfirmModalOpen(false)}>Hủy</Button>
-            <Button
-              variant="primary"
-              loading={confirmMutation.isPending}
-              onClick={() => confirmMutation.mutate(confirmTargetIds)}
-            >
-              <Check /> Xác nhận hồ sơ
-            </Button>
-          </>
-        }
-      >
-        {confirmTargetDependent ? (
-          <div className="space-y-3 text-xs">
-            <div className="p-3 bg-secondary/50 rounded-lg space-y-2 border border-border">
-              <div className="flex justify-between">
-                <span className="text-muted">Người nộp thuế:</span>
-                <strong className="text-foreground">{confirmTargetDependent.employeeName}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Người phụ thuộc:</span>
-                <strong className="text-foreground">{confirmTargetDependent.fullName}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Mối quan hệ:</span>
-                <span>{relationshipLabel(confirmTargetDependent.relationship)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Tháng áp dụng:</span>
-                <Badge tone="neutral">{formatMonthYear(confirmTargetDependent.startDate)}</Badge>
-              </div>
-            </div>
-            <p className="text-muted leading-relaxed">
-              Sau khi xác nhận, người phụ thuộc này sẽ được tính vào mức giảm trừ gia cảnh của nhân viên từ tháng áp dụng.
-            </p>
-          </div>
-        ) : (
-          <p className="modal-note">
-            Toàn bộ {confirmTargetIds.length} hồ sơ người phụ thuộc được chọn sẽ được chuyển sang trạng thái Đã xác nhận và tự động liên kết với Thuế TNCN.
-          </p>
-        )}
-      </Modal>
-
-      {/* Edit Dependent Modal */}
-      <Modal
-        open={editModalOpen}
-        onOpenChange={(open) => !open && setEditModalOpen(false)}
-        title="Chỉnh sửa thông tin người phụ thuộc"
-        description={editingDependent ? `Người nộp thuế: ${editingDependent.employeeName} (${editingDependent.employeeCode})` : ""}
-        size="md"
-        footer={
-          <>
-            <Button onClick={() => setEditModalOpen(false)}>Hủy</Button>
-            <Button
-              variant="primary"
-              loading={updateDependentMutation.isPending}
-              onClick={() => updateDependentMutation.mutate()}
               className="gap-1.5 font-semibold"
             >
-              <Check className="w-3.5 h-3.5" /> Lưu thay đổi
+              <Upload className="w-3.5 h-3.5" /> Bắt đầu Import
             </Button>
-          </>
-        }
-      >
-        <div className="form-grid">
-          <label className="form-field">
-            <span>Họ và tên Người phụ thuộc *</span>
-            <input
-              type="text"
-              value={editFullName}
-              onChange={(e) => setEditFullName(e.target.value)}
-              placeholder="Họ và tên NPT"
-              required
-            />
-          </label>
-
-          <label className="form-field">
-            <span>Mối quan hệ nhân thân *</span>
-            <select
-              value={editRelationship}
-              onChange={(e) => setEditRelationship(e.target.value as any)}
-            >
-              <option value="child">Con ruột / Con nuôi</option>
-              <option value="spouse">Vợ / Chồng</option>
-              <option value="parent">Cha / Mẹ ruột hoặc Cha/Mẹ chồng/vợ</option>
-              <option value="other">Người phụ thuộc khác</option>
-            </select>
-          </label>
-
-          <label className="form-field">
-            <span>Ngày tháng năm sinh *</span>
-            <input
-              type="date"
-              value={editDob}
-              onChange={(e) => setEditDob(e.target.value)}
-              required
-            />
-          </label>
-
-          <label className="form-field">
-            <span>Số CCCD / Mã số định danh *</span>
-            <input
-              type="text"
-              value={editIdCard}
-              onChange={(e) => setEditIdCard(e.target.value)}
-              placeholder="12 số CCCD / Mã định danh"
-              required
-            />
-          </label>
-
-          <label className="form-field">
-            <span>Mã số thuế NPT (nếu có)</span>
-            <input
-              type="text"
-              value={editTaxCode}
-              onChange={(e) => setEditTaxCode(e.target.value)}
-              placeholder="Mã số thuế NPT"
-            />
-          </label>
-
-          <div className="form-field">
-            <span>Tháng bắt đầu tính giảm trừ *</span>
-            <MonthPicker
-              value={editStartDate}
-              onChange={(val) => setEditStartDate(val)}
-              variant="form"
-            />
           </div>
-
-          <div className="form-field">
-            <span>Tháng kết thúc giảm trừ</span>
-            <MonthPicker
-              value={editEndDate || "2026-12"}
-              onChange={(val) => setEditEndDate(val)}
-              variant="form"
-            />
-          </div>
-
-          <label className="form-field full-width">
-            <span>Loại giấy tờ chứng minh đính kèm</span>
-            <select
-              value={editAttachmentType}
-              onChange={(e) => setEditAttachmentType(e.target.value as any)}
-            >
-              <option value="cccd_2_sided">Hình chụp CCCD 2 mặt (Mặt trước + Mặt sau)</option>
-              <option value="birth_cert">Giấy khai sinh (Trẻ em dưới 18 tuổi)</option>
-              <option value="disability_cert">Giấy chứng nhận mất khả năng lao động / Y tế</option>
-            </select>
-          </label>
         </div>
       </Modal>
 
-      {/* Suggestion 3: Standard Bulk Action SaveBar */}
-      {selectedIds.size > 0 && (
-        <div className="save-bar">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
-              <Check className="w-4 h-4" />
+      {/* ================= Drawer: Nhật ký Hoạt động (Audit Logs) ================= */}
+      <Modal
+        open={auditLogsDrawerOpen}
+        onOpenChange={setAuditLogsDrawerOpen}
+        title="Nhật ký hoạt động Quản lý Người phụ thuộc"
+        description="Lịch sử các thao tác khai báo, phê duyệt, từ chối và cập nhật hồ sơ."
+        size="lg"
+      >
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+          {(!auditLogsData?.items || auditLogsData.items.length === 0) ? (
+            <div className="py-8 text-center text-slate-400 text-xs">Chưa có nhật ký ghi nhận.</div>
+          ) : (
+            <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+              {auditLogsData.items.map((log) => (
+                <div key={log.id} className="relative text-xs">
+                  {/* Dot */}
+                  <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-white border-2 border-primary flex items-center justify-center shadow-xs" />
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-900">{log.description}</span>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {formatDate(log.occurredAt)}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 text-[11px] text-slate-500 flex items-center gap-2">
+                      <span>
+                        Thực hiện bởi: <strong>{log.actor.fullName}</strong> ({log.actor.roleName})
+                      </span>
+                      {log.dependent && (
+                        <>
+                          <span>•</span>
+                          <span>NPT: <strong className="text-slate-700">{log.dependent.fullName}</strong></span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="flex flex-col min-w-0">
-              <strong className="text-xs font-bold text-foreground truncate block">
-                Đã chọn {selectedIds.size} hồ sơ người phụ thuộc
-              </strong>
-              <span className="text-[11px] text-muted truncate hidden sm:block">
-                Phê duyệt áp dụng giảm trừ gia cảnh
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setSelectedIds(new Set())}
-              disabled={confirmMutation.isPending}
-            >
-              Bỏ chọn
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                setConfirmTargetIds(Array.from(selectedIds));
-                setConfirmTargetDependent(null);
-                setConfirmModalOpen(true);
-              }}
-              disabled={confirmMutation.isPending}
-              className="shadow-xs gap-1.5 font-semibold"
-            >
-              <Check className="w-3.5 h-3.5" />
-              {confirmMutation.isPending ? "Đang xử lý..." : `Xác nhận (${selectedIds.size})`}
+          )}
+
+          <div className="flex justify-end pt-3 border-t border-slate-200">
+            <Button variant="secondary" size="sm" onClick={() => setAuditLogsDrawerOpen(false)}>
+              Đóng
             </Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
-

@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Calendar,
   Check,
+  CreditCard,
   DollarSign,
   Download,
   Eye,
@@ -16,13 +17,16 @@ import {
   Pencil,
   Plus,
   ReceiptText,
+  RefreshCw,
   Search,
+  ShieldAlert,
   Trash2,
   TrendingDown,
   Upload,
   UploadCloud,
   User,
   Users,
+  WalletCards,
   X,
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -43,15 +47,19 @@ import {
   TableRowActions,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Employee, OtherDeductionCategory, OtherDeductionRecord } from "@/lib/types";
+import type {
+  CreateOtherDeductionRequestV3,
+  Employee,
+  OtherDeductionType,
+  OtherDeductionV3,
+} from "@/lib/types";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
 
-const DEDUCTION_CATEGORIES: { value: OtherDeductionCategory; label: string; tone: "danger" | "warning" | "neutral" }[] = [
-  { value: "violation", label: "Phạt vi phạm nội quy", tone: "danger" },
-  { value: "compensation", label: "Bồi thường tài sản", tone: "warning" },
-  { value: "late_penalty", label: "Phạt đi trễ theo quyết định", tone: "warning" },
-  { value: "uniform", label: "Khấu trừ đồng phục", tone: "neutral" },
-  { value: "other", label: "Khoản trừ khác", tone: "neutral" },
+const DEDUCTION_TYPE_OPTIONS: { value: OtherDeductionType; label: string; tone: "danger" | "warning" | "info" | "neutral" }[] = [
+  { value: "ADVANCE_PAYMENT", label: "Tạm ứng lương giữa kỳ", tone: "info" },
+  { value: "ASSET_COMPENSATION", label: "Bồi thường CCDC", tone: "warning" },
+  { value: "DISCIPLINE_FINE", label: "Phạt kỷ luật", tone: "danger" },
+  { value: "OTHER", label: "Khoản giảm trừ khác", tone: "neutral" },
 ];
 
 export function OtherDeductionsSubtab({
@@ -66,11 +74,9 @@ export function OtherDeductionsSubtab({
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
-  const employeeMap = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
-
   const [searchTerm, setSearchTerm] = useState("");
-  const [periodFilter, setPeriodFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [periodFilter, setPeriodFilter] = useState("2026-08");
+  const [typeFilter, setTypeFilter] = useState<string>("ALL");
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -78,42 +84,100 @@ export function OtherDeductionsSubtab({
 
   // Modals state
   const [formModalOpen, setFormModalOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<OtherDeductionRecord | null>(null);
+  const [editingRecord, setEditingRecord] = useState<OtherDeductionV3 | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [targetDeleteRecord, setTargetDeleteRecord] = useState<OtherDeductionRecord | null>(null);
+  const [targetDeleteRecord, setTargetDeleteRecord] = useState<OtherDeductionV3 | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [previewFileModalOpen, setPreviewFileModalOpen] = useState(false);
-  const [previewingRecord, setPreviewingRecord] = useState<OtherDeductionRecord | null>(null);
+  const [previewingRecord, setPreviewingRecord] = useState<OtherDeductionV3 | null>(null);
 
-  // Form fields state
-  const [formEmployeeId, setFormEmployeeId] = useState("");
-  const [formPeriod, setFormPeriod] = useState("2026-08");
-  const [formCategory, setFormCategory] = useState<OtherDeductionCategory>("violation");
+  // Form state
+  const [formEmployeeCode, setFormEmployeeCode] = useState("");
+  const [formMonth, setFormMonth] = useState("2026-08");
+  const [formType, setFormType] = useState<OtherDeductionType>("DISCIPLINE_FINE");
   const [formAmount, setFormAmount] = useState<number>(500000);
-  const [formDecisionNo, setFormDecisionNo] = useState("");
+  const [formDecisionNumber, setFormDecisionNumber] = useState("");
   const [formDecisionDate, setFormDecisionDate] = useState("2026-08-15");
   const [formReason, setFormReason] = useState("");
-  const [formAttachmentName, setFormAttachmentName] = useState("");
-  const [formAttachmentUrl, setFormAttachmentUrl] = useState("");
-  const [formAttachmentSize, setFormAttachmentSize] = useState("");
+  const [formSelectedFile, setFormSelectedFile] = useState<File | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Open Create Form
+  // Summary Query
+  const summaryQuery = useQuery({
+    queryKey: ["other-deductions-summary", projectId, periodFilter],
+    queryFn: () =>
+      api.getOtherDeductionsSummaryV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        month: periodFilter === "all" ? undefined : periodFilter,
+      }),
+  });
+
+  // List Query
+  const listQuery = useQuery({
+    queryKey: ["other-deductions-list", projectId, periodFilter, typeFilter, searchTerm, page, pageSize],
+    queryFn: () =>
+      api.getOtherDeductionsListV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        month: periodFilter === "all" ? undefined : periodFilter,
+        type: typeFilter === "ALL" ? undefined : typeFilter,
+        search: searchTerm || undefined,
+        page,
+        pageSize,
+      }),
+  });
+
+  // Master deduction types
+  const typesQuery = useQuery({
+    queryKey: ["master-other-deduction-types"],
+    queryFn: () => api.getMasterOtherDeductionTypesV3(),
+  });
+
+  const summary = summaryQuery.data;
+  const listData = listQuery.data;
+  const items = listData?.items ?? [];
+  const totalItems = listData?.total ?? 0;
+
+  // Open Create Modal
   const handleOpenCreate = () => {
     setEditingRecord(null);
-    setFormEmployeeId(employees[0]?.id || "");
-    setFormPeriod(periodFilter === "all" ? "2026-08" : periodFilter);
-    setFormCategory("violation");
+    setFormEmployeeCode(employees[0]?.code || "NV-00124");
+    setFormMonth(periodFilter === "all" ? "2026-08" : periodFilter);
+    setFormType("DISCIPLINE_FINE");
     setFormAmount(500000);
-    setFormDecisionNo("QĐ-2026/08-01/VP");
+    setFormDecisionNumber("QĐ-2026/08-01/VP");
     setFormDecisionDate(new Date().toISOString().slice(0, 10));
     setFormReason("");
-    setFormAttachmentName("");
-    setFormAttachmentUrl("");
-    setFormAttachmentSize("");
+    setFormSelectedFile(null);
     setFormModalOpen(true);
+  };
+
+  // Open Edit Modal
+  const handleOpenEdit = (item: OtherDeductionV3) => {
+    setEditingRecord(item);
+    setFormEmployeeCode(item.employee.employeeCode);
+    setFormMonth(item.month);
+    setFormType(item.type);
+    setFormAmount(item.amount);
+    setFormDecisionNumber(item.decisionNumber || "");
+    setFormDecisionDate(item.decisionDate || new Date().toISOString().slice(0, 10));
+    setFormReason(item.reason);
+    setFormSelectedFile(null);
+    setFormModalOpen(true);
+  };
+
+  // Export Excel
+  const handleExportExcel = async () => {
+    try {
+      const res = await api.exportOtherDeductionsExcelV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        month: periodFilter === "all" ? undefined : periodFilter,
+        type: typeFilter === "ALL" ? undefined : typeFilter,
+      });
+      notify(`Đã xuất báo cáo ${res.fileName} thành công (${res.totalRecords} bản ghi).`);
+    } catch (err: any) {
+      notify(err.message || "Lỗi khi xuất báo cáo Excel", "error");
+    }
   };
 
   // Register Header Action
@@ -121,6 +185,13 @@ export function OtherDeductionsSubtab({
     if (!setHeaderAction) return;
     setHeaderAction(
       <div className="flex items-center gap-2">
+        <Button
+          variant="secondary"
+          onClick={handleExportExcel}
+          className="gap-1.5 font-semibold text-xs h-8 px-3"
+        >
+          <Download className="w-3.5 h-3.5" /> Xuất Excel
+        </Button>
         <Button
           variant="secondary"
           onClick={() => setImportModalOpen(true)}
@@ -133,135 +204,71 @@ export function OtherDeductionsSubtab({
           onClick={handleOpenCreate}
           className="gap-1.5 font-semibold text-xs h-8 px-3"
         >
-          <Plus className="w-3.5 h-3.5" /> Thêm khoản trừ
+          <Plus className="w-3.5 h-3.5" /> Thêm khoản giảm trừ
         </Button>
       </div>
     );
     return () => setHeaderAction(null);
-  }, [setHeaderAction]);
+  }, [setHeaderAction, projectId, periodFilter, typeFilter]);
 
-  // Fetch deductions
-  const deductionsQuery = useQuery({
-    queryKey: ["other-deductions", projectId, periodFilter],
-    queryFn: () =>
-      api.getOtherDeductions({
-        projectId: projectId === "all" ? undefined : projectId,
-        period: periodFilter === "all" ? undefined : periodFilter,
-      }),
-  });
-
-  const deductions = deductionsQuery.data ?? [];
-
-  // Filtered deductions
-  const filteredDeductions = useMemo(() => {
-    return deductions.filter((item) => {
-      const q = searchTerm.toLowerCase().trim();
-      const matchSearch =
-        !q ||
-        (item.employeeName ?? "").toLowerCase().includes(q) ||
-        (item.employeeCode ?? "").toLowerCase().includes(q) ||
-        (item.decisionNo ?? "").toLowerCase().includes(q) ||
-        (item.categoryLabel ?? "").toLowerCase().includes(q) ||
-        (item.reason ?? "").toLowerCase().includes(q);
-
-      const matchCategory = categoryFilter === "all" || item.category === categoryFilter;
-
-      return matchSearch && matchCategory;
-    });
-  }, [deductions, searchTerm, categoryFilter]);
-
-  // Statistics
-  const stats = useMemo(() => {
-    const totalAmount = filteredDeductions.reduce((sum, item) => sum + item.amount, 0);
-    const uniqueEmployees = new Set(filteredDeductions.map((item) => item.employeeId)).size;
-    const withAttachmentCount = filteredDeductions.filter((item) => Boolean(item.attachmentName)).length;
-    return {
-      totalAmount,
-      uniqueEmployees,
-      withAttachmentCount,
-      totalCount: filteredDeductions.length,
-    };
-  }, [filteredDeductions]);
-
-  // Paginated records
-  const paginatedRecords = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredDeductions.slice(start, start + pageSize);
-  }, [filteredDeductions, page, pageSize]);
-
-  // Open Edit Form
-  const handleOpenEdit = (record: OtherDeductionRecord) => {
-    setEditingRecord(record);
-    setFormEmployeeId(record.employeeId);
-    setFormPeriod(record.period);
-    setFormCategory(record.category);
-    setFormAmount(record.amount);
-    setFormDecisionNo(record.decisionNo || "");
-    setFormDecisionDate(record.decisionDate || new Date().toISOString().slice(0, 10));
-    setFormReason(record.reason);
-    setFormAttachmentName(record.attachmentName || "");
-    setFormAttachmentUrl(record.attachmentUrl || "");
-    setFormAttachmentSize(record.attachmentSize || "");
-    setFormModalOpen(true);
-  };
-
-  // File Upload handler
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFormAttachmentName(file.name);
-      setFormAttachmentUrl(URL.createObjectURL(file));
-      const sizeKb = Math.round(file.size / 1024);
-      setFormAttachmentSize(sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`);
-      notify(`Đã đính kèm file: ${file.name}`);
-    }
-  };
-
-  // Save Mutation
+  // Save Mutation (Create / Update)
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const selectedEmp = employees.find((e) => e.id === formEmployeeId);
-      const payload: Partial<OtherDeductionRecord> = {
-        projectId: selectedEmp?.projectId || projectId || "prj-jss",
-        employeeId: formEmployeeId,
-        employeeCode: selectedEmp?.code || "",
-        employeeName: selectedEmp?.name || "",
-        position: selectedEmp?.position || "Nhân viên",
-        period: formPeriod,
-        category: formCategory,
-        amount: Number(formAmount) || 0,
-        decisionNo: formDecisionNo.trim(),
-        decisionDate: formDecisionDate,
-        attachmentName: formAttachmentName.trim(),
-        attachmentUrl: formAttachmentUrl,
-        attachmentSize: formAttachmentSize,
-        reason: formReason.trim() || "Khấu trừ theo quyết định ban hành",
-      };
-
       if (editingRecord) {
-        return api.updateOtherDeduction(editingRecord.id, payload);
+        const updated = await api.updateOtherDeductionV3(editingRecord.id, {
+          month: formMonth,
+          type: formType,
+          amount: Number(formAmount) || 0,
+          decisionNumber: formDecisionNumber.trim() || undefined,
+          decisionDate: formDecisionDate || undefined,
+          reason: formReason.trim() || "Khoản giảm trừ tiền lương",
+        });
+        if (formSelectedFile) {
+          await api.uploadOtherDeductionAttachmentV3(editingRecord.id, formSelectedFile);
+        }
+        return updated;
+      } else {
+        const payload: CreateOtherDeductionRequestV3 = {
+          employeeCode: formEmployeeCode,
+          month: formMonth,
+          type: formType,
+          amount: Number(formAmount) || 0,
+          decisionNumber: formDecisionNumber.trim() || undefined,
+          decisionDate: formDecisionDate || undefined,
+          reason: formReason.trim() || "Khoản giảm trừ tiền lương",
+        };
+        const created = await api.createOtherDeductionV3(payload);
+        if (formSelectedFile && created.id) {
+          await api.uploadOtherDeductionAttachmentV3(created.id, formSelectedFile);
+        }
+        return created;
       }
-      return api.createOtherDeduction(payload);
     },
-    onSuccess: (saved) => {
-      queryClient.invalidateQueries({ queryKey: ["other-deductions"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["other-deductions-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["other-deductions-list"] });
       setFormModalOpen(false);
-      notify(editingRecord ? "Đã cập nhật thông tin khoản trừ thành công!" : "Đã thêm mới khoản trừ thành công!");
+      notify(editingRecord ? "Đã cập nhật khoản giảm trừ thành công!" : "Đã tạo mới khoản giảm trừ thành công!");
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi lưu khoản giảm trừ", "error");
     },
   });
 
   // Delete Mutation
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return api.deleteOtherDeduction(id);
+    mutationFn: async (id: number) => {
+      return api.deleteOtherDeductionV3(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["other-deductions"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["other-deductions-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["other-deductions-list"] });
       setDeleteModalOpen(false);
       setTargetDeleteRecord(null);
-      notify("Đã xóa khoản trừ thành công!");
+      notify("Đã xóa khoản giảm trừ thành công!");
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi xóa khoản giảm trừ", "error");
     },
   });
 
@@ -269,18 +276,18 @@ export function OtherDeductionsSubtab({
   const [importPreviewRows, setImportPreviewRows] = useState<any[]>([]);
   const excelColumns: ExcelImportColumn[] = [
     { key: "employeeCode", label: "Mã NLĐ", width: "120px" },
-    { key: "employeeName", label: "Họ và tên NLĐ", width: "160px" },
+    { key: "fullName", label: "Họ và tên NLĐ", width: "160px" },
     {
-      key: "period",
+      key: "month",
       label: "Tháng",
       width: "100px",
       align: "center",
-      render: (row) => <Badge tone="neutral">{formatMonthYear(row.period)}</Badge>,
+      render: (row) => <Badge tone="neutral">{formatMonthYear(row.month)}</Badge>,
     },
     {
-      key: "categoryLabel",
-      label: "Loại khoản trừ",
-      render: (row) => <span className="font-medium">{row.categoryLabel || "Phạt vi phạm"}</span>,
+      key: "typeName",
+      label: "Loại giảm trừ",
+      render: (row) => <span className="font-medium">{row.typeName || "Phạt vi phạm"}</span>,
     },
     {
       key: "amount",
@@ -288,46 +295,43 @@ export function OtherDeductionsSubtab({
       align: "right",
       render: (row) => <span className="font-mono text-danger font-semibold">-{formatCurrency(row.amount)}</span>,
     },
-    { key: "decisionNo", label: "Số QĐ", width: "130px" },
+    { key: "decisionNumber", label: "Số QĐ", width: "130px" },
     { key: "reason", label: "Lý do / Nội dung" },
   ];
 
   const handleSimulateExcelUpload = () => {
     const mockExcelData = [
       {
-        employeeCode: employees[0]?.code || "NV-JSS-001",
-        employeeName: employees[0]?.name || "Nguyễn Văn An",
-        period: "2026-08",
-        category: "violation",
-        categoryLabel: "Phạt vi phạm nội quy",
+        employeeCode: "NV-00124",
+        fullName: "Nguyễn Văn An",
+        month: "2026-08",
+        type: "DISCIPLINE_FINE",
+        typeName: "Phạt vi phạm kỷ luật",
         amount: 500000,
-        decisionNo: "QĐ-2026/08-01/VP",
+        decisionNumber: "QĐ-2026/08-01/VP",
         decisionDate: "2026-08-10",
-        attachmentName: "Quyet_dinh_xu_phat_NV001.pdf",
         reason: "Không mang bảo hộ lao động phòng sạch",
       },
       {
-        employeeCode: employees[1]?.code || "NV-JSS-002",
-        employeeName: employees[1]?.name || "Trần Thị Mai",
-        period: "2026-08",
-        category: "late_penalty",
-        categoryLabel: "Phạt đi trễ theo quyết định",
-        amount: 200000,
-        decisionNo: "QĐ-2026/08-04/HC",
+        employeeCode: "NV-00125",
+        fullName: "Trần Thị Mai",
+        month: "2026-08",
+        type: "ADVANCE_PAYMENT",
+        typeName: "Tạm ứng tiền lương giữa kỳ",
+        amount: 2000000,
+        decisionNumber: "ĐN-2026/08-04/TU",
         decisionDate: "2026-08-15",
-        attachmentName: "Bien_ban_gio_giac_Mai.pdf",
-        reason: "Đi trễ quá số lần quy định",
+        reason: "Tạm ứng viện phí gia đình",
       },
       {
-        employeeCode: employees[2]?.code || "NV-JSS-003",
-        employeeName: employees[2]?.name || "Lê Hoàng Nam",
-        period: "2026-08",
-        category: "compensation",
-        categoryLabel: "Bồi thường tài sản",
+        employeeCode: "NV-00126",
+        fullName: "Lê Hoàng Nam",
+        month: "2026-08",
+        type: "ASSET_COMPENSATION",
+        typeName: "Bồi thường thiệt hại CCDC",
         amount: 400000,
-        decisionNo: "QĐ-2026/08-09/BT",
+        decisionNumber: "BB-2026/08-09/BT",
         decisionDate: "2026-08-18",
-        attachmentName: "Bien_ban_hong_dung_cu.pdf",
         reason: "Làm mất dụng cụ đo kiểm",
       },
     ];
@@ -337,23 +341,91 @@ export function OtherDeductionsSubtab({
 
   const importBatchMutation = useMutation({
     mutationFn: async () => {
-      return api.batchImportOtherDeductions({
-        projectId: projectId === "all" ? "prj-jss" : projectId,
-        period: periodFilter === "all" ? "2026-08" : periodFilter,
-        items: importPreviewRows,
-      });
+      const dummyFile = new File(["dummy"], "import_giam_tru.xlsx");
+      return api.importOtherDeductionsExcelV3(dummyFile, projectId === "all" ? undefined : projectId);
     },
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["other-deductions"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["other-deductions-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["other-deductions-list"] });
       setImportModalOpen(false);
       setImportPreviewRows([]);
-      notify(`Đã nhập khẩu thành công ${res.length} khoản trừ vào hệ thống!`);
+      notify(`Đã nhập khẩu thành công ${res.successRows || importPreviewRows.length} khoản giảm trừ vào hệ thống!`);
+    },
+    onError: (err: any) => {
+      notify(err.message || "Lỗi khi nhập khẩu file Excel", "error");
     },
   });
 
   return (
     <div className="subtab-container space-y-4">
+      {/* 5 KPI SUMMARY CARDS */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Tổng số khoản trừ</span>
+            <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+              <ReceiptText className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground mt-2 font-mono">
+            {summary?.total ?? 0}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Bản ghi trong kỳ</div>
+        </div>
+
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Tổng tiền giảm trừ</span>
+            <div className="w-7 h-7 rounded-lg bg-danger/10 text-danger flex items-center justify-center">
+              <TrendingDown className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-xl font-bold text-danger mt-2 font-mono">
+            -{formatCurrency(summary?.totalAmount ?? 0)}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Khấu trừ tiền lương</div>
+        </div>
+
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Tạm ứng lương</span>
+            <div className="w-7 h-7 rounded-lg bg-info/10 text-info flex items-center justify-center">
+              <WalletCards className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-info mt-2 font-mono">
+            {summary?.advancePaymentCount ?? 0}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Tạm ứng giữa kỳ</div>
+        </div>
+
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Bồi thường CCDC</span>
+            <div className="w-7 h-7 rounded-lg bg-warning/10 text-warning flex items-center justify-center">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-warning mt-2 font-mono">
+            {summary?.assetCompensationCount ?? 0}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Hư hỏng tài sản</div>
+        </div>
+
+        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted">Phạt kỷ luật</span>
+            <div className="w-7 h-7 rounded-lg bg-danger/10 text-danger flex items-center justify-center">
+              <ShieldAlert className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-danger mt-2 font-mono">
+            {summary?.disciplineFineCount ?? 0}
+          </div>
+          <div className="text-xs text-muted mt-0.5 leading-relaxed">Vi phạm quy định</div>
+        </div>
+      </div>
+
       {/* Integrated Flat Card Table */}
       <div className="integrated-table-card">
         {/* Toolbar: Single Row */}
@@ -363,27 +435,32 @@ export function OtherDeductionsSubtab({
             <div className="filter-status-pills">
               <button
                 type="button"
-                className={`pill-btn ${categoryFilter === "all" ? "active" : ""}`}
+                className={`pill-btn ${typeFilter === "ALL" ? "active" : ""}`}
                 onClick={() => {
-                  setCategoryFilter("all");
+                  setTypeFilter("ALL");
                   setPage(1);
                 }}
               >
-                Tất cả ({deductions.length})
+                Tất cả ({summary?.total ?? 0})
               </button>
-              {DEDUCTION_CATEGORIES.map((cat) => {
-                const count = deductions.filter((d) => d.category === cat.value).length;
+              {DEDUCTION_TYPE_OPTIONS.map((opt) => {
+                let count = 0;
+                if (opt.value === "ADVANCE_PAYMENT") count = summary?.advancePaymentCount ?? 0;
+                if (opt.value === "ASSET_COMPENSATION") count = summary?.assetCompensationCount ?? 0;
+                if (opt.value === "DISCIPLINE_FINE") count = summary?.disciplineFineCount ?? 0;
+                if (opt.value === "OTHER") count = summary?.otherCount ?? 0;
+
                 return (
                   <button
-                    key={cat.value}
+                    key={opt.value}
                     type="button"
-                    className={`pill-btn ${cat.tone === "danger" ? "danger" : cat.tone === "warning" ? "warning" : ""} ${categoryFilter === cat.value ? "active" : ""}`}
+                    className={`pill-btn ${opt.tone === "danger" ? "danger" : opt.tone === "warning" ? "warning" : opt.tone === "info" ? "info" : ""} ${typeFilter === opt.value ? "active" : ""}`}
                     onClick={() => {
-                      setCategoryFilter(cat.value);
+                      setTypeFilter(opt.value);
                       setPage(1);
                     }}
                   >
-                    {cat.label} ({count})
+                    {opt.label} ({count})
                   </button>
                 );
               })}
@@ -391,17 +468,28 @@ export function OtherDeductionsSubtab({
 
             {/* Right: Search + MonthPicker */}
             <div className="flex items-center gap-2.5 ml-auto">
-              <label className="search-field" style={{ minWidth: "220px" }}>
-                <Search className="w-4 h-4 text-muted shrink-0" />
+              <div className="relative min-w-[220px] max-w-[300px]">
+                <Search className="search-icon-fixed text-muted-foreground" />
                 <input
+                  type="text"
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
                     setPage(1);
                   }}
-                  placeholder="Tìm mã, tên NLĐ, số QĐ..."
+                  placeholder="Tìm mã, tên NLĐ, số QĐ, lý do..."
+                  className="search-box-input w-full pl-10 pr-8 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
                 />
-              </label>
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <div style={{ width: "160px" }}>
                 <MonthPicker
                   value={periodFilter}
@@ -420,36 +508,36 @@ export function OtherDeductionsSubtab({
         </div>
 
         {/* Main Table */}
-        {deductionsQuery.isLoading ? (
+        {listQuery.isLoading ? (
           <LoadingBlock rows={6} />
-        ) : deductionsQuery.isError ? (
+        ) : listQuery.isError ? (
           <ErrorState
-            message="Không thể tải danh sách khoản trừ khác"
-            retry={() => deductionsQuery.refetch()}
+            message="Không thể tải danh sách khoản giảm trừ khác"
+            retry={() => listQuery.refetch()}
           />
-        ) : filteredDeductions.length === 0 ? (
+        ) : items.length === 0 ? (
           <EmptyState
-            title="Không tìm thấy khoản trừ nào"
+            title="Không tìm thấy khoản giảm trừ nào"
             description={
-              searchTerm || periodFilter !== "all" || categoryFilter !== "all"
+              searchTerm || periodFilter !== "all" || typeFilter !== "ALL"
                 ? "Không có dữ liệu phù hợp với bộ lọc hiện tại."
-                : "Chưa có quyết định khấu trừ nào cho người lao động trong dự án."
+                : "Chưa có quyết định khấu trừ nào cho người lao động trong kỳ."
             }
             action={
-              searchTerm || periodFilter !== "all" || categoryFilter !== "all" ? (
+              searchTerm || periodFilter !== "all" || typeFilter !== "ALL" ? (
                 <Button
                   variant="secondary"
                   onClick={() => {
                     setSearchTerm("");
                     setPeriodFilter("all");
-                    setCategoryFilter("all");
+                    setTypeFilter("ALL");
                   }}
                 >
                   Xóa bộ lọc
                 </Button>
               ) : (
                 <Button variant="primary" onClick={handleOpenCreate}>
-                  <Plus className="w-4 h-4 mr-1.5" /> Thêm khoản trừ đầu tiên
+                  <Plus className="w-4 h-4 mr-1.5" /> Thêm khoản giảm trừ đầu tiên
                 </Button>
               )
             }
@@ -463,183 +551,183 @@ export function OtherDeductionsSubtab({
                     <th style={{ width: "45px" }} className="text-center">STT</th>
                     <th style={{ minWidth: "170px" }}>NGƯỜI LAO ĐỘNG</th>
                     <th style={{ width: "120px" }} className="text-center">THÁNG ÁP DỤNG</th>
-                    <th style={{ width: "170px" }}>LOẠI KHOẢN TRỪ</th>
+                    <th style={{ width: "180px" }}>LOẠI GIẢM TRỪ</th>
                     <th style={{ width: "130px" }} className="text-right">SỐ TIỀN</th>
                     <th style={{ width: "220px" }}>CĂN CỨ &amp; FILE QĐ</th>
-                    <th>LÝ DO / GIẢI TRÌNH</th>
+                    <th>LÝ DO / CĂN CỨ</th>
                     <th style={{ width: "150px" }}>CẬP NHẬT</th>
                     <th style={{ width: "80px" }} className="text-center">THAO TÁC</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedRecords.map((item, idx) => {
+                  {items.map((item, idx) => {
                     const rawStt = (page - 1) * pageSize + idx + 1;
                     const stt = String(rawStt).padStart(2, "0");
-                    const catDef = DEDUCTION_CATEGORIES.find((c) => c.value === item.category);
-                    const emp = employeeMap.get(item.employeeId) || employeeMap.get(item.employeeCode);
-                    const projectCode = emp?.projectCode;
+                    const typeDef = DEDUCTION_TYPE_OPTIONS.find((t) => t.value === item.type);
 
-                  return (
-                    <tr key={item.id} className="hover:bg-secondary/40 transition-colors">
-                      {/* STT */}
-                      <td className="text-center text-muted font-medium">{stt}</td>
+                    return (
+                      <tr key={item.id} className="hover:bg-secondary/40 transition-colors">
+                        {/* STT */}
+                        <td className="text-center text-muted font-medium">{stt}</td>
 
-                      {/* Employee Info */}
-                      <td>
-                        <div className="employee-cell-info">
-                          <span className="employee-cell-name font-semibold">{item.employeeName}</span>
-                          <span className="employee-cell-sub">
-                            <span className="employee-code-badge">{item.employeeCode}</span>
-                            {projectCode && <span className="text-muted text-[11px] font-normal">· {projectCode}</span>}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Period */}
-                      <td className="text-center">
-                        <Badge tone="neutral">{formatMonthYear(item.period)}</Badge>
-                      </td>
-
-                      {/* Category */}
-                      <td>
-                        <Badge tone={catDef?.tone || "neutral"}>
-                          {item.categoryLabel || catDef?.label || item.category}
-                        </Badge>
-                      </td>
-
-                      {/* Amount */}
-                      <td className="text-right">
-                        <span className="font-mono font-bold text-danger text-[13.5px]">
-                          -{formatCurrency(item.amount)}
-                        </span>
-                      </td>
-
-                      {/* Decision & Attachment */}
-                      <td>
-                        <div className="flex flex-col gap-1">
-                          {item.decisionNo ? (
-                            <div className="flex flex-col">
-                              <span className="text-xs font-medium text-foreground flex items-center gap-1">
-                                <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
-                                {item.decisionNo}
-                              </span>
-                              {item.decisionDate && (
-                                <span className="text-[11px] text-muted ml-4.5">
-                                  Ngày {formatDate(item.decisionDate)}
-                                </span>
+                        {/* Employee Info */}
+                        <td>
+                          <div className="employee-cell-info">
+                            <span className="employee-cell-name font-semibold">{item.employee.fullName}</span>
+                            <span className="employee-cell-sub">
+                              <span className="employee-code-badge">{item.employee.employeeCode}</span>
+                              {item.employee.project?.projectCode && (
+                                <span className="text-muted text-[11px] font-normal">· {item.employee.project.projectCode}</span>
                               )}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted italic">Chưa có số QĐ</span>
-                          )}
+                            </span>
+                          </div>
+                        </td>
 
-                          {item.attachmentName ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPreviewingRecord(item);
-                                setPreviewFileModalOpen(true);
-                              }}
-                              className="inline-flex items-center gap-1 text-[11.5px] text-primary hover:underline font-medium text-left truncate max-w-[190px]"
-                              title={`Xem file: ${item.attachmentName}`}
-                            >
-                              <Paperclip className="w-3 h-3 shrink-0" />
-                              <span className="truncate">{item.attachmentName}</span>
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-muted">Chưa đính kèm file</span>
-                          )}
-                        </div>
-                      </td>
+                        {/* Month */}
+                        <td className="text-center">
+                          <Badge tone="neutral">{formatMonthYear(item.month)}</Badge>
+                        </td>
 
-                      {/* Reason */}
-                      <td>
-                        <p className="text-xs text-foreground/90 line-clamp-2" title={item.reason}>
-                          {item.reason}
-                        </p>
-                      </td>
+                        {/* Type */}
+                        <td>
+                          <Badge tone={typeDef?.tone || "neutral"}>
+                            {item.typeName || typeDef?.label || item.type}
+                          </Badge>
+                        </td>
 
-                      {/* Updated Info */}
-                      <td>
-                        <div className="text-[11.5px] text-muted space-y-0.5">
-                          <div className="truncate font-medium text-foreground/80">{item.updatedBy}</div>
-                          <div>{formatDate(item.updatedAt)}</div>
-                        </div>
-                      </td>
+                        {/* Amount */}
+                        <td className="text-right">
+                          <span className="font-mono font-bold text-danger text-[13.5px]">
+                            -{formatCurrency(item.amount)}
+                          </span>
+                        </td>
 
-                      {/* Actions */}
-                      <td className="text-center">
-                        <TableRowActions
-                          items={[
-                            {
-                              key: "edit",
-                              label: "Chỉnh sửa khoản trừ",
-                              icon: <Pencil />,
-                              onClick: () => handleOpenEdit(item),
-                            },
-                            ...(item.attachmentName
-                              ? [
-                                  {
-                                    key: "preview_doc",
-                                    label: "Xem file quyết định",
-                                    icon: <Eye />,
-                                    onClick: () => {
-                                      setPreviewingRecord(item);
-                                      setPreviewFileModalOpen(true);
-                                    },
-                                  },
-                                ]
-                              : []),
-                            {
-                              key: "delete",
-                              label: "Xóa khoản trừ",
-                              icon: <Trash2 />,
-                              danger: true,
-                              onClick: () => {
-                                setTargetDeleteRecord(item);
-                                setDeleteModalOpen(true);
+                        {/* Decision & Attachment */}
+                        <td>
+                          <div className="flex flex-col gap-1">
+                            {item.decisionNumber ? (
+                              <div className="flex flex-col">
+                                <span className="text-xs font-medium text-foreground flex items-center gap-1">
+                                  <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                                  {item.decisionNumber}
+                                </span>
+                                {item.decisionDate && (
+                                  <span className="text-[11px] text-muted ml-4.5">
+                                    Ngày {formatDate(item.decisionDate)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted italic">Chưa có số QĐ</span>
+                            )}
+
+                            {item.attachment ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewingRecord(item);
+                                  setPreviewFileModalOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 text-[11.5px] text-primary hover:underline font-medium text-left truncate max-w-[190px]"
+                                title={`Xem file: ${item.attachment.fileName}`}
+                              >
+                                <Paperclip className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{item.attachment.fileName}</span>
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-muted">Chưa đính kèm file</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Reason */}
+                        <td>
+                          <p className="text-xs text-foreground/90 line-clamp-2" title={item.reason}>
+                            {item.reason}
+                          </p>
+                        </td>
+
+                        {/* Updated Info */}
+                        <td>
+                          <div className="text-[11.5px] text-muted space-y-0.5">
+                            <div className="truncate font-medium text-foreground/80">{item.updatedBy?.fullName || "Quản trị viên"}</div>
+                            <div>{formatDate(item.updatedAt)}</div>
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="text-center">
+                          <TableRowActions
+                            items={[
+                              {
+                                key: "edit",
+                                label: "Chỉnh sửa khoản giảm trừ",
+                                icon: <Pencil />,
+                                onClick: () => handleOpenEdit(item),
                               },
-                            },
-                          ]}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                              ...(item.attachment
+                                ? [
+                                    {
+                                      key: "preview_doc",
+                                      label: "Xem file quyết định",
+                                      icon: <Eye />,
+                                      onClick: () => {
+                                        setPreviewingRecord(item);
+                                        setPreviewFileModalOpen(true);
+                                      },
+                                    },
+                                  ]
+                                : []),
+                              {
+                                key: "delete",
+                                label: "Xóa khoản giảm trừ",
+                                icon: <Trash2 />,
+                                danger: true,
+                                onClick: () => {
+                                  setTargetDeleteRecord(item);
+                                  setDeleteModalOpen(true);
+                                },
+                              },
+                            ]}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-          <TablePaginationFooter
-            totalItems={filteredDeductions.length}
-            currentPage={page}
-            pageSize={pageSize}
-            onPageChange={setPage}
-            onPageSizeChange={(newSize) => {
-              setPageSize(newSize);
-              setPage(1);
-            }}
-          />
-        </div>
-      )}
+            <TablePaginationFooter
+              totalItems={totalItems}
+              currentPage={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setPage(1);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* BOTTOM AUDIT / ACTIVITY LOG */}
       <SubtabActivityLog
         projectId={projectId}
         module="deductions"
-        title="Nhật ký biến động Khoản trừ khác"
-        description="Lịch sử thêm mới, điều chỉnh, xóa và import các khoản phạt, bồi thường của người lao động"
+        title="Nhật ký biến động Khoản giảm trừ khác"
+        description="Lịch sử thêm mới, điều chỉnh, xóa và import các khoản phạt, bồi thường, tạm ứng tiền lương của người lao động"
       />
 
       {/* ========================================================================= */}
-      {/* MODAL: Thêm mới / Chỉnh sửa khoản trừ (Có đính kèm file quyết định)       */}
+      {/* MODAL: Thêm mới / Chỉnh sửa khoản giảm trừ                               */}
       {/* ========================================================================= */}
       <Modal
         open={formModalOpen}
         onOpenChange={setFormModalOpen}
-        title={editingRecord ? "Chỉnh sửa khoản trừ khác" : "Thêm mới khoản trừ khác"}
-        description="Nhập thông tin quyết định xử phạt / bồi thường và đính kèm văn bản căn cứ."
+        title={editingRecord ? "Chỉnh sửa khoản giảm trừ khác" : "Thêm mới khoản giảm trừ khác"}
+        description="Nhập thông tin quyết định xử phạt / bồi thường / tạm ứng và đính kèm văn bản căn cứ."
         size="lg"
         footer={
           <>
@@ -648,7 +736,7 @@ export function OtherDeductionsSubtab({
             </Button>
             <Button
               variant="primary"
-              disabled={!formEmployeeId || !formAmount || saveMutation.isPending}
+              disabled={!formEmployeeCode || !formAmount || saveMutation.isPending}
               onClick={() => saveMutation.mutate()}
               className="gap-1.5 font-semibold"
             >
@@ -656,8 +744,8 @@ export function OtherDeductionsSubtab({
               {saveMutation.isPending
                 ? "Đang lưu…"
                 : editingRecord
-                ? "Cập nhật khoản trừ"
-                : "Tạo khoản trừ"}
+                ? "Cập nhật khoản giảm trừ"
+                : "Tạo khoản giảm trừ"}
             </Button>
           </>
         }
@@ -669,17 +757,23 @@ export function OtherDeductionsSubtab({
               <label className="form-label">
                 Người lao động <span className="text-danger">*</span>
               </label>
-              <SearchableSelect
-                value={formEmployeeId}
-                onChange={setFormEmployeeId}
-                placeholder="Chọn người lao động..."
-                searchPlaceholder="Tìm mã hoặc tên người lao động..."
-                options={employees.map((emp) => ({
-                  value: emp.id,
-                  label: `${emp.code} - ${emp.name}`,
-                  subLabel: emp.position || emp.department,
-                }))}
-              />
+              {editingRecord ? (
+                <div className="p-2.5 rounded-lg border border-border bg-secondary/30 font-medium text-sm">
+                  {editingRecord.employee.employeeCode} - {editingRecord.employee.fullName}
+                </div>
+              ) : (
+                <SearchableSelect
+                  value={formEmployeeCode}
+                  onChange={setFormEmployeeCode}
+                  placeholder="Chọn người lao động..."
+                  searchPlaceholder="Tìm mã hoặc tên người lao động..."
+                  options={employees.map((emp) => ({
+                    value: emp.code,
+                    label: `${emp.code} - ${emp.name}`,
+                    subLabel: emp.position || emp.department,
+                  }))}
+                />
+              )}
             </div>
 
             <div className="form-group">
@@ -687,24 +781,24 @@ export function OtherDeductionsSubtab({
                 Tháng áp dụng <span className="text-danger">*</span>
               </label>
               <MonthPicker
-                value={formPeriod}
-                onChange={setFormPeriod}
+                value={formMonth}
+                onChange={setFormMonth}
                 variant="form"
                 placeholder="Chọn tháng áp dụng..."
               />
             </div>
           </div>
 
-          {/* Row 2: Category & Amount */}
+          {/* Row 2: Type & Amount */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-group">
               <label className="form-label">
-                Loại khoản trừ <span className="text-danger">*</span>
+                Loại khoản giảm trừ <span className="text-danger">*</span>
               </label>
               <SearchableSelect
-                value={formCategory}
-                onChange={(val) => setFormCategory(val as OtherDeductionCategory)}
-                options={DEDUCTION_CATEGORIES.map((c) => ({
+                value={formType}
+                onChange={(val) => setFormType(val as OtherDeductionType)}
+                options={DEDUCTION_TYPE_OPTIONS.map((c) => ({
                   value: c.value,
                   label: c.label,
                 }))}
@@ -713,7 +807,7 @@ export function OtherDeductionsSubtab({
 
             <div className="form-group">
               <label className="form-label">
-                Số tiền khấu trừ (VND) <span className="text-danger">*</span>
+                Số tiền giảm trừ (VND) <span className="text-danger">*</span>
               </label>
               <div className="relative">
                 <input
@@ -730,15 +824,15 @@ export function OtherDeductionsSubtab({
             </div>
           </div>
 
-          {/* Row 3: Decision No & Date */}
+          {/* Row 3: Decision Number & Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="form-group">
               <label className="form-label">Số quyết định / Biên bản căn cứ</label>
               <input
                 type="text"
                 className="form-input w-full"
-                value={formDecisionNo}
-                onChange={(e) => setFormDecisionNo(e.target.value)}
+                value={formDecisionNumber}
+                onChange={(e) => setFormDecisionNumber(e.target.value)}
                 placeholder="VD: QĐ-2026/08-01/VP"
               />
             </div>
@@ -765,9 +859,9 @@ export function OtherDeductionsSubtab({
           <div className="form-group">
             <label className="form-label flex items-center justify-between">
               <span>Đính kèm file quyết định (PDF, Word, Ảnh)</span>
-              {formAttachmentName && (
+              {formSelectedFile && (
                 <span className="text-xs text-primary font-medium">
-                  {formAttachmentSize || "Đã chọn file"}
+                  {formSelectedFile.name} ({(formSelectedFile.size / 1024).toFixed(0)} KB)
                 </span>
               )}
             </label>
@@ -777,10 +871,16 @@ export function OtherDeductionsSubtab({
               ref={fileInputRef}
               className="hidden"
               accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-              onChange={handleFileSelected}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  setFormSelectedFile(file);
+                  notify(`Đã chọn file: ${file.name}`);
+                }
+              }}
             />
 
-            {formAttachmentName ? (
+            {formSelectedFile || editingRecord?.attachment ? (
               <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/30">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary shrink-0">
@@ -788,10 +888,10 @@ export function OtherDeductionsSubtab({
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-semibold text-foreground truncate">
-                      {formAttachmentName}
+                      {formSelectedFile?.name || editingRecord?.attachment?.fileName}
                     </div>
                     <div className="text-[11px] text-muted">
-                      {formAttachmentSize || "Tệp đính kèm"} · Sẵn sàng lưu
+                      {formSelectedFile ? "Tệp mới chọn" : "Tệp đã lưu trên hệ thống"} · Sẵn sàng lưu
                     </div>
                   </div>
                 </div>
@@ -807,11 +907,7 @@ export function OtherDeductionsSubtab({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => {
-                      setFormAttachmentName("");
-                      setFormAttachmentUrl("");
-                      setFormAttachmentSize("");
-                    }}
+                    onClick={() => setFormSelectedFile(null)}
                   >
                     <X className="w-4 h-4 text-danger" />
                   </Button>
@@ -845,20 +941,20 @@ export function OtherDeductionsSubtab({
               rows={2}
               value={formReason}
               onChange={(e) => setFormReason(e.target.value)}
-              placeholder="Ghi rõ lý do xử phạt / căn cứ bồi thường để nhân viên đối soát..."
+              placeholder="Ghi rõ lý do xử phạt / căn cứ bồi thường / tạm ứng..."
             />
           </div>
         </div>
       </Modal>
 
       {/* ========================================================================= */}
-      {/* MODAL: Xác nhận xóa khoản trừ                                             */}
+      {/* MODAL: Xác nhận xóa khoản giảm trừ                                       */}
       {/* ========================================================================= */}
       <Modal
         open={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
-        title="Xác nhận xóa khoản trừ"
-        description="Khoản trừ này sẽ bị xóa khỏi hồ sơ và không còn được áp dụng khi tính bảng lương."
+        title="Xác nhận xóa khoản giảm trừ"
+        description="Khoản giảm trừ này sẽ bị xóa khỏi hồ sơ và không còn được áp dụng khi tính bảng lương."
         size="sm"
         footer={
           <>
@@ -878,22 +974,22 @@ export function OtherDeductionsSubtab({
         {targetDeleteRecord && (
           <div className="p-3 bg-danger/5 border border-danger/20 rounded-lg text-xs space-y-1.5">
             <div>
-              <strong>Người lao động:</strong> {targetDeleteRecord.employeeCode} -{" "}
-              {targetDeleteRecord.employeeName}
+              <strong>Người lao động:</strong> {targetDeleteRecord.employee.employeeCode} -{" "}
+              {targetDeleteRecord.employee.fullName}
             </div>
             <div>
               <strong>Số tiền:</strong>{" "}
               <span className="text-danger font-bold">
                 -{formatCurrency(targetDeleteRecord.amount)}
               </span>{" "}
-              ({targetDeleteRecord.categoryLabel})
+              ({targetDeleteRecord.typeName})
             </div>
             <div>
-              <strong>Tháng áp dụng:</strong> {formatMonthYear(targetDeleteRecord.period)}
+              <strong>Tháng áp dụng:</strong> {formatMonthYear(targetDeleteRecord.month)}
             </div>
-            {targetDeleteRecord.decisionNo && (
+            {targetDeleteRecord.decisionNumber && (
               <div>
-                <strong>Số QĐ:</strong> {targetDeleteRecord.decisionNo}
+                <strong>Số QĐ:</strong> {targetDeleteRecord.decisionNumber}
               </div>
             )}
             {targetDeleteRecord.decisionDate && (
@@ -906,15 +1002,15 @@ export function OtherDeductionsSubtab({
       </Modal>
 
       {/* ========================================================================= */}
-      {/* MODAL: Import Excel khoản trừ theo tháng                                   */}
+      {/* MODAL: Import Excel khoản giảm trừ theo tháng                             */}
       {/* ========================================================================= */}
       <ExcelImportModal
         open={importModalOpen}
         onOpenChange={setImportModalOpen}
-        title="Import danh sách khoản trừ khác từ Excel"
-        description="Nhập danh sách nhân sự có các khoản phạt, bồi thường theo quyết định trong kỳ."
+        title="Import danh sách khoản giảm trừ khác từ Excel"
+        description="Nhập danh sách nhân sự có các khoản phạt, bồi thường, tạm ứng theo quyết định trong kỳ."
         period={periodFilter === "all" ? "2026-08" : periodFilter}
-        sampleTemplateName="Mau_Import_Khoan_Tru_Khac.xlsx"
+        sampleTemplateName="Mau_Import_Giam_Tru.xlsx"
         sampleTemplateDescription="Biểu mẫu chuẩn bao gồm: Mã NV, Họ tên, Tháng (YYYY-MM), Loại khoản trừ, Số tiền, Số QĐ, Lý do."
         columns={excelColumns}
         previewRows={importPreviewRows}
@@ -926,10 +1022,11 @@ export function OtherDeductionsSubtab({
             tone: "danger",
           },
         ]}
+        onDownloadSample={() => api.downloadOtherDeductionsImportTemplateV3()}
         onSimulateUpload={handleSimulateExcelUpload}
         onConfirmImport={() => importBatchMutation.mutate()}
         confirmLoading={importBatchMutation.isPending}
-        confirmLabel={`Nhập ${importPreviewRows.length || ""} khoản trừ vào hệ thống`}
+        confirmLabel={`Nhập ${importPreviewRows.length || ""} khoản giảm trừ vào hệ thống`}
         onClearPreview={() => setImportPreviewRows([])}
       />
 
@@ -943,20 +1040,20 @@ export function OtherDeductionsSubtab({
           previewingRecord
             ? {
                 type: "deduction",
-                employeeCode: previewingRecord.employeeCode,
-                employeeName: previewingRecord.employeeName,
-                position: previewingRecord.position,
-                projectCode: employeeMap.get(previewingRecord.employeeId)?.projectCode,
-                period: previewingRecord.period,
-                categoryLabel: previewingRecord.categoryLabel || "Khoản trừ khác",
+                employeeCode: previewingRecord.employee.employeeCode,
+                employeeName: previewingRecord.employee.fullName,
+                position: previewingRecord.employee.position || undefined,
+                projectCode: previewingRecord.employee.project?.projectCode,
+                period: previewingRecord.month,
+                categoryLabel: previewingRecord.typeName || "Khoản giảm trừ khác",
                 amount: previewingRecord.amount,
-                decisionNo: previewingRecord.decisionNo,
-                decisionDate: previewingRecord.decisionDate,
+                decisionNo: previewingRecord.decisionNumber || "",
+                decisionDate: previewingRecord.decisionDate || "",
                 reason: previewingRecord.reason,
-                attachmentName: previewingRecord.attachmentName,
-                attachmentUrl: previewingRecord.attachmentUrl,
-                attachmentSize: previewingRecord.attachmentSize,
-                updatedBy: previewingRecord.updatedBy,
+                attachmentName: previewingRecord.attachment?.fileName,
+                attachmentUrl: previewingRecord.attachment?.fileUrl,
+                attachmentSize: previewingRecord.attachment?.fileSize ? `${(previewingRecord.attachment.fileSize / 1024).toFixed(0)} KB` : undefined,
+                updatedBy: previewingRecord.updatedBy?.fullName,
                 updatedAt: previewingRecord.updatedAt,
               }
             : null

@@ -3,30 +3,32 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
-  BookOpen,
   Building2,
   Check,
   CheckCheck,
-  ChevronDown,
   Download,
   FileCheck,
   FileSpreadsheet,
   FileText,
-  FileUp,
-  Paperclip,
+  History,
+  Info,
+  Pencil,
   Plus,
-  RefreshCw,
+  RotateCcw,
   Search,
+  Shield,
   Trash2,
   TrendingUp,
   Upload,
   UploadCloud,
+  UserCheck,
   UserMinus,
   UserPlus,
+  Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ExcelImportModal } from "@/components/employees/excel-import-modal";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ExcelImportModal, type ExcelImportColumn } from "@/components/employees/excel-import-modal";
 import { SubtabActivityLog } from "@/components/employees/subtab-activity-log";
 import { useToast } from "@/components/providers";
 import {
@@ -36,19 +38,18 @@ import {
   ErrorState,
   LoadingBlock,
   Modal,
-  MonthPicker,
-  StatusBadge,
   TablePaginationFooter,
   TableRowActions,
 } from "@/components/ui";
 import { api } from "@/lib/api";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import type {
   Employee,
-  InsuranceChangeRecord,
-  InsuranceChangeType,
-  InsuranceRecord,
+  SocialInsuranceChangeType,
+  SocialInsuranceChangeV3,
+  SocialInsuranceMemberV3,
+  SocialInsuranceParticipationStatus,
 } from "@/lib/types";
-import { cn, formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
 
 export function InsuranceSubtab({
   projectId,
@@ -64,24 +65,84 @@ export function InsuranceSubtab({
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
-  // Chế độ xem: "master" (Danh sách tham gia BHXH) | "changes" (Biến động trong kỳ)
-  const [activeView, setActiveView] = useState<"master" | "changes">("master");
+  // Active view: "members" (Sổ BHXH) | "changes" (Biến động D02-LT)
+  const [activeView, setActiveView] = useState<"members" | "changes">("members");
 
-  // Bộ lọc chung & kỳ áp dụng (tháng trước năm sau: YYYY-MM)
+  // Filters
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedPeriod, setSelectedPeriod] = useState("2026-08");
-  const [changeStatusFilter, setChangeStatusFilter] = useState<string>("all");
-  const [masterStatusFilter, setMasterStatusFilter] = useState<string>("all");
-
-  // Selection state
-  const [selectedChangeIds, setSelectedChangeIds] = useState<Set<string>>(new Set());
+  const [memberStatusFilter, setMemberStatusFilter] = useState<SocialInsuranceParticipationStatus>("ALL");
+  const [changeTypeFilter, setChangeTypeFilter] = useState<string>("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Modals state
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [declareModalOpen, setDeclareModalOpen] = useState(false);
-  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [selectedChangeForAction, setSelectedChangeForAction] = useState<InsuranceChangeRecord | null>(null);
+  const [selectedEmployeeCode, setSelectedEmployeeCode] = useState("");
+  const [declareType, setDeclareType] = useState<SocialInsuranceChangeType>("INCREASE");
+  const [declareMonth, setDeclareMonth] = useState("2026-08");
+  const [declareOldSalary, setDeclareOldSalary] = useState<number>(0);
+  const [declareNewSalary, setDeclareNewSalary] = useState<number>(6300000);
+  const [declareReason, setDeclareReason] = useState("");
+
+  // Reconcile modal
+  const [reconcileChange, setReconcileChange] = useState<SocialInsuranceChangeV3 | null>(null);
+  const [reconciliationCode, setReconciliationCode] = useState("");
+
+  // History modal
+  const [historyMember, setHistoryMember] = useState<SocialInsuranceMemberV3 | null>(null);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Import modal
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importPreviewRows, setImportPreviewRows] = useState<any[]>([]);
+
+  // Summary Query
+  const summaryQuery = useQuery({
+    queryKey: ["social-insurance-summary", projectId],
+    queryFn: () => api.getSocialInsuranceSummaryV3(projectId),
+  });
+
+  // Members Query
+  const membersQuery = useQuery({
+    queryKey: ["social-insurance-members", projectId, memberStatusFilter, searchTerm, currentPage, pageSize],
+    queryFn: () =>
+      api.getSocialInsuranceMembersV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        status: memberStatusFilter,
+        search: searchTerm || undefined,
+        page: currentPage,
+        pageSize,
+      }),
+    enabled: activeView === "members",
+  });
+
+  // Changes Query
+  const changesQuery = useQuery({
+    queryKey: ["social-insurance-changes", projectId, changeTypeFilter, searchTerm, currentPage, pageSize],
+    queryFn: () =>
+      api.getSocialInsuranceChangesV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        changeType: changeTypeFilter,
+        search: searchTerm || undefined,
+        page: currentPage,
+        pageSize,
+      }),
+    enabled: activeView === "changes",
+  });
+
+  // Export Mutation
+  const handleExport = async () => {
+    try {
+      const data = await api.exportSocialInsuranceExcelV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        search: searchTerm,
+      });
+      notify(`Đã xuất ${data.totalRecords} bản ghi ra file mẫu D02-LT: ${data.fileName}`);
+    } catch (err: any) {
+      notify(err?.message || "Lỗi khi xuất file Excel", "error");
+    }
+  };
 
   // Register Header Action
   useEffect(() => {
@@ -90,797 +151,489 @@ export function InsuranceSubtab({
       <div className="flex items-center gap-2">
         <Button
           variant="secondary"
-          onClick={() => setUploadModalOpen(true)}
+          onClick={handleExport}
           className="gap-1.5 font-semibold text-xs h-8 px-3"
         >
-          <UploadCloud className="w-3.5 h-3.5" /> Import biến động
+          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Mẫu D02-LT Excel
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => setImportModalOpen(true)}
+          className="gap-1.5 font-semibold text-xs h-8 px-3"
+        >
+          <UploadCloud className="w-3.5 h-3.5" /> Import BHXH
         </Button>
         <Button
           variant="primary"
           onClick={() => {
-            setActiveView("changes");
+            setSelectedEmployeeCode(employees[0]?.code || "NV-00124");
+            setDeclareType("INCREASE");
+            setDeclareMonth("2026-08");
+            setDeclareNewSalary(6300000);
+            setDeclareReason("");
             setDeclareModalOpen(true);
           }}
           className="gap-1.5 font-semibold text-xs h-8 px-3"
         >
-          <Plus className="w-3.5 h-3.5" /> Khai báo biến động
+          <Plus className="w-3.5 h-3.5" /> Kê khai biến động
         </Button>
       </div>
     );
     return () => setHeaderAction(null);
-  }, [setHeaderAction, setActiveView]);
+  }, [setHeaderAction, employees, projectId, searchTerm]);
 
-  // Form state cho Modal Khai báo biến động
-  const [formEmployeeId, setFormEmployeeId] = useState(employees[0]?.id ?? "");
-  const [employeeSearchTerm, setEmployeeSearchTerm] = useState("");
-  const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
-  const employeeDropdownRef = useRef<HTMLDivElement>(null);
-
-  const [formChangeType, setFormChangeType] = useState<InsuranceChangeType>("salary_adjust");
-  const [formNewSalary, setFormNewSalary] = useState<number>(6300000);
-  const [formEffectiveMonth, setFormEffectiveMonth] = useState("2026-08");
-  const [formReason, setFormReason] = useState("");
-  const [formDocName, setFormDocName] = useState("");
-  const [formDocSize, setFormDocSize] = useState<string>("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Form state cho Modal Kế toán Xác nhận đối chiếu
-  const [agencyReceiptCode, setAgencyReceiptCode] = useState("BHXH-7901-202608-00582");
-  const [verifierName, setVerifierName] = useState("Trần Thu Trang (Kế toán BHXH)");
-
-  // Form state cho Modal Từ chối
-  const [rejectionReason, setRejectionReason] = useState("");
-
-  // Upload preview state
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadPreviewRows, setUploadPreviewRows] = useState<Array<{
-    employeeCode: string;
-    employeeName: string;
-    changeType: InsuranceChangeType;
-    newSalary: number;
-    reason: string;
-  }>>([]);
-
-  const employeeMap = useMemo(() => {
-    const map = new Map<string, Employee>();
-    (employees || []).forEach((emp) => {
-      map.set(emp.id, emp);
-      if (emp.code) map.set(emp.code, emp);
-    });
-    return map;
-  }, [employees]);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        employeeDropdownRef.current &&
-        !employeeDropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsEmployeeDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Queries
-  const masterQuery = useQuery({
-    queryKey: ["insurance-master", projectId],
-    queryFn: () =>
-      api.getInsuranceMasterRecords({
-        projectId: projectId === "all" ? undefined : projectId,
-      }),
-  });
-
-  const changesQuery = useQuery({
-    queryKey: ["insurance-changes", projectId],
-    queryFn: () =>
-      api.getInsuranceChanges({
-        projectId: projectId === "all" ? undefined : projectId,
-      }),
-  });
-
-  const masterRecords = masterQuery.data ?? [];
-  const changeRecords = changesQuery.data ?? [];
-
-  // Filtered employees for search combobox
-  const filteredEmployeesForSelect = useMemo(() => {
-    if (!employeeSearchTerm.trim()) return employees;
-    const term = employeeSearchTerm.toLowerCase();
-    return employees.filter(
-      (e) =>
-        e.name.toLowerCase().includes(term) ||
-        e.code.toLowerCase().includes(term) ||
-        e.position.toLowerCase().includes(term)
-    );
-  }, [employees, employeeSearchTerm]);
-
-  // Currently selected employee for Declare modal
-  const selectedEmployeeObj = useMemo(() => {
-    return employees.find((e) => e.id === formEmployeeId) || employees[0];
-  }, [employees, formEmployeeId]);
-
-  const selectedEmployeeMaster = useMemo(() => {
-    return masterRecords.find((m) => m.employeeId === formEmployeeId);
-  }, [masterRecords, formEmployeeId]);
-
-  // Filtered Master
-  const filteredMaster = useMemo(() => {
-    return masterRecords.filter((item) => {
-      const term = searchTerm.toLowerCase();
-      const matchSearch =
-        !searchTerm ||
-        item.employeeName.toLowerCase().includes(term) ||
-        item.employeeCode.toLowerCase().includes(term) ||
-        item.insuranceBookNumber.toLowerCase().includes(term);
-
-      const matchStatus = masterStatusFilter === "all" || item.status === masterStatusFilter;
-      return matchSearch && matchStatus;
-    });
-  }, [masterRecords, searchTerm, masterStatusFilter]);
-
-  // Filtered Changes with period, search, and status filters
-  const filteredChanges = useMemo(() => {
-    return changeRecords.filter((item) => {
-      const term = searchTerm.toLowerCase().trim();
-      const matchSearch =
-        !term ||
-        item.employeeName.toLowerCase().includes(term) ||
-        item.employeeCode.toLowerCase().includes(term) ||
-        (item.agencyReceiptCode && item.agencyReceiptCode.toLowerCase().includes(term)) ||
-        (item.reason && item.reason.toLowerCase().includes(term));
-
-      const matchPeriod = !selectedPeriod || item.period === selectedPeriod || item.effectiveMonth === selectedPeriod;
-
-      const matchStatus =
-        changeStatusFilter === "all" ||
-        (changeStatusFilter === "pending" && (item.status === "pending_agency_verification" || (item.status as string) === "pending")) ||
-        (changeStatusFilter === "verified" && item.status === "verified") ||
-        (changeStatusFilter === "rejected" && item.status === "rejected");
-
-      return matchSearch && matchPeriod && matchStatus;
-    });
-  }, [changeRecords, searchTerm, selectedPeriod, changeStatusFilter]);
-
-  // Status counts for changes (scoped to the selected period)
-  const changeCounts = useMemo(() => {
-    const periodRecords = changeRecords.filter(
-      (item) => !selectedPeriod || item.period === selectedPeriod || item.effectiveMonth === selectedPeriod
-    );
-    const counts = {
-      all: periodRecords.length,
-      pending: 0,
-      verified: 0,
-      rejected: 0,
-    };
-    periodRecords.forEach((item) => {
-      if (item.status === "pending_agency_verification" || (item.status as string) === "pending") {
-        counts.pending++;
-      } else if (item.status === "verified") {
-        counts.verified++;
-      } else if (item.status === "rejected") {
-        counts.rejected++;
-      }
-    });
-    return counts;
-  }, [changeRecords, selectedPeriod]);
-
-  // Pagination for Master
-  const [masterPage, setMasterPage] = useState(1);
-  const [masterPageSize, setMasterPageSize] = useState(10);
-  const paginatedMaster = useMemo(() => {
-    const start = (masterPage - 1) * masterPageSize;
-    return filteredMaster.slice(start, start + masterPageSize);
-  }, [filteredMaster, masterPage, masterPageSize]);
-
-  // Pagination for Changes
-  const [changesPage, setChangesPage] = useState(1);
-  const [changesPageSize, setChangesPageSize] = useState(10);
-  const paginatedChanges = useMemo(() => {
-    const start = (changesPage - 1) * changesPageSize;
-    return filteredChanges.slice(start, start + changesPageSize);
-  }, [filteredChanges, changesPage, changesPageSize]);
-
-  // Pending changes selection
-  const pendingFilteredChanges = useMemo(() => {
-    return filteredChanges.filter(
-      (item) => item.status === "pending_agency_verification" || (item.status as string) === "pending"
-    );
-  }, [filteredChanges]);
-
-  const isAllPendingSelected =
-    pendingFilteredChanges.length > 0 &&
-    pendingFilteredChanges.every((item) => selectedChangeIds.has(item.id));
-
-  const toggleSelectAllChanges = () => {
-    if (isAllPendingSelected) {
-      setSelectedChangeIds(new Set());
-    } else {
-      setSelectedChangeIds(new Set(pendingFilteredChanges.map((item) => item.id)));
-    }
-  };
-
-  const toggleSelectChangeItem = (id: string) => {
-    const next = new Set(selectedChangeIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedChangeIds(next);
-  };
-
-  // File upload handler
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFormDocName(file.name);
-      const sizeKb = Math.round(file.size / 1024);
-      setFormDocSize(sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`);
-      notify(`Đã chọn tệp đính kèm: ${file.name}`);
-    }
-  };
-
-  // Mutations
+  // Create change mutation
   const createChangeMutation = useMutation({
-    mutationFn: async (payload: Partial<InsuranceChangeRecord>) => api.createInsuranceChange(payload),
+    mutationFn: (payload: any) => api.createSocialInsuranceChangeV3(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["insurance-changes"] });
-      queryClient.invalidateQueries({ queryKey: ["insurance-master"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      notify("Đã tạo hồ sơ biến động BHXH D02-LT thành công.");
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-changes"] });
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-summary"] });
       setDeclareModalOpen(false);
-      setFormReason("");
-      setFormDocName("");
-      setFormDocSize("");
-      notify("Đã tạo yêu cầu biến động BHXH thành công! Đang chờ C&B đối chiếu.");
     },
-    onError: (err: Error) => notify(err.message, "error"),
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi tạo hồ sơ biến động", "error");
+    },
   });
 
-  const batchImportMutation = useMutation({
-    mutationFn: async (items: Partial<InsuranceChangeRecord>[]) => api.batchImportInsuranceChanges(items),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["insurance-changes"] });
-      queryClient.invalidateQueries({ queryKey: ["insurance-master"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setUploadModalOpen(false);
-      setUploadPreviewRows([]);
-      notify(`Đã nạp thành công ${data.length} bản ghi biến động vào ${formatMonthYear(selectedPeriod)}!`);
-    },
-    onError: (err: Error) => notify(err.message, "error"),
-  });
-
-  const verifyChangeMutation = useMutation({
-    mutationFn: async ({ id, receiptCode, verifier }: { id: string; receiptCode?: string; verifier?: string }) =>
-      api.verifyInsuranceChange(id, { verifiedBy: verifier, agencyReceiptCode: receiptCode }),
+  // Reconcile mutation
+  const reconcileMutation = useMutation({
+    mutationFn: ({ id, code }: { id: number; code: string }) =>
+      api.confirmSocialInsuranceReconciliationV3(id, { reconciliationCode: code }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["insurance-changes"] });
-      queryClient.invalidateQueries({ queryKey: ["insurance-master"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setVerifyModalOpen(false);
-      setSelectedChangeForAction(null);
-      notify("Kế toán đã xác nhận đối chiếu BHXH thành công! Đã tự động cập nhật danh sách tham gia.");
+      notify("Đã xác nhận mã đối soát cơ quan BHXH.");
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-changes"] });
+      setReconcileChange(null);
     },
-    onError: (err: Error) => notify(err.message, "error"),
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi đối soát", "error");
+    },
   });
 
-  const batchVerifyMutation = useMutation({
-    mutationFn: async ({ ids, receiptCode, verifier }: { ids: string[]; receiptCode?: string; verifier?: string }) =>
-      api.batchVerifyInsuranceChanges({ ids, verifiedBy: verifier, agencyReceiptCode: receiptCode }),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["insurance-changes"] });
-      queryClient.invalidateQueries({ queryKey: ["insurance-master"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setSelectedChangeIds(new Set());
-      setVerifyModalOpen(false);
-      notify(`Đã xác nhận đối chiếu thành công ${data.length} hồ sơ BHXH!`);
-    },
-    onError: (err: Error) => notify(err.message, "error"),
-  });
-
-  const rejectChangeMutation = useMutation({
-    mutationFn: async ({ id, reason }: { id: string; reason: string }) =>
-      api.rejectInsuranceChange(id, { rejectionReason: reason }),
+  // Approve change mutation
+  const approveMutation = useMutation({
+    mutationFn: (id: number) => api.approveSocialInsuranceChangeV3(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["insurance-changes"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      setRejectModalOpen(false);
-      setSelectedChangeForAction(null);
-      setRejectionReason("");
-      notify("Đã từ chối hồ sơ biến động BHXH.");
+      notify("Đã phê duyệt biến động và cập nhật sổ BHXH.");
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-changes"] });
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-members"] });
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-summary"] });
     },
-    onError: (err: Error) => notify(err.message, "error"),
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi phê duyệt", "error");
+    },
   });
 
-  // Helpers
-  const renderChangeTypeBadge = (type: InsuranceChangeType) => {
-    switch (type) {
-      case "increase":
-        return <StatusBadge tone="success">Báo tăng mới</StatusBadge>;
-      case "decrease":
-        return <StatusBadge tone="danger">Báo giảm hẳn</StatusBadge>;
-      case "salary_adjust":
-        return <StatusBadge tone="warning">Điều chỉnh mức đóng</StatusBadge>;
-      case "suspend":
-        return <StatusBadge tone="neutral">Tạm dừng đóng</StatusBadge>;
-      case "resume":
-        return <StatusBadge tone="info">Đóng trở lại</StatusBadge>;
+  // Reject change mutation
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      api.rejectSocialInsuranceChangeV3(id, { reason }),
+    onSuccess: () => {
+      notify("Hồ sơ biến động đã được đánh dấu từ chối.");
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-changes"] });
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-summary"] });
+    },
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi từ chối", "error");
+    },
+  });
+
+  // Delete change mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteSocialInsuranceChangeV3(id),
+    onSuccess: () => {
+      notify("Đã xóa hồ sơ biến động BHXH.");
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-changes"] });
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-summary"] });
+    },
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi xóa hồ sơ", "error");
+    },
+  });
+
+  const handleViewHistory = async (member: SocialInsuranceMemberV3) => {
+    setHistoryMember(member);
+    setLoadingHistory(true);
+    try {
+      const res = await api.getSocialInsuranceMemberHistoryV3(member.employee.employeeCode);
+      setHistoryList(res.history || []);
+    } catch {
+      setHistoryList([]);
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
-  const handleSimulateFileUpload = () => {
-    setIsUploading(true);
-    setTimeout(() => {
-      setIsUploading(false);
-      setUploadPreviewRows([
-        {
-          employeeCode: "NV-JSS-002",
-          employeeName: "Trần Thị Bích",
-          changeType: "salary_adjust",
-          newSalary: 7200000,
-          reason: "Điều chỉnh lương chức danh Tổ trưởng KCS",
-        },
-        {
-          employeeCode: "NV-JSS-005",
-          employeeName: "Hoàng Văn Em",
-          changeType: "increase",
-          newSalary: 6300000,
-          reason: "Ký HĐLĐ chính thức sau thử việc",
-        },
-      ]);
-    }, 600);
+  const excelColumns: ExcelImportColumn[] = [
+    { key: "employeeCode", label: "Mã NLĐ", width: "120px" },
+    { key: "fullName", label: "Họ và tên NLĐ", width: "160px" },
+    { key: "socialInsuranceNumber", label: "Mã số BHXH", width: "130px" },
+    { key: "insuranceSalary", label: "Lương đóng BHXH", align: "right", render: (r) => <span className="font-bold text-primary">{formatCurrency(r.insuranceSalary)}</span> },
+    { key: "hospitalName", label: "Nơi KCB ban đầu" },
+  ];
+
+  const handleSimulateUpload = () => {
+    const mockRows = [
+      { employeeCode: "NV-00124", fullName: "Nguyễn Văn An", socialInsuranceNumber: "7914002931", insuranceSalary: 6300000, hospitalName: "BV Đa Khoa TP.Thủ Đức" },
+      { employeeCode: "NV-00125", fullName: "Trần Thị Mai", socialInsuranceNumber: "7914002932", insuranceSalary: 6300000, hospitalName: "BV Quận 9" },
+      { employeeCode: "NV-00127", fullName: "Phạm Quốc Bảo", socialInsuranceNumber: "7914002933", insuranceSalary: 7500000, hospitalName: "BV Đa Khoa Bình Dương" },
+    ];
+    setImportPreviewRows(mockRows);
+    notify("Đã tải dữ liệu mẫu import thành công (3 dòng).");
   };
 
-  const handleConfirmImport = () => {
-    const items: Partial<InsuranceChangeRecord>[] = uploadPreviewRows.map((row) => {
-      const emp = employees.find((e) => e.code === row.employeeCode);
-      return {
-        employeeId: emp?.id ?? `emp-import-${row.employeeCode}`,
-        employeeCode: row.employeeCode,
-        employeeName: row.employeeName,
-        projectId: emp?.projectId ?? (projectId === "all" ? "prj-jss" : projectId),
-        period: selectedPeriod,
-        changeType: row.changeType,
-        newSalary: row.newSalary,
-        effectiveMonth: selectedPeriod,
-        reason: row.reason,
-        documentName: "Mau_Bien_Dong_BHXH.xlsx",
-      };
-    });
-    batchImportMutation.mutate(items);
-  };
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const dummyFile = new File(["dummy"], "import_bhxh.xlsx");
+      return api.importSocialInsuranceExcelV3(dummyFile, projectId);
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-members"] });
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-changes"] });
+      queryClient.invalidateQueries({ queryKey: ["social-insurance-summary"] });
+      notify(`Import thành công! Đã xử lý ${res?.totalRows || 3} dòng dữ liệu.`);
+      setImportModalOpen(false);
+      setImportPreviewRows([]);
+    },
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi khi import file", "error");
+    },
+  });
 
-  const handleCreateDeclare = () => {
-    if (!selectedEmployeeObj) {
-      notify("Vui lòng chọn người lao động", "warning");
-      return;
-    }
-    createChangeMutation.mutate({
-      employeeId: selectedEmployeeObj.id,
-      employeeCode: selectedEmployeeObj.code,
-      employeeName: selectedEmployeeObj.name,
-      projectId: selectedEmployeeObj.projectId,
-      period: selectedPeriod,
-      changeType: formChangeType,
-      oldSalary: selectedEmployeeMaster?.insuranceSalary ?? 6300000,
-      newSalary: formChangeType === "decrease" ? 0 : formNewSalary,
-      effectiveMonth: formEffectiveMonth,
-      reason: formReason || "Khai báo biến động theo thỏa thuận",
-      documentName: formDocName || undefined,
-    });
-  };
-
-  // Statutory Calculations for Declare modal
-  const calcEmpAmount = Math.round((formChangeType === "decrease" ? 0 : formNewSalary) * 0.105);
-  const calcCompAmount = Math.round((formChangeType === "decrease" ? 0 : formNewSalary) * 0.215);
-  const calcTotalAmount = calcEmpAmount + calcCompAmount;
-
-  if (masterQuery.isLoading && changesQuery.isLoading) return <LoadingBlock rows={6} />;
-  if (masterQuery.isError || changesQuery.isError) {
-    return (
-      <ErrorState
-        message="Không thể tải dữ liệu Bảo hiểm xã hội"
-        retry={() => {
-          masterQuery.refetch();
-          changesQuery.refetch();
-        }}
-      />
-    );
-  }
+  const summary = summaryQuery.data;
+  const membersData = membersQuery.data;
+  const changesData = changesQuery.data;
 
   return (
-    <div className="insurance-subtab">
-      {/* Navigation Switcher: Minimalist Underline Tabs */}
-      <nav className="subtab-view-switcher" aria-label="Phân hệ bảo hiểm">
-        <button
-          type="button"
-          className={`subtab-view-btn ${activeView === "master" ? "active" : ""}`}
-          onClick={() => {
-            setActiveView("master");
-            setMasterPage(1);
-          }}
-        >
-          <BookOpen />
-          <span>Danh sách tham gia BHXH</span>
-          {activeView === "master" && <span className="tab-indicator" />}
-        </button>
-        <button
-          type="button"
-          className={`subtab-view-btn ${activeView === "changes" ? "active" : ""}`}
-          onClick={() => {
-            setActiveView("changes");
-            setChangesPage(1);
-          }}
-        >
-          <FileCheck />
-          <span>Hồ sơ chờ xác nhận</span>
-          {activeView === "changes" && <span className="tab-indicator" />}
-        </button>
-      </nav>
+    <div className="space-y-5">
+      {/* 5 KPI Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-sm flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <Users className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Tổng lao động</div>
+            <div className="text-lg font-bold text-foreground mt-0.5">{summary?.total ?? "..."}</div>
+          </div>
+        </div>
 
-      {/* TAB 1: DANH SÁCH THAM GIA BHXH */}
-      {activeView === "master" && (
-        <div className="integrated-table-card">
-          <div className="table-card-toolbar">
-            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-              {/* Left: Status Segmentation Pills */}
-              <div className="filter-status-pills">
-                <button
-                  type="button"
-                  className={`pill-btn ${masterStatusFilter === "all" ? "active" : ""}`}
-                  onClick={() => {
-                    setMasterStatusFilter("all");
-                    setMasterPage(1);
-                  }}
-                >
-                  Tất cả ({masterRecords.length})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn success ${masterStatusFilter === "active" ? "active" : ""}`}
-                  onClick={() => {
-                    setMasterStatusFilter("active");
-                    setMasterPage(1);
-                  }}
-                >
-                  Đang tham gia ({masterRecords.filter((m) => m.status === "active").length})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn warning ${masterStatusFilter === "suspended" ? "active" : ""}`}
-                  onClick={() => {
-                    setMasterStatusFilter("suspended");
-                    setMasterPage(1);
-                  }}
-                >
-                  Tạm dừng / Thai sản ({masterRecords.filter((m) => m.status === "suspended").length})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn danger ${masterStatusFilter === "stopped" ? "active" : ""}`}
-                  onClick={() => {
-                    setMasterStatusFilter("stopped");
-                    setMasterPage(1);
-                  }}
-                >
-                  Đã dừng đóng ({masterRecords.filter((m) => m.status === "stopped").length})
-                </button>
-              </div>
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-sm flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+            <Shield className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Đang tham gia BH</div>
+            <div className="text-lg font-bold text-emerald-600 mt-0.5">{summary?.activeCount ?? "..."}</div>
+          </div>
+        </div>
 
-              {/* Right: Search */}
-              <div className="flex items-center gap-2.5 ml-auto">
-                <label className="search-field" style={{ minWidth: "260px" }}>
-                  <Search />
-                  <input
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setMasterPage(1);
-                    }}
-                    placeholder="Tìm theo tên NV, mã NV, mã số BHXH..."
-                  />
-                </label>
-              </div>
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-sm flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
+            <AlertCircle className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Tạm dừng / Ngừng</div>
+            <div className="text-lg font-bold text-amber-600 mt-0.5">{(summary?.suspendedCount ?? 0) + (summary?.stoppedCount ?? 0)}</div>
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-sm flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center">
+            <FileText className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Biến động D02-LT</div>
+            <div className="text-lg font-bold text-blue-600 mt-0.5">{summary?.pendingChangesCount ?? "..."}</div>
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-sm flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+            <TrendingUp className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Tổng tiền đóng BH</div>
+            <div className="text-sm font-bold text-indigo-600 mt-0.5">
+              {formatCurrency(summary?.totalMonthlyContribution ?? 0)}
             </div>
           </div>
-
-          {filteredMaster.length === 0 ? (
-            <EmptyState
-              title="Không có hồ sơ trong danh sách tham gia BHXH"
-              description="Không tìm thấy người lao động phù hợp với điều kiện tìm kiếm."
-            />
-          ) : (
-            <div className="data-table-wrap">
-              <div className="data-table-scroll">
-                <table className="data-table min-w-[1100px]">
-                <thead>
-                  <tr>
-                    <th style={{ width: "45px" }} className="text-center">STT</th>
-                    <th>Người lao động</th>
-                    <th>Mã số BHXH (10 số)</th>
-                    <th className="text-right">Mức lương đóng BH</th>
-                    <th className="text-right">NLĐ trích (10.5%)</th>
-                    <th className="text-right">DN đóng (21.5%)</th>
-                    <th>Tháng áp dụng</th>
-                    <th>Trạng thái tham gia</th>
-                    <th>Nơi đăng ký KCB</th>
-                    <th>Kế toán xác nhận</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedMaster.map((item, idx) => {
-                    const empAmount = Math.round(item.insuranceSalary * 0.105);
-                    const compAmount = Math.round(item.insuranceSalary * 0.215);
-                    const rawStt = (masterPage - 1) * masterPageSize + idx + 1;
-                    const stt = String(rawStt).padStart(2, "0");
-                    const emp = employeeMap.get(item.employeeId) || employeeMap.get(item.employeeCode);
-                    const projectCode = item.projectCode || emp?.projectCode;
-
-                    return (
-                      <tr key={item.id}>
-                        <td className="text-center text-muted font-medium">{stt}</td>
-                        <td>
-                          <div className="employee-cell-info">
-                            <span className="employee-cell-name font-semibold">{item.employeeName}</span>
-                            <span className="employee-cell-sub">
-                              <span className="employee-code-badge">{item.employeeCode}</span>
-                              {projectCode && <span className="text-muted text-[11px] font-normal">· {projectCode}</span>}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="font-mono text-sm">{item.insuranceBookNumber}</td>
-                        <td className="text-right font-mono">
-                          <span className="font-semibold text-primary">{formatCurrency(item.insuranceSalary)}</span>
-                        </td>
-                        <td className="text-right font-mono">
-                          <span className="font-semibold text-warning">{formatCurrency(empAmount)}</span>
-                        </td>
-                        <td className="text-right font-mono">
-                          <span className="font-semibold text-info">{formatCurrency(compAmount)}</span>
-                        </td>
-                        <td>
-                          <Badge tone="neutral">{formatMonthYear(item.effectiveMonth)}</Badge>
-                        </td>
-                        <td>
-                          {item.status === "active" ? (
-                            <StatusBadge tone="success">Đang tham gia</StatusBadge>
-                          ) : item.status === "suspended" ? (
-                            <StatusBadge tone="warning">Tạm dừng / Thai sản</StatusBadge>
-                          ) : (
-                            <StatusBadge tone="neutral" dot={false}>Đã dừng đóng</StatusBadge>
-                          )}
-                        </td>
-                        <td>
-                          <div className="hospital-cell">
-                            <Building2 />
-                            <span className="truncate" title={item.hospitalName || "BV Đa khoa Quận/Huyện"}>
-                              {item.hospitalName || "BV Đa khoa Quận/Huyện"}
-                            </span>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="text-xs">
-                            <div className="font-medium text-foreground">{item.verifiedBy?.split("(")[0] || "Hệ thống"}</div>
-                            {item.verifiedAt && <div className="text-[11px] text-muted">{formatDate(item.verifiedAt)}</div>}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <TablePaginationFooter
-              totalItems={filteredMaster.length}
-              currentPage={masterPage}
-              pageSize={masterPageSize}
-              onPageChange={setMasterPage}
-              onPageSizeChange={(newSize) => {
-                setMasterPageSize(newSize);
-                setMasterPage(1);
-              }}
-            />
-          </div>
-        )}
+        </div>
       </div>
-    )}
 
-      {/* TAB 2: BIẾN ĐỘNG TRONG KỲ */}
-      {activeView === "changes" && (
-        <div className="integrated-table-card">
-          <div className="table-card-toolbar">
-            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-              {/* Left: Status Segmentation Pills */}
-              <div className="filter-status-pills">
-                <button
-                  type="button"
-                  className={`pill-btn ${changeStatusFilter === "all" ? "active" : ""}`}
-                  onClick={() => {
-                    setChangeStatusFilter("all");
-                    setChangesPage(1);
-                  }}
-                >
-                  Tất cả ({changeCounts.all})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn warning ${changeStatusFilter === "pending" ? "active" : ""}`}
-                  onClick={() => {
-                    setChangeStatusFilter("pending");
-                    setChangesPage(1);
-                  }}
-                >
-                  Chờ đối chiếu ({changeCounts.pending})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn success ${changeStatusFilter === "verified" ? "active" : ""}`}
-                  onClick={() => {
-                    setChangeStatusFilter("verified");
-                    setChangesPage(1);
-                  }}
-                >
-                  Đã đối chiếu ({changeCounts.verified})
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn danger ${changeStatusFilter === "rejected" ? "active" : ""}`}
-                  onClick={() => {
-                    setChangeStatusFilter("rejected");
-                    setChangesPage(1);
-                  }}
-                >
-                  Từ chối ({changeCounts.rejected})
-                </button>
-              </div>
+      {/* Main Integrated Table Card */}
+      <div className="integrated-table-card">
+        {/* Toolbar */}
+        <div className="table-card-toolbar">
+          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+            {/* Left: View Mode Selector Pills */}
+            <div className="filter-status-pills flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => { setActiveView("members"); setCurrentPage(1); }}
+                className={`pill-btn ${activeView === "members" ? "active" : ""}`}
+              >
+                <Shield className="w-3.5 h-3.5 inline mr-1" /> Sổ BHXH ({summary?.activeCount ?? 0})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveView("changes"); setCurrentPage(1); }}
+                className={`pill-btn warning ${activeView === "changes" ? "active" : ""}`}
+              >
+                <FileText className="w-3.5 h-3.5 inline mr-1" /> Biến động D02-LT ({summary?.pendingChangesCount ?? 0})
+              </button>
+            </div>
 
-              {/* Right: Search + MonthPicker */}
-              <div className="flex items-center gap-2.5 ml-auto">
-                <label className="search-field" style={{ minWidth: "240px" }}>
-                  <Search />
-                  <input
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setChangesPage(1);
-                    }}
-                    placeholder="Tìm theo tên NV, mã NV..."
-                  />
-                </label>
-                <div style={{ width: "160px" }}>
-                  <MonthPicker
-                    value={selectedPeriod}
-                    onChange={(val) => {
-                      setSelectedPeriod(val);
-                      setChangesPage(1);
-                    }}
-                  />
-                </div>
-              </div>
+            {/* Right: Search */}
+            <div className="relative min-w-[240px] max-w-[320px] ml-auto">
+              <Search className="search-icon-fixed text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Tìm theo tên, mã NV, số sổ..."
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                className="search-box-input w-full pl-10 pr-8 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
+        </div>
 
-          {filteredChanges.length === 0 ? (
-            <EmptyState
-              title="Không có biến động BHXH"
-              description="Chưa phát sinh biến động tăng/giảm hoặc điều chỉnh lương đóng BHXH trong kỳ này."
-            />
-          ) : (
-            <div className="data-table-wrap">
-              <div className="data-table-scroll">
-                <table className="data-table min-w-[1100px]">
-                  <thead>
-                    <tr>
-                      {isAccountant && (
-                        <th style={{ width: "40px" }} className="text-center">
-                          <input
-                            type="checkbox"
-                            checked={isAllPendingSelected}
-                            onChange={toggleSelectAllChanges}
-                            disabled={changeRecords.length === 0}
-                            title="Chọn tất cả hồ sơ"
-                          />
-                        </th>
-                      )}
-                      <th style={{ width: "45px" }} className="text-center">STT</th>
-                      <th style={{ minWidth: "160px" }}>Người lao động</th>
-                      <th style={{ minWidth: "145px" }}>Loại biến động</th>
-                      <th style={{ minWidth: "135px" }} className="text-right">Mức lương đóng</th>
-                      <th style={{ minWidth: "125px" }} className="text-right">NLĐ trích (10.5%)</th>
-                      <th style={{ minWidth: "125px" }} className="text-right">DN đóng (21.5%)</th>
-                      <th style={{ minWidth: "135px" }}>Trạng thái</th>
-                      <th style={{ width: "60px" }} className="text-center">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedChanges.map((item, idx) => {
-                      const isChecked = selectedChangeIds.has(item.id);
-                      const empAmount = Math.round(item.newSalary * 0.105);
-                      const compAmount = Math.round(item.newSalary * 0.215);
-                      const rawStt = (changesPage - 1) * changesPageSize + idx + 1;
-                      const stt = String(rawStt).padStart(2, "0");
-                      const emp = employeeMap.get(item.employeeId) || employeeMap.get(item.employeeCode);
-                      const projectCode = item.projectCode || emp?.projectCode;
-
-                      return (
-                        <tr
-                          key={item.id}
-                          className={
-                            isChecked
-                              ? "highlight-selected-row"
-                              : undefined
-                          }
-                        >
-                          {isAccountant && (
+        {/* VIEW 1: Sổ BHXH Thành viên */}
+        {activeView === "members" && (
+          <div>
+            {membersQuery.isLoading ? (
+              <div className="p-8">
+                <LoadingBlock />
+              </div>
+            ) : membersQuery.isError ? (
+              <div className="p-8">
+                <ErrorState message="Không thể tải danh sách thành viên BHXH" retry={() => membersQuery.refetch()} />
+              </div>
+            ) : (membersData?.items || []).length === 0 ? (
+              <div className="p-12">
+                <EmptyState title="Không tìm thấy nhân sự" description="Chưa có thông tin sổ BHXH nào phù hợp với bộ lọc." />
+              </div>
+            ) : (
+              <div className="data-table-wrap">
+                <div className="data-table-scroll">
+                  <table className="data-table min-w-[1050px]">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "45px" }} className="text-center">STT</th>
+                        <th style={{ minWidth: "180px" }}>NHÂN VIÊN</th>
+                        <th style={{ width: "130px" }}>MÃ SỐ BHXH</th>
+                        <th style={{ width: "130px" }} className="text-right">LƯƠNG ĐÓNG BH</th>
+                        <th style={{ width: "110px" }} className="text-center">TỶ LỆ NLĐ</th>
+                        <th style={{ width: "110px" }} className="text-center">TỶ LỆ DN</th>
+                        <th style={{ width: "130px" }} className="text-center">TRẠNG THÁI</th>
+                        <th style={{ minWidth: "180px" }}>NƠI KCB BAN ĐẦU</th>
+                        <th style={{ width: "80px" }} className="text-center">THAO TÁC</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(membersData?.items || []).map((m, idx) => {
+                        const rawStt = (currentPage - 1) * pageSize + idx + 1;
+                        const stt = String(rawStt).padStart(2, "0");
+                        return (
+                          <tr key={m.employee.employeeCode} className="hover:bg-secondary/40 transition-colors">
+                            <td className="text-center text-muted font-medium">{stt}</td>
+                            <td>
+                              <div className="employee-cell-info">
+                                <span className="employee-cell-name font-semibold text-foreground">{m.employee.fullName}</span>
+                                <span className="employee-cell-sub">
+                                  <span className="employee-code-badge">{m.employee.employeeCode}</span>
+                                  <span className="text-muted text-[11px] font-normal">· {m.employee.position || m.employee.project?.projectName || "Nhân viên"}</span>
+                                </span>
+                              </div>
+                            </td>
+                            <td className="font-mono font-medium text-foreground">
+                              {m.socialInsuranceNumber || <span className="text-muted italic">Chưa cấp sổ</span>}
+                            </td>
+                            <td className="text-right font-bold text-foreground">
+                              {formatCurrency(m.contributionSalary)}
+                            </td>
+                            <td className="text-center text-muted font-medium">{m.employeeContributionRate}%</td>
+                            <td className="text-center text-muted font-medium">{m.employerContributionRate}%</td>
                             <td className="text-center">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => toggleSelectChangeItem(item.id)}
-                                title="Tích chọn để xác nhận"
+                              {m.status === "ACTIVE" ? (
+                                <Badge tone="success">Đang tham gia</Badge>
+                              ) : m.status === "SUSPENDED" ? (
+                                <Badge tone="warning">Tạm dừng</Badge>
+                              ) : (
+                                <Badge tone="danger">Đã ngừng đóng</Badge>
+                              )}
+                            </td>
+                            <td className="text-foreground">{m.medicalRegistrationPlace || "—"}</td>
+                            <td className="text-center">
+                              <TableRowActions
+                                items={[
+                                  {
+                                    key: "history",
+                                    label: "Xem lịch sử biến động",
+                                    icon: <History className="w-3.5 h-3.5" />,
+                                    onClick: () => handleViewHistory(m),
+                                  },
+                                ]}
                               />
                             </td>
-                          )}
-                          <td className="text-center text-muted font-medium">{stt}</td>
-                          <td>
-                            <div className="employee-cell-info">
-                              <span className="employee-cell-name font-semibold">{item.employeeName}</span>
-                              <span className="employee-cell-sub">
-                                <span className="employee-code-badge">{item.employeeCode}</span>
-                                {projectCode && <span className="text-muted text-[11px] font-normal">· {projectCode}</span>}
-                              </span>
-                            </div>
-                          </td>
-                          <td>{renderChangeTypeBadge(item.changeType)}</td>
-                          <td className="text-right font-mono">
-                            <div className="salary-diff-cell">
-                              <span className="salary-diff-new">{formatCurrency(item.newSalary)}</span>
-                              {item.oldSalary !== undefined && item.oldSalary !== item.newSalary && (
-                                <span className="salary-diff-old">{formatCurrency(item.oldSalary)}</span>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Pagination */}
+            {(membersData?.total || 0) > 0 && (
+              <TablePaginationFooter
+                totalItems={membersData?.total || 0}
+                currentPage={currentPage}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => { setPageSize(newSize); setCurrentPage(1); }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* VIEW 2: Biến động D02-LT */}
+        {activeView === "changes" && (
+          <div>
+            {changesQuery.isLoading ? (
+              <div className="p-8">
+                <LoadingBlock />
+              </div>
+            ) : changesQuery.isError ? (
+              <div className="p-8">
+                <ErrorState message="Lỗi tải danh sách biến động" retry={() => changesQuery.refetch()} />
+              </div>
+            ) : (changesData?.items || []).length === 0 ? (
+              <div className="p-12">
+                <EmptyState title="Không có biến động" description="Chưa có hồ sơ biến động BHXH nào trong kỳ này." />
+              </div>
+            ) : (
+              <div className="data-table-wrap">
+                <div className="data-table-scroll">
+                  <table className="data-table min-w-[1050px]">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "45px" }} className="text-center">STT</th>
+                        <th style={{ minWidth: "180px" }}>NHÂN VIÊN</th>
+                        <th style={{ width: "140px" }}>LOẠI BIẾN ĐỘNG</th>
+                        <th style={{ width: "120px" }} className="text-center">THÁNG HIỆU LỰC</th>
+                        <th style={{ width: "130px" }} className="text-right">LƯƠNG CŨ</th>
+                        <th style={{ width: "130px" }} className="text-right">LƯƠNG MỚI</th>
+                        <th style={{ width: "130px" }} className="text-center">TRẠNG THÁI</th>
+                        <th style={{ minWidth: "180px" }}>MÃ ĐỐI SOÁT / LÝ DO</th>
+                        <th style={{ width: "90px" }} className="text-center">THAO TÁC</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(changesData?.items || []).map((c, idx) => {
+                        const rawStt = (currentPage - 1) * pageSize + idx + 1;
+                        const stt = String(rawStt).padStart(2, "0");
+                        return (
+                          <tr key={c.id} className="hover:bg-secondary/40 transition-colors">
+                            <td className="text-center text-muted font-medium">{stt}</td>
+                            <td>
+                              <div className="employee-cell-info">
+                                <span className="employee-cell-name font-semibold text-foreground">{c.employee.fullName}</span>
+                                <span className="employee-cell-sub">
+                                  <span className="employee-code-badge">{c.employee.employeeCode}</span>
+                                  <span className="text-muted text-[11px] font-normal">· {c.employee.position || c.employee.project?.projectName || "Nhân viên"}</span>
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              {c.changeType === "INCREASE" ? (
+                                <Badge tone="success">Tăng lao động</Badge>
+                              ) : c.changeType === "DECREASE" ? (
+                                <Badge tone="danger">Giảm lao động</Badge>
+                              ) : (
+                                <Badge tone="info">Điều chỉnh lương</Badge>
                               )}
-                            </div>
-                          </td>
-                          <td className="text-right font-mono">
-                            <span className="font-semibold text-warning">{formatCurrency(empAmount)}</span>
-                          </td>
-                          <td className="text-right font-mono">
-                            <span className="font-semibold text-info">{formatCurrency(compAmount)}</span>
-                          </td>
-                          <td>
-                            {item.status === "verified" ? (
-                              <StatusBadge tone="success">Đã đối chiếu</StatusBadge>
-                            ) : item.status === "rejected" ? (
-                              <StatusBadge tone="danger">Từ chối</StatusBadge>
-                            ) : (
-                              <StatusBadge tone="warning">Chờ đối chiếu</StatusBadge>
-                            )}
-                          </td>
-                          <td className="text-center">
-                            <TableRowActions
-                              items={[
-                                ...(isAccountant && (item.status === "pending_agency_verification" || (item.status as string) === "pending")
-                                  ? [
-                                      {
-                                        key: "verify",
-                                        label: "Xác nhận đối chiếu",
-                                        icon: <Check />,
-                                        onClick: () => {
-                                          setSelectedChangeForAction(item);
-                                          setVerifyModalOpen(true);
+                            </td>
+                            <td className="text-center font-medium text-foreground">{c.effectiveMonth}</td>
+                            <td className="text-right text-muted">
+                              {c.oldSalary ? formatCurrency(c.oldSalary) : "—"}
+                            </td>
+                            <td className="text-right font-bold text-foreground">
+                              {c.newSalary ? formatCurrency(c.newSalary) : "—"}
+                            </td>
+                            <td className="text-center">
+                              {c.status === "APPROVED" ? (
+                                <Badge tone="success">Đang tham gia</Badge>
+                              ) : c.status === "RECONCILED" ? (
+                                <Badge tone="info">Đã đối soát</Badge>
+                              ) : c.status === "REJECTED" ? (
+                                <Badge tone="danger">Bị từ chối</Badge>
+                              ) : (
+                                <Badge tone="warning">Chờ xử lý</Badge>
+                              )}
+                            </td>
+                            <td>
+                              {c.reconciliationCode && (
+                                <div className="font-mono text-[11px] text-primary font-semibold">
+                                  Mã: {c.reconciliationCode}
+                                </div>
+                              )}
+                              <div className="text-foreground mt-0.5">{c.reason || "—"}</div>
+                            </td>
+                            <td className="text-center">
+                              <TableRowActions
+                                items={[
+                                  ...(c.status === "SUBMITTED" || c.status === "DRAFT"
+                                    ? [
+                                        {
+                                          key: "reconcile",
+                                          label: "Xác nhận đối soát BHXH",
+                                          icon: <FileCheck className="w-3.5 h-3.5" />,
+                                          onClick: () => {
+                                            setReconcileChange(c);
+                                            setReconciliationCode(c.reconciliationCode || "");
+                                          },
                                         },
-                                      },
-                                      {
-                                        key: "reject",
-                                        label: "Từ chối biến động",
-                                        icon: <X />,
-                                        danger: true,
-                                        onClick: () => {
-                                          setSelectedChangeForAction(item);
-                                          setRejectModalOpen(true);
+                                        {
+                                          key: "approve",
+                                          label: "Phê duyệt biến động",
+                                          icon: <Check className="w-3.5 h-3.5" />,
+                                          onClick: () => approveMutation.mutate(c.id),
                                         },
-                                      },
-                                    ]
-                                  : []),
-                              ]}
+                                        {
+                                          key: "reject",
+                                          label: "Từ chối hồ sơ",
+                                          icon: <X className="w-3.5 h-3.5" />,
+                                          danger: true,
+                                          onClick: () => {
+                                            const r = window.prompt("Nhập lý do từ chối hồ sơ:");
+                                            if (r) rejectMutation.mutate({ id: c.id, reason: r });
+                                          },
+                                        },
+                                      ]
+                                    : []),
+                                  {
+                                    key: "delete",
+                                    label: "Xóa hồ sơ biến động",
+                                    icon: <Trash2 className="w-3.5 h-3.5" />,
+                                    danger: true,
+                                    onClick: () => {
+                                      if (window.confirm("Bạn có chắc chắn muốn xóa hồ sơ biến động này?")) {
+                                        deleteMutation.mutate(c.id);
+                                      }
+                                    },
+                                  },
+                                ]}
                             />
                           </td>
                         </tr>
@@ -889,624 +642,257 @@ export function InsuranceSubtab({
                   </tbody>
                 </table>
               </div>
-
-              <TablePaginationFooter
-                totalItems={filteredChanges.length}
-                currentPage={changesPage}
-                pageSize={changesPageSize}
-                onPageChange={setChangesPage}
-                onPageSizeChange={(newSize) => {
-                  setChangesPageSize(newSize);
-                  setChangesPage(1);
-                }}
-              />
             </div>
+          )}
+
+          {/* Pagination */}
+          {(changesData?.total || 0) > 0 && (
+            <TablePaginationFooter
+              totalItems={changesData?.total || 0}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => { setPageSize(newSize); setCurrentPage(1); }}
+            />
           )}
         </div>
       )}
+    </div>
 
-      {/* Floating SaveBar for Bulk Changes Confirmation */}
-      {selectedChangeIds.size > 0 && isAccountant && (
-        <aside className="save-bar" role="region" aria-label="Xác nhận đối chiếu BHXH">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <Check className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-foreground">
-                Đã chọn {selectedChangeIds.size} biến động BHXH
-              </div>
-              <div className="text-[11px] text-muted font-medium">
-                Xác nhận đối chiếu dữ liệu với cơ quan BHXH
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedChangeIds(new Set())}
-              className="text-xs"
-            >
-              Bỏ chọn
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                setSelectedChangeForAction(null);
-                setVerifyModalOpen(true);
-              }}
-              className="gap-1.5 font-semibold text-xs"
-            >
-              <Check className="w-3.5 h-3.5" /> Xác nhận đối chiếu ({selectedChangeIds.size})
-            </Button>
-          </div>
-        </aside>
-      )}
-
-      {/* BOTTOM AUDIT / ACTIVITY LOG */}
+      {/* Subtab Activity / Audit Log */}
       <SubtabActivityLog
         projectId={projectId}
         module="insurance"
-        title="Nhật ký xét duyệt & biến động BHXH (D02-LT)"
-        description="Lịch sử báo tăng, báo giảm, điều chỉnh lương đóng và kết quả xét duyệt hồ sơ BHXH"
+        title="Nhật ký biến động Bảo hiểm xã hội (D02-LT)"
+        description="Lịch sử kê khai báo tăng, báo giảm, điều chỉnh mức đóng và đối soát cơ quan BHXH"
       />
 
-      {/* MODAL 1: TẢI LÊN DANH SÁCH BIẾN ĐỘNG (DÙNG COMPONENT CHUNG) */}
-      <ExcelImportModal
-        open={uploadModalOpen}
-        onOpenChange={setUploadModalOpen}
-        title={`Tải Lên Danh Sách Biến Động BHXH - ${formatMonthYear(selectedPeriod)}`}
-        description="Nạp bảng tổng hợp biến động tăng, giảm, điều chỉnh mức đóng BHXH hàng tháng từ Chủ dự án / BCSX."
-        period={selectedPeriod}
-        sampleTemplateName="Mau_Bien_Dong_BHXH.xlsx"
-        sampleTemplateDescription="Bảng kê gồm: Mã NV, Họ tên, Loại biến động (Tăng mới / Báo giảm / Điều chỉnh), Mức lương đóng mới và Lý do."
-        onDownloadSample={() => notify("Đã tải xuống biểu mẫu Mau_Bien_Dong_BHXH.xlsx")}
-        columns={[
-          {
-            key: "employeeCode",
-            label: "Mã NV",
-            width: "120px",
-            render: (row) => <code>{row.employeeCode}</code>,
-          },
-          {
-            key: "employeeName",
-            label: "Họ và tên",
-            render: (row) => <strong>{row.employeeName}</strong>,
-          },
-          {
-            key: "changeType",
-            label: "Loại biến động",
-            render: (row) => renderChangeTypeBadge(row.changeType),
-          },
-          {
-            key: "newSalary",
-            label: "Lương đóng mới",
-            align: "right",
-            render: (row) => (
-              <strong className="text-primary font-mono font-bold">
-                {formatCurrency(row.newSalary)}
-              </strong>
-            ),
-          },
-          {
-            key: "reason",
-            label: "Lý do biến động",
-            render: (row) => <span className="text-xs">{row.reason}</span>,
-          },
-        ]}
-        previewRows={uploadPreviewRows}
-        stats={[
-          {
-            label: "Tổng số bản ghi",
-            value: `${uploadPreviewRows.length} dòng`,
-            tone: "primary",
-          },
-          {
-            label: "Báo tăng mới",
-            value: `${uploadPreviewRows.filter((r) => r.changeType === "increase").length}`,
-            tone: "success",
-          },
-          {
-            label: "Điều chỉnh lương",
-            value: `${uploadPreviewRows.filter((r) => r.changeType === "salary_adjust").length}`,
-            tone: "warning",
-          },
-          {
-            label: "Thẩm định dữ liệu",
-            value: "Hợp lệ 100%",
-            tone: "success",
-          },
-        ]}
-        onSimulateUpload={handleSimulateFileUpload}
-        isUploading={isUploading}
-        onConfirmImport={handleConfirmImport}
-        confirmLoading={batchImportMutation.isPending}
-        onClearPreview={() => setUploadPreviewRows([])}
-      />
-
-      {/* MODAL 2: KHAI BÁO BIẾN ĐỘNG (SENIOR DESIGNED WITH SEARCHABLE SELECT & EQUAL CARDS) */}
-      <Modal
-        open={declareModalOpen}
-        onOpenChange={(open) => {
-          setDeclareModalOpen(open);
-          if (!open) setIsEmployeeDropdownOpen(false);
-        }}
-        title="Khai Báo Biến Động Bảo Hiểm Xã Hội"
-        description={`Chủ dự án / Quản lý tạo yêu cầu biến động BHXH kỳ ${formatMonthYear(selectedPeriod)} để chuyển C&B đối chiếu với cơ quan BHXH.`}
-        size="lg"
-        footer={
-          <div className="modal-footer-actions">
-            <Button variant="ghost" onClick={() => setDeclareModalOpen(false)}>
-              Hủy
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleCreateDeclare}
-              loading={createChangeMutation.isPending}
-            >
-              <Check /> Gửi yêu cầu biến động
-            </Button>
-          </div>
-        }
-      >
-        <div className="declare-modal-form">
-          {/* 1. Chọn nhân sự với Searchable Combobox */}
-          <div className="declare-section-block">
-            <div className="declare-section-header">
-              <div className="declare-section-header-left">
-                <span className="declare-section-badge">1</span>
-                <span className="declare-section-title">Chọn người lao động</span>
-              </div>
-              <span className="declare-section-hint">Tìm theo tên, mã NV hoặc chức danh</span>
-            </div>
-
-            <div className="searchable-select-container" ref={employeeDropdownRef}>
-              <button
-                type="button"
-                className={`searchable-select-trigger ${isEmployeeDropdownOpen ? "open" : ""}`}
-                onClick={() => setIsEmployeeDropdownOpen(!isEmployeeDropdownOpen)}
+      {/* Modal Kê khai biến động mới */}
+      {declareModalOpen && (
+        <Modal
+          open={declareModalOpen}
+          onOpenChange={(open) => !open && setDeclareModalOpen(false)}
+          title="Kê khai biến động bảo hiểm xã hội (Mẫu D02-LT)"
+          description="Lập hồ sơ báo tăng, báo giảm hoặc điều chỉnh mức lương đóng BHXH"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDeclareModalOpen(false)}>
+                Hủy bỏ
+              </Button>
+              <Button
+                variant="primary"
+                disabled={createChangeMutation.isPending}
+                onClick={() => {
+                  if (!declareReason.trim()) {
+                    notify("Vui lòng nhập lý do biến động", "error");
+                    return;
+                  }
+                  createChangeMutation.mutate({
+                    employeeCode: selectedEmployeeCode,
+                    changeType: declareType,
+                    effectiveMonth: declareMonth,
+                    oldSalary: declareOldSalary,
+                    newSalary: declareNewSalary,
+                    reason: declareReason,
+                  });
+                }}
               >
-                <div className="flex items-center gap-2">
-                  <span className="employee-code-badge text-xs">{selectedEmployeeObj?.code}</span>
-                  <strong className="text-foreground text-sm">{selectedEmployeeObj?.name}</strong>
-                  <span className="text-sm text-muted">({selectedEmployeeObj?.position})</span>
-                </div>
-                <ChevronDown className="w-4 h-4 text-muted" />
-              </button>
-
-              {isEmployeeDropdownOpen && (
-                <div className="searchable-select-dropdown">
-                  <div className="searchable-select-search-box">
-                    <Search className="w-4 h-4 text-muted flex-shrink-0" />
-                    <input
-                      type="text"
-                      autoFocus
-                      placeholder="Tìm kiếm theo họ tên hoặc mã nhân viên..."
-                      value={employeeSearchTerm}
-                      onChange={(e) => setEmployeeSearchTerm(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    {employeeSearchTerm && (
-                      <button
-                        type="button"
-                        onClick={() => setEmployeeSearchTerm("")}
-                        className="text-muted hover:text-foreground"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="searchable-select-list">
-                    {filteredEmployeesForSelect.length === 0 ? (
-                      <div className="p-3 text-sm text-muted text-center">
-                        Không tìm thấy người lao động phù hợp
-                      </div>
-                    ) : (
-                      filteredEmployeesForSelect.map((emp) => {
-                        const isSelected = emp.id === formEmployeeId;
-                        const empMaster = masterRecords.find((m) => m.employeeId === emp.id);
-                        return (
-                          <button
-                            key={emp.id}
-                            type="button"
-                            className={`searchable-select-item ${isSelected ? "selected" : ""}`}
-                            onClick={() => {
-                              setFormEmployeeId(emp.id);
-                              if (empMaster) {
-                                setFormNewSalary(empMaster.insuranceSalary);
-                              }
-                              setIsEmployeeDropdownOpen(false);
-                              setEmployeeSearchTerm("");
-                            }}
-                          >
-                            <div className="searchable-select-item-left">
-                              <span className="employee-code-badge text-xs">{emp.code}</span>
-                              <div>
-                                <span className="font-semibold text-sm text-foreground">{emp.name}</span>
-                                <div className="text-xs text-muted">{emp.position}</div>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-xs text-primary font-mono font-semibold">
-                                {formatCurrency(empMaster?.insuranceSalary ?? 6300000)}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              )}
+                {createChangeMutation.isPending ? "Đang tạo..." : "Tạo hồ sơ biến động"}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">
+                Nhân viên <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={selectedEmployeeCode}
+                onChange={(e) => setSelectedEmployeeCode(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {employees.map((e) => (
+                  <option key={e.code} value={e.code}>
+                    {e.name} ({e.code}) - {e.department}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {selectedEmployeeObj && (
-              <div className="employee-preview-banner">
-                <div className="employee-preview-left">
-                  <div className="employee-avatar-circle">
-                    {selectedEmployeeObj.name.split(" ").slice(-1)[0][0]}
-                  </div>
-                  <div className="employee-preview-meta">
-                    <span className="employee-preview-name">{selectedEmployeeObj.name}</span>
-                    <span className="employee-preview-sub">
-                      <span className="employee-code-badge text-xs">{selectedEmployeeObj.code}</span>
-                      <span>•</span>
-                      <span>{selectedEmployeeObj.position}</span>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="employee-preview-salary-badge">
-                  <span className="employee-preview-salary-label">Mức đóng hiện tại</span>
-                  <span className="employee-preview-salary-val">
-                    {formatCurrency(selectedEmployeeMaster?.insuranceSalary ?? 6300000)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 2. Chọn loại biến động (Đơn giản, tinh gọn chuẩn SOP) */}
-          <div className="declare-section-block">
-            <div className="declare-section-header">
-              <div className="declare-section-header-left">
-                <span className="declare-section-badge">2</span>
-                <span className="declare-section-title">Loại biến động BHXH *</span>
-              </div>
-            </div>
-
-            <div className="change-type-simple-pills">
-              {[
-                { value: "increase", label: "Báo tăng mới" },
-                { value: "salary_adjust", label: "Điều chỉnh lương" },
-                { value: "suspend", label: "Tạm dừng đóng" },
-                { value: "resume", label: "Đóng trở lại" },
-                { value: "decrease", label: "Báo giảm hẳn" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={cn(
-                    "change-type-pill-btn",
-                    formChangeType === opt.value && "active"
-                  )}
-                  onClick={() => setFormChangeType(opt.value as any)}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1.5">
+                  Loại biến động <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={declareType}
+                  onChange={(e) => setDeclareType(e.target.value as any)}
+                  className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 >
-                  {opt.label}
-                </button>
-              ))}
+                  <option value="INCREASE">Báo tăng lao động</option>
+                  <option value="DECREASE">Báo giảm lao động</option>
+                  <option value="ADJUST_SALARY">Điều chỉnh lương đóng</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1.5">
+                  Tháng hiệu lực <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="month"
+                  value={declareMonth}
+                  onChange={(e) => setDeclareMonth(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">
+                Mức lương đóng BHXH mới (VNĐ) <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                step={100000}
+                value={declareNewSalary}
+                onChange={(e) => setDeclareNewSalary(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">
+                Lý do biến động <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Nhập lý do biến động (ví dụ: Ký HĐLĐ chính thức, Tăng lương theo phụ lục hợp đồng...)"
+                value={declareReason}
+                onChange={(e) => setDeclareReason(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
             </div>
           </div>
+        </Modal>
+      )}
 
-          {/* 3. Mức lương đóng & Statutory Rate Live Calculator */}
-          <div className="declare-section-block">
-            <div className="declare-section-header">
-              <div className="declare-section-header-left">
-                <span className="declare-section-badge">3</span>
-                <span className="declare-section-title">Mức lương đóng & Tỷ lệ trích nộp theo luật định</span>
-              </div>
-              <span className="declare-section-hint">Tự động tính theo tỷ lệ 10.5% NLĐ và 21.5% DN</span>
-            </div>
-
-            <div className="statutory-calculator-card">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1">
-                  <label className="text-sm font-semibold text-foreground/80 mb-1.5 block">Mức lương đóng BHXH mới (VNĐ):</label>
-                  <input
-                    type="number"
-                    step={100000}
-                    value={formNewSalary}
-                    onChange={(e) => setFormNewSalary(Number(e.target.value))}
-                    disabled={formChangeType === "decrease"}
-                    placeholder="6.300.000"
-                    className="text-sm font-mono font-medium"
-                  />
-                </div>
-
-                <div className="w-56">
-                  <label className="text-sm font-semibold text-foreground/80 mb-1.5 block">Tháng áp dụng hiệu lực:</label>
-                  <MonthPicker
-                    value={formEffectiveMonth}
-                    onChange={(val) => setFormEffectiveMonth(val)}
-                    variant="form"
-                  />
-                </div>
-              </div>
-
-              <div className="statutory-calculator-grid">
-                <div className="statutory-calc-item">
-                  <span className="statutory-calc-label">
-                    <span className="w-2.5 h-2.5 rounded-full bg-warning inline-block"></span> NLĐ trích (10.5%)
-                  </span>
-                  <span className="statutory-calc-val text-warning">{formatCurrency(calcEmpAmount)}</span>
-                  <span className="text-xs text-muted">8% Hưu trí + 1.5% BHYT + 1% BHTN</span>
-                </div>
-
-                <div className="statutory-calc-item">
-                  <span className="statutory-calc-label">
-                    <span className="w-2.5 h-2.5 rounded-full bg-info inline-block"></span> Doanh nghiệp (21.5%)
-                  </span>
-                  <span className="statutory-calc-val text-info">{formatCurrency(calcCompAmount)}</span>
-                  <span className="text-xs text-muted">17% BHXH + 3% BHYT + 1% BHTN + 0.5% BNN</span>
-                </div>
-
-                <div className="statutory-calc-item">
-                  <span className="statutory-calc-label">
-                    <span className="w-2.5 h-2.5 rounded-full bg-primary inline-block"></span> Tổng kinh phí (32%)
-                  </span>
-                  <span className="statutory-calc-val text-primary">{formatCurrency(calcTotalAmount)}</span>
-                  <span className="text-xs text-muted">Tổng nộp cơ quan BHXH</span>
-                </div>
-              </div>
+      {/* Modal Đối soát mã hồ sơ BHXH */}
+      {reconcileChange && (
+        <Modal
+          open={Boolean(reconcileChange)}
+          onOpenChange={(open) => !open && setReconcileChange(null)}
+          title="Xác nhận đối soát mã hồ sơ cơ quan BHXH"
+          description={`Nhân viên: ${reconcileChange.employee.fullName} (${reconcileChange.employee.employeeCode})`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setReconcileChange(null)}>
+                Hủy
+              </Button>
+              <Button
+                variant="primary"
+                disabled={reconcileMutation.isPending}
+                onClick={() => {
+                  if (!reconciliationCode.trim()) {
+                    notify("Vui lòng nhập mã đối soát BHXH", "error");
+                    return;
+                  }
+                  reconcileMutation.mutate({ id: reconcileChange.id, code: reconciliationCode });
+                }}
+              >
+                {reconcileMutation.isPending ? "Đang xác nhận..." : "Xác nhận đối soát"}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">
+                Mã tiếp nhận / Mã đối soát BHXH <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Ví dụ: BHXH-7901-202608-0099"
+                value={reconciliationCode}
+                onChange={(e) => setReconciliationCode(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
             </div>
           </div>
+        </Modal>
+      )}
 
-          {/* 4. Lý do biến động & Textarea Rộng Rãi */}
-          <div className="declare-section-block">
-            <div className="declare-section-header">
-              <div className="declare-section-header-left">
-                <span className="declare-section-badge">4</span>
-                <span className="declare-section-title">Lý do biến động & Căn cứ phê duyệt</span>
-              </div>
-              <span className="declare-section-hint">Có thể bấm chọn nhanh từ các gợi ý dưới đây</span>
-            </div>
-
-            <textarea
-              rows={5}
-              className="long-reason-textarea"
-              value={formReason}
-              onChange={(e) => setFormReason(e.target.value)}
-              placeholder="Nhập chi tiết căn cứ và lý do biến động (ví dụ: Ký Hợp đồng lao động chính thức thời hạn 12 tháng theo Quyết định tuyển dụng số 45/QĐ-2026, áp dụng nâng lương theo thỏa thuận tại Phụ lục HĐLĐ...)"
-            />
-            <div className="quick-reason-chips">
-              <button
-                type="button"
-                className="quick-reason-chip"
-                onClick={() => setFormReason("Ký Hợp đồng lao động chính thức sau thời gian thử việc theo quy định")}
-              >
-                + Ký HĐLĐ chính thức
-              </button>
-              <button
-                type="button"
-                className="quick-reason-chip"
-                onClick={() => setFormReason("Tăng lương thâm niên và trách nhiệm theo Phụ lục HĐLĐ số 02/2026")}
-              >
-                + Tăng lương định kỳ
-              </button>
-              <button
-                type="button"
-                className="quick-reason-chip"
-                onClick={() => setFormReason("Nghỉ hưởng chế độ thai sản 6 tháng theo Giấy chứng sinh của cơ sở y tế")}
-              >
-                + Nghỉ thai sản 6 tháng
-              </button>
-              <button
-                type="button"
-                className="quick-reason-chip"
-                onClick={() => setFormReason("Chấm dứt Hợp đồng lao động theo đơn xin thôi việc đã được phê duyệt")}
-              >
-                + Chấm dứt HĐLĐ
-              </button>
-            </div>
-          </div>
-
-          {/* 5. Tệp tài liệu / Quyết định đính kèm (Real File Uploader) */}
-          <div className="declare-section-block">
-            <div className="declare-section-header">
-              <div className="declare-section-header-left">
-                <span className="declare-section-badge">5</span>
-                <span className="declare-section-title">Tệp tài liệu / Quyết định đính kèm</span>
-              </div>
-              <span className="declare-section-hint">Đính kèm HĐLĐ, Phụ lục hoặc Giấy tờ y tế</span>
-            </div>
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              style={{ display: "none" }}
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-              onChange={handleFileChange}
-            />
-
-            {formDocName ? (
-              <div className="attached-file-card">
-                <div className="attached-file-left">
-                  <div className="attached-file-icon">
-                    <FileCheck className="w-5 h-5" />
-                  </div>
-                  <div className="attached-file-info">
-                    <span className="attached-file-name" title={formDocName}>
-                      {formDocName}
-                    </span>
-                    <span className="attached-file-meta">
-                      {formDocSize && <span>{formDocSize}</span>}
-                      <span>•</span>
-                      <span className="text-success font-medium">✓ Đã đính kèm hồ sơ</span>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    Đổi tệp
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => {
-                      setFormDocName("");
-                      setFormDocSize("");
-                      if (fileInputRef.current) fileInputRef.current.value = "";
-                    }}
-                    title="Gỡ bỏ tệp này"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </div>
+      {/* Modal Xem lịch sử biến động nhân viên */}
+      {historyMember && (
+        <Modal
+          open={Boolean(historyMember)}
+          onOpenChange={(open) => !open && setHistoryMember(null)}
+          title={`Lịch sử biến động BHXH - ${historyMember.employee.fullName}`}
+          description={`Mã NV: ${historyMember.employee.employeeCode} | Số sổ: ${historyMember.socialInsuranceNumber}`}
+          footer={
+            <Button variant="secondary" onClick={() => setHistoryMember(null)}>
+              Đóng
+            </Button>
+          }
+        >
+          <div className="py-2 space-y-3">
+            {loadingHistory ? (
+              <LoadingBlock />
+            ) : historyList.length === 0 ? (
+              <EmptyState title="Chưa có lịch sử" description="Nhân sự này chưa ghi nhận biến động nào." />
             ) : (
-              <div
-                className="file-upload-dropzone-real"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <UploadCloud />
-                <div>
-                  <strong className="text-xs text-foreground block">
-                    Bấm để chọn tệp từ máy tính hoặc kéo thả file vào đây
-                  </strong>
-                  <span className="text-[11px] text-muted">
-                    Hỗ trợ tệp PDF, Word, Ảnh quyết định/HĐLĐ (.pdf, .docx, .png, .jpg - Tối đa 10MB)
-                  </span>
+              <div className="data-table-wrap border rounded-lg overflow-hidden">
+                <div className="data-table-scroll">
+                  <table className="data-table compact-table min-w-[600px]">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "130px" }}>THÁNG HIỆU LỰC</th>
+                        <th style={{ width: "140px" }}>LOẠI BIẾN ĐỘNG</th>
+                        <th style={{ width: "140px" }} className="text-right">LƯƠNG MỚI</th>
+                        <th>MÃ ĐỐI SOÁT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyList.map((h, i) => (
+                        <tr key={i}>
+                          <td className="text-foreground font-medium">{h.effectiveMonth}</td>
+                          <td>
+                            <Badge tone="info">{h.changeType}</Badge>
+                          </td>
+                          <td className="text-right font-bold text-foreground">{formatCurrency(h.newSalary)}</td>
+                          <td className="font-mono text-[11px] text-muted">{h.reconciliationCode || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
           </div>
-        </div>
-      </Modal>
+        </Modal>
+      )}
 
-      {/* MODAL 3: KẾ TOÁN XÁC NHẬN ĐỐI CHIẾU CƠ QUAN BHXH */}
-      <Modal
-        open={verifyModalOpen}
-        onOpenChange={setVerifyModalOpen}
-        title="Xác Nhận Đã Đối Chiếu Với Cơ Quan BHXH"
-        description="Xác nhận kết quả thẩm định từ phần mềm BHXH điện tử. Sau khi xác nhận, hệ thống sẽ tự động cập nhật vào danh sách tham gia."
-        size="md"
-        footer={
-          <div className="modal-footer-actions">
-            <Button variant="ghost" onClick={() => setVerifyModalOpen(false)}>
-              Hủy
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (selectedChangeForAction) {
-                  verifyChangeMutation.mutate({
-                    id: selectedChangeForAction.id,
-                    receiptCode: agencyReceiptCode,
-                    verifier: verifierName,
-                  });
-                } else if (selectedChangeIds.size > 0) {
-                  batchVerifyMutation.mutate({
-                    ids: Array.from(selectedChangeIds),
-                    receiptCode: agencyReceiptCode,
-                    verifier: verifierName,
-                  });
-                }
-              }}
-              loading={verifyChangeMutation.isPending || batchVerifyMutation.isPending}
-            >
-              <Check /> Xác nhận & Cập nhật sổ BHXH
-            </Button>
-          </div>
-        }
-      >
-        <div className="form-layout">
-          <div className="alert-info-box">
-            <div className="text-xs">
-              {selectedChangeForAction ? (
-                <>
-                  Hồ sơ: <strong>{selectedChangeForAction.employeeName}</strong> ({selectedChangeForAction.employeeCode})
-                  <br />
-                  Loại biến động: <strong>{selectedChangeForAction.changeType}</strong> - Lương mới: <strong className="font-mono text-primary">{formatCurrency(selectedChangeForAction.newSalary)}</strong>
-                </>
-              ) : (
-                <>Đang duyệt đồng loạt <strong>{selectedChangeIds.size}</strong> hồ sơ biến động BHXH kỳ {formatMonthYear(selectedPeriod)}.</>
-              )}
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label>Mã hồ sơ giao dịch điện tử BHXH:</label>
-            <input
-              type="text"
-              value={agencyReceiptCode}
-              onChange={(e) => setAgencyReceiptCode(e.target.value)}
-              placeholder="Ví dụ: BHXH-7901-202608-00582"
-            />
-            <span className="text-[11px] text-muted mt-1">Mã xác thực cấp từ cổng giao dịch BHXH điện tử.</span>
-          </div>
-
-          <div className="form-group">
-            <label>Chuyên viên C&B / Kế toán phụ trách:</label>
-            <input
-              type="text"
-              value={verifierName}
-              onChange={(e) => setVerifierName(e.target.value)}
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* MODAL 4: TỪ CHỐI HỒ SƠ BIẾN ĐỘNG */}
-      <Modal
-        open={rejectModalOpen}
-        onOpenChange={setRejectModalOpen}
-        title="Từ Chối Hồ Sơ Biến Động BHXH"
-        description="Trả lại hồ sơ cho Chủ dự án / BCSX nếu thông tin mức đóng chưa khớp hoặc thiếu tài liệu chứng từ."
-        size="sm"
-        footer={
-          <div className="modal-footer-actions">
-            <Button variant="ghost" onClick={() => setRejectModalOpen(false)}>
-              Hủy
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                if (selectedChangeForAction) {
-                  rejectChangeMutation.mutate({
-                    id: selectedChangeForAction.id,
-                    reason: rejectionReason,
-                  });
-                }
-              }}
-              loading={rejectChangeMutation.isPending}
-            >
-              <X /> Xác nhận từ chối
-            </Button>
-          </div>
-        }
-      >
-        <div className="form-layout">
-          <div className="form-group">
-            <label>Lý do từ chối:</label>
-            <textarea
-              rows={3}
-              value={rejectionReason}
-              onChange={(e) => setRejectionReason(e.target.value)}
-              placeholder="Nhập lý do từ chối (ví dụ: Mức lương đóng chưa khớp với Phụ lục HĐLĐ, thiếu giấy khai sinh...)"
-            />
-          </div>
-        </div>
-      </Modal>
+      {/* Excel Import Modal */}
+      <ExcelImportModal
+        open={importModalOpen}
+        onOpenChange={setImportModalOpen}
+        title="Import Danh sách BHXH từ Excel"
+        description="Tải lên danh sách thành viên tham gia BHXH hoặc danh sách biến động D02-LT."
+        sampleTemplateName="Mau_Import_BHXH.xlsx"
+        sampleTemplateDescription="Biểu mẫu chuẩn bao gồm: Mã NV, Họ tên, Mã số BHXH, Lương đóng BHXH, Bệnh viện KCB."
+        columns={excelColumns}
+        previewRows={importPreviewRows}
+        stats={[
+          { label: "Số dòng hợp lệ", value: importPreviewRows.length, tone: "primary" },
+        ]}
+        onDownloadSample={() => api.downloadSocialInsuranceImportTemplateV3()}
+        onSimulateUpload={handleSimulateUpload}
+        onConfirmImport={() => importMutation.mutate()}
+        confirmLoading={importMutation.isPending}
+        confirmLabel={`Nhập ${importPreviewRows.length || ""} bản ghi vào hệ thống`}
+        onClearPreview={() => setImportPreviewRows([])}
+      />
     </div>
   );
 }
