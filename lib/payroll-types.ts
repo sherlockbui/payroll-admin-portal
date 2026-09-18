@@ -1,6 +1,6 @@
 export type PayrollStatus = "draft" | "calculated" | "submitted" | "locked";
 export type WorkflowStatus = "pending" | "in_progress" | "approved" | "rejected";
-export type ConfirmationStatus = "published" | "viewed" | "confirmed" | "disputed";
+export type ConfirmationStatus = "published" | "viewed" | "confirmed" | "disputed" | "resolved";
 
 export interface ProjectItem {
   id: number;
@@ -174,50 +174,101 @@ export interface PayrollMatrix {
   totalPages?: number;
 }
 
+export interface WorkflowApprover {
+  userId: number;
+  employeeCode: string;
+  fullName: string;
+  roleName: string;
+  email?: string;
+}
+
 export interface WorkflowInstance {
   id: number;
-  entityType: string;
-  entityId: number;
-  status: WorkflowStatus;
+  entityType?: string;
+  entityId?: number;
+  status: WorkflowStatus | string;
   currentStepOrder: number;
   currentStepName: string;
   stepDeadline?: string | null;
+  canApprove?: boolean;
+  canReject?: boolean;
+  currentApprovers?: WorkflowApprover[];
 }
 
 export interface WorkflowStep {
+  instanceStepId?: number;
   stepOrder: number;
   stepName: string;
-  status: WorkflowStatus;
+  actorType?: string;
+  actorRef?: string;
+  status: WorkflowStatus | string;
+  deadlineAt?: string | null;
+  isOverdue?: boolean;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
   completedAt?: string | null;
+  requiresDataInput?: boolean;
+  assignedApprovers?: WorkflowApprover[];
 }
 
 export interface WorkflowHistory {
+  stepOrder?: number;
+  stepName?: string;
   action: string;
   actorName: string;
-  comment: string;
+  comment?: string;
+  note?: string;
   createdAt: string;
 }
 
 export interface WorkflowTimeline {
-  instance: WorkflowInstance;
+  instanceId?: number;
+  status?: WorkflowStatus | string;
+  currentStepOrder?: number;
+  currentStepName?: string;
+  canApprove?: boolean;
+  canReject?: boolean;
+  currentApprovers?: WorkflowApprover[];
+  instance?: WorkflowInstance;
   steps: WorkflowStep[];
-  history: WorkflowHistory[];
+  history?: WorkflowHistory[];
+  actionLogs?: WorkflowHistory[];
 }
 
+export interface ConfirmationItem {
+  id: number;
+  confirmationId?: number;
+  payrollPeriodId?: number;
+  employeeCode: string;
+  fullName: string;
+  status: ConfirmationStatus | string;
+  viewedAt?: string | null;
+  confirmedAt?: string | null;
+  disputeReason?: string | null;
+  disputeAt?: string | null;
+  disputedAt?: string | null;
+  resolvedBy?: number | string | null;
+  resolvedByName?: string | null;
+  resolvedNote?: string | null;
+  resolvedAt?: string | null;
+}
+
+export type DisputeRecord = ConfirmationItem;
+
 export interface ConfirmationStats {
+  periodId?: number;
+  periodCode?: string;
+  totalEmployees?: number;
   total: number;
   published: number;
   viewed: number;
   confirmed: number;
   disputed: number;
-  disputes: DisputeRecord[];
+  resolved?: number;
+  items: ConfirmationItem[];
+  disputes?: ConfirmationItem[];
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
 }
 
-export interface DisputeRecord {
-  confirmationId: number;
-  employeeCode: string;
-  fullName: string;
-  status: ConfirmationStatus;
-  disputeReason: string;
-  disputedAt: string;
-}

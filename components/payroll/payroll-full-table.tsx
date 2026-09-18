@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
+import { Check, RefreshCw, Search } from "lucide-react";
 import type { PayrollMatrix, PayrollMatrixColumn } from "@/lib/payroll-types";
-import { TablePaginationFooter } from "@/components/ui";
+import { Button, TablePaginationFooter } from "@/components/ui";
 import { formatCurrency } from "@/lib/utils";
 
 interface ColumnCategory {
@@ -48,6 +48,11 @@ export function PayrollFullTable({
   onPageChange,
   onPageSizeChange,
   isFetching,
+  selectedEmployeeCodes,
+  onSelectedEmployeeCodesChange,
+  onCalculateSelected,
+  isCalculating,
+  canCalculate = true,
 }: {
   matrix: PayrollMatrix;
   query: string;
@@ -59,6 +64,11 @@ export function PayrollFullTable({
   onPageChange?: (page: number) => void;
   onPageSizeChange?: (size: number) => void;
   isFetching?: boolean;
+  selectedEmployeeCodes?: Set<string>;
+  onSelectedEmployeeCodesChange?: (codes: Set<string>) => void;
+  onCalculateSelected?: (codes: string[]) => void;
+  isCalculating?: boolean;
+  canCalculate?: boolean;
 }) {
   const total = totalItems ?? matrix.total ?? matrix.totalRecords ?? (matrix.rows ? matrix.rows.length : 0);
   const currentPage = page ?? matrix.page ?? 1;
@@ -73,6 +83,57 @@ export function PayrollFullTable({
     }
     return matrix.rows || [];
   }, [matrix.rows, normalizedQuery, onPageChange]);
+
+  const selectedSet = selectedEmployeeCodes ?? useMemo(() => new Set<string>(), []);
+  const canSelect = Boolean(onSelectedEmployeeCodesChange && canCalculate);
+
+  const pageEmployeeCodes = useMemo(() => {
+    return (visibleRows || [])
+      .map((r) => r.employeeCode)
+      .filter((code): code is string => Boolean(code));
+  }, [visibleRows]);
+
+  const isAllPageSelected =
+    pageEmployeeCodes.length > 0 &&
+    pageEmployeeCodes.every((code) => selectedSet.has(code));
+
+  const isSomePageSelected =
+    pageEmployeeCodes.some((code) => selectedSet.has(code)) && !isAllPageSelected;
+
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = isSomePageSelected;
+    }
+  }, [isSomePageSelected]);
+
+  const toggleSelectAllPage = () => {
+    if (!onSelectedEmployeeCodesChange) return;
+    const next = new Set(selectedSet);
+    if (isAllPageSelected) {
+      pageEmployeeCodes.forEach((code) => next.delete(code));
+    } else {
+      pageEmployeeCodes.forEach((code) => next.add(code));
+    }
+    onSelectedEmployeeCodesChange(next);
+  };
+
+  const toggleSelectEmployee = (code: string) => {
+    if (!onSelectedEmployeeCodesChange) return;
+    const next = new Set(selectedSet);
+    if (next.has(code)) {
+      next.delete(code);
+    } else {
+      next.add(code);
+    }
+    onSelectedEmployeeCodesChange(next);
+  };
+
+  const clearSelection = () => {
+    if (onSelectedEmployeeCodesChange) {
+      onSelectedEmployeeCodesChange(new Set());
+    }
+  };
 
   // Exclude employeeCode and fullName from dataColumns as they are merged into the sticky "Người lao động" column
   const dataColumns = useMemo(() => {
@@ -142,18 +203,48 @@ export function PayrollFullTable({
   return (
     <section className="payroll-detail-section payroll-full-section">
       <div className="payroll-section-toolbar">
-        <div>
+        <div className="flex items-center gap-3">
           <h2>Bảng lương chi tiết</h2>
+          {selectedSet.size > 0 && (
+            <span className="selection-counter-tag">
+              <Check className="w-3.5 h-3.5 shrink-0" />
+              <span>Đã chọn <strong>{selectedSet.size}</strong> NLĐ</span>
+            </span>
+          )}
         </div>
-        <label className="search-field payroll-line-search">
-          <Search />
-          <input 
-            value={query} 
-            onChange={(event) => onQueryChange(event.target.value)} 
-            placeholder="Tìm mã hoặc tên…" 
-            aria-label="Tìm người lao động trong bảng lương" 
-          />
-        </label>
+        <div className="flex items-center gap-2">
+          {selectedSet.size > 0 && onCalculateSelected && canCalculate && (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={isCalculating}
+              onClick={() => onCalculateSelected(Array.from(selectedSet))}
+              className="gap-1.5 h-9 text-xs font-semibold"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCalculating ? "spin" : ""}`} />
+              {isCalculating ? "Đang tính..." : `Tính lại (${selectedSet.size} đã chọn)`}
+            </Button>
+          )}
+          {selectedSet.size > 0 && onSelectedEmployeeCodesChange && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={clearSelection}
+              className="h-9 text-xs"
+            >
+              Bỏ chọn
+            </Button>
+          )}
+          <label className="search-field payroll-line-search">
+            <Search />
+            <input 
+              value={query} 
+              onChange={(event) => onQueryChange(event.target.value)} 
+              placeholder="Tìm theo mã hoặc họ tên nhân viên…" 
+              aria-label="Tìm người lao động trong bảng lương" 
+            />
+          </label>
+        </div>
       </div>
 
       {visibleRows.length === 0 ? (
@@ -170,7 +261,19 @@ export function PayrollFullTable({
               {/* TIER 1: Group / Section Headers */}
               <tr className="payroll-unified-section-row">
                 <th className="payroll-line-employee-sticky" rowSpan={2}>
-                  Người lao động
+                  <div className="flex items-center gap-2.5 px-1">
+                    {canSelect && (
+                      <input
+                        ref={headerCheckboxRef}
+                        type="checkbox"
+                        className="rounded accent-teal-600 cursor-pointer w-4 h-4 shrink-0"
+                        checked={isAllPageSelected}
+                        onChange={toggleSelectAllPage}
+                        title="Chọn tất cả người lao động trên trang này"
+                      />
+                    )}
+                    <span>Người lao động</span>
+                  </div>
                 </th>
                 {groupHeaders.map((group, idx) => (
                   <th
@@ -224,61 +327,77 @@ export function PayrollFullTable({
             </thead>
 
             <tbody>
-              {visibleRows.map((row, idx) => (
-                <tr key={row.employeeCode || idx} className="hover:bg-muted/30 transition-colors">
-                  {/* Sticky combined employee column without avatar */}
-                  <td className="payroll-line-employee-sticky">
-                    <div className="line-employee">
-                      <div>
-                        <strong>{row.fullName || "—"}</strong>
-                        <small>{row.employeeCode || "—"}</small>
+              {visibleRows.map((row, idx) => {
+                const isSelected = row.employeeCode ? selectedSet.has(row.employeeCode) : false;
+                return (
+                  <tr
+                    key={row.employeeCode || idx}
+                    className={`hover:bg-muted/30 transition-colors ${isSelected ? "is-selected bg-teal-50/50 dark:bg-teal-950/30" : ""}`}
+                  >
+                    {/* Sticky combined employee column without avatar */}
+                    <td className={`payroll-line-employee-sticky ${isSelected ? "!bg-teal-50/90 dark:!bg-slate-900" : ""}`}>
+                      <div className="line-employee flex items-center gap-2.5 px-1">
+                        {canSelect && row.employeeCode && (
+                          <input
+                            type="checkbox"
+                            className="rounded accent-teal-600 cursor-pointer w-4 h-4 shrink-0"
+                            checked={isSelected}
+                            onChange={() => toggleSelectEmployee(row.employeeCode)}
+                            onClick={(e) => e.stopPropagation()}
+                            title={`Chọn ${row.fullName || row.employeeCode}`}
+                          />
+                        )}
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <strong className="truncate block" title={row.fullName}>{row.fullName || "—"}</strong>
+                          <small className="block font-mono text-xs">{row.employeeCode || "—"}</small>
+                        </div>
                       </div>
-                    </div>
-                  </td>
+                    </td>
 
-                  {dataColumns.map((col) => {
-                    const val = row[col.key];
-                    const isBankAcc = col.key === "bankAccountNumber";
-                    const isDaily = col.group === "DAILY_TIMESHEET";
-                    const isGross = col.key === "grossSalary";
-                    const isNet = col.key === "netSalary";
-                    const isDeduction = col.group === "DEDUCTIONS";
+                    {dataColumns.map((col) => {
+                      const val = row[col.key];
+                      const isBankAcc = col.key === "bankAccountNumber";
+                      const isDaily = col.group === "DAILY_TIMESHEET";
+                      const isGross = col.key === "grossSalary";
+                      const isNet = col.key === "netSalary";
+                      const isDeduction = col.group === "DEDUCTIONS";
 
-                    if (isBankAcc) {
-                      return (
-                        <td key={col.key} className="text-center font-mono text-xs px-3 py-2 border-b">
-                          {maskValue(val, canViewSensitive)}
-                        </td>
-                      );
-                    }
+                      if (isBankAcc) {
+                        return (
+                          <td key={col.key} className="text-center font-mono text-xs px-3 py-2 border-b">
+                            {maskValue(val, canViewSensitive)}
+                          </td>
+                        );
+                      }
 
-                    if (isDaily) {
-                      const hours = Number(val);
+                      if (isDaily) {
+                        const hours = Number(val);
+                        return (
+                          <td
+                            key={col.key}
+                            className="payroll-full-day-cell text-center text-xs"
+                          >
+                            {val == null || val === "" || hours === 0 ? "—" : hours}
+                          </td>
+                        );
+                      }
+
                       return (
                         <td
                           key={col.key}
-                          className="payroll-full-day-cell text-center text-xs"
+                          className={`whitespace-nowrap px-3 py-2 border-b text-xs ${
+                            col.dataType === "currency" || col.dataType === "number" ? "text-right font-mono" : "text-left"
+                          } ${isGross ? "font-bold text-slate-900 dark:text-slate-100 bg-slate-50/50" : ""} ${
+                            isNet ? "font-extrabold text-teal-800 dark:text-teal-300 bg-teal-50/70" : ""
+                          } ${isDeduction && Number(val) > 0 ? "text-amber-800 dark:text-amber-300" : ""}`}
                         >
-                          {val == null || val === "" || hours === 0 ? "—" : hours}
+                          {formatCell(val, col)}
                         </td>
                       );
-                    }
-
-                    return (
-                      <td
-                        key={col.key}
-                        className={`whitespace-nowrap px-3 py-2 border-b text-xs ${
-                          col.dataType === "currency" || col.dataType === "number" ? "text-right font-mono" : "text-left"
-                        } ${isGross ? "font-bold text-slate-900 dark:text-slate-100 bg-slate-50/50" : ""} ${
-                          isNet ? "font-extrabold text-teal-800 dark:text-teal-300 bg-teal-50/70" : ""
-                        } ${isDeduction && Number(val) > 0 ? "text-amber-800 dark:text-amber-300" : ""}`}
-                      >
-                        {formatCell(val, col)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
 
             <tfoot>
@@ -286,7 +405,7 @@ export function PayrollFullTable({
                 {/* Sticky employee total footer cell */}
                 <td className="payroll-line-employee-sticky">
                   <strong>Tổng cộng</strong>
-                  <small>{visibleRows.length} NLĐ</small>
+                  <small>{visibleRows.length} NLĐ {selectedSet.size > 0 ? `· (${selectedSet.size} đã chọn)` : ""}</small>
                 </td>
 
                 {dataColumns.map((col) => {
@@ -337,6 +456,7 @@ export function PayrollFullTable({
         {onPageChange && (
           <TablePaginationFooter
             totalItems={total}
+            selectedCount={selectedSet.size}
             currentPage={currentPage}
             pageSize={currentPageSize}
             onPageChange={onPageChange}

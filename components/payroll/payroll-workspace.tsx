@@ -22,10 +22,10 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useToast, useUserRole } from "@/components/providers";
-import { getWorkflowStage, statusConfig } from "@/components/payroll/payroll-config";
+import { getPayrollStatuses, getWorkflowStage, statusConfig } from "@/components/payroll/payroll-config";
 import { Badge, Button, Modal, MonthPicker, ProjectSelect, StatusBadge, TablePaginationFooter } from "@/components/ui";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
-import { usePayrollPeriods, useSyncTimesheet, useApprovedTimesheets } from "@/lib/hooks/use-payroll";
+import { usePayrollPeriods, useSyncTimesheet, useApprovedTimesheets, usePayrollProjects } from "@/lib/hooks/use-payroll";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 
@@ -46,8 +46,6 @@ export function PayrollWorkspacePage() {
   const [pageSize, setPageSize] = useState(10);
   
   const [createOpen, setCreateOpen] = useState(false);
-  const [createProjectId, setCreateProjectId] = useState<number | "">("");
-  const [createMonthFilter, setCreateMonthFilter] = useState("2026-07");
   const [createSheetId, setCreateSheetId] = useState<number | null>(null);
   
   const [generating, setGenerating] = useState(false);
@@ -70,15 +68,27 @@ export function PayrollWorkspacePage() {
     pageSize,
   });
 
-  // Approved timesheets for Create Modal
-  const [createYear, createMonth] = createMonthFilter ? createMonthFilter.split("-").map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+  // Fetch project list to resolve project code & name for readonly display in modal
+  const { data: allProjects } = usePayrollProjects();
+  const selectedProject = useMemo(() => {
+    if (!filterProject) return null;
+    return allProjects?.find(
+      (p) =>
+        p.id === Number(filterProject) ||
+        p.projectId === Number(filterProject) ||
+        String(p.id) === String(filterProject) ||
+        String(p.projectId) === String(filterProject)
+    );
+  }, [allProjects, filterProject]);
+
+  // Approved timesheets for Create Modal - lấy dự án + tháng ở ngoài bảng lương
   const { data: approvedTimesheets, isLoading: isLoadingApproved } = useApprovedTimesheets(
     {
-      projectId: createProjectId ? Number(createProjectId) : undefined,
-      month: createMonth,
-      year: createYear,
+      projectId: filterProject ? Number(filterProject) : undefined,
+      month,
+      year,
     },
-    createOpen
+    createOpen && !!filterProject
   );
 
   const payrolls = periodsData?.data || [];
@@ -87,8 +97,10 @@ export function PayrollWorkspacePage() {
   const syncMutation = useSyncTimesheet();
 
   const handleOpenCreateModal = () => {
-    setCreateProjectId(filterProject ? Number(filterProject) : "");
-    setCreateMonthFilter(monthFilter || "2026-07");
+    if (!filterProject || filterProject === "all") {
+      notify("Vui lòng chọn dự án để tạo bảng lương", "warning");
+      return;
+    }
     setCreateSheetId(null);
     setCreateOpen(true);
   };
@@ -214,7 +226,8 @@ export function PayrollWorkspacePage() {
                     <th>Bảng lương</th>
                     <th>Kỳ lương</th>
                     <th>Thực nhận</th>
-                    <th>Tiến độ</th>
+                    <th>Dữ liệu bảng lương</th>
+                    <th>Tiến trình phê duyệt</th>
                     <th>Phản hồi</th>
                     <th>Cập nhật</th>
                     <th />
@@ -222,8 +235,7 @@ export function PayrollWorkspacePage() {
                 </thead>
                 <tbody>
                   {payrolls.map((run) => {
-                    // Logic to map status to UI Config
-                    const sConf = statusConfig[run.status] || { tone: "neutral", short: run.status };
+                    const { periodStatus, workflowStatus, currentStepOrder, isStarted } = getPayrollStatuses(run);
                     const stage = getWorkflowStage(run);
                     const progressPercent = run.status === "locked"
                       ? 100
@@ -251,12 +263,20 @@ export function PayrollWorkspacePage() {
                           <strong className="money-value">{formatCurrency(run.totalNet)}</strong>
                         </td>
                         <td>
+                          <StatusBadge tone={periodStatus.tone}>
+                            {periodStatus.label}
+                          </StatusBadge>
+                        </td>
+                        <td>
                           <div className="payroll-progress-cell">
                             <div>
                               <span style={{ width: `${progressPercent}%` }} />
                             </div>
-                            <StatusBadge tone={sConf.tone as any}>
-                              {sConf.short}
+                            <StatusBadge tone={workflowStatus.tone}>
+                              {workflowStatus.label}
+                              {currentStepOrder && isStarted && workflowStatus.label !== "Chưa duyệt" && workflowStatus.label !== "Đã duyệt"
+                                ? ` (B.${currentStepOrder})`
+                                : ""}
                             </StatusBadge>
                             {run.wfCurrentStepName && (
                               <small className="block mt-0.5 text-xs text-muted-foreground">
@@ -332,29 +352,26 @@ export function PayrollWorkspacePage() {
           <div className="create-payroll-form">
             <div className="form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
               <div className="form-field">
-                <span>Chọn dự án</span>
-                <ProjectSelect
-                  value={createProjectId}
-                  onChange={(val) => {
-                    setCreateProjectId(val ? Number(val) : "");
-                    setCreateSheetId(null);
-                  }}
-                  variant="form"
-                  placeholder="-- Chọn dự án --"
-                  allLabel="-- Tất cả dự án --"
-                />
+                <span>Dự án</span>
+                <div className="payroll-readonly-box flex items-center gap-2 px-3 py-2 bg-slate-100/70 dark:bg-slate-800/60 border border-border rounded-md text-sm select-none">
+                  {selectedProject ? (
+                    <>
+                      <span className="font-mono font-bold text-xs px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-700 dark:text-teal-300 shrink-0">
+                        {selectedProject.projectCode}
+                      </span>
+                      <span className="font-medium text-foreground truncate">{selectedProject.projectName}</span>
+                    </>
+                  ) : (
+                    <span className="font-medium text-foreground">Dự án #{filterProject}</span>
+                  )}
+                </div>
               </div>
               <div className="form-field">
                 <span>Tháng chốt công</span>
-                <MonthPicker
-                  value={createMonthFilter}
-                  onChange={(m) => {
-                    setCreateMonthFilter(m);
-                    setCreateSheetId(null);
-                  }}
-                  className="payroll-control-month"
-                  placeholder="Chọn tháng..."
-                />
+                <div className="payroll-readonly-box flex items-center gap-2 px-3 py-2 bg-slate-100/70 dark:bg-slate-800/60 border border-border rounded-md text-sm font-medium select-none">
+                  <CalendarDays className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="text-foreground">{monthFilter ? `Tháng ${month}/${year}` : "Chưa chọn tháng"}</span>
+                </div>
               </div>
             </div>
 
@@ -375,7 +392,7 @@ export function PayrollWorkspacePage() {
                   <Inbox />
                   <div>
                     <strong>Không tìm thấy bảng công đã chốt</strong>
-                    <p>Dự án này chưa có bảng công nào được phê duyệt trong tháng {createMonth}/{createYear}.</p>
+                    <p>Dự án này chưa có bảng công nào được phê duyệt trong tháng {month}/{year}.</p>
                   </div>
                 </div>
               ) : (
