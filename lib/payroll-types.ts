@@ -220,6 +220,8 @@ export interface WorkflowStep {
   approvedAt?: string | null;
   completedAt?: string | null;
   requiresDataInput?: boolean;
+  requiresJustification?: boolean;
+  approvalNote?: string | null;
   dataInputSchema?: Record<string, {
     type?: string;
     label?: string;

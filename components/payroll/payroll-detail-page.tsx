@@ -317,6 +317,7 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
         notify("Đã gửi trình duyệt bảng lương");
       } else if (actionModal.action === "approve") {
         const isInputRequired = actionModal.step?.requiresDataInput;
+        const isJustificationRequired = actionModal.step?.requiresJustification;
         let stepData: any = undefined;
         let justification: string | undefined = undefined;
 
@@ -327,14 +328,14 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
             return;
           }
           stepData = { Revenue: rawRevenue };
+        }
 
-          if (previewData?.requiresJustification) {
-            if (!justificationInput.trim()) {
-              notify("Chênh lệch vượt ngưỡng quy định. Vui lòng nhập giải trình trước khi duyệt.", "warning");
-              return;
-            }
-            justification = justificationInput.trim();
+        if (isJustificationRequired) {
+          if (!justificationInput.trim()) {
+            notify("Bước này bắt buộc phải nhập nội dung giải trình trước khi duyệt.", "warning");
+            return;
           }
+          justification = justificationInput.trim();
         }
 
         await approveMut.mutateAsync({
@@ -347,6 +348,10 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
         });
         notify("Đã duyệt bảng lương bước hiện tại");
       } else if (actionModal.action === "reject") {
+        if (!actionNote.trim()) {
+          notify("Vui lòng nhập lý do từ chối", "warning");
+          return;
+        }
         await rejectMut.mutateAsync({ id, reason: actionNote });
         notify("Đã từ chối và trả lại bảng lương");
       }
@@ -484,14 +489,27 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
             ? "Từ chối bảng lương"
             : actionModal.step?.requiresDataInput
             ? `Nhập số liệu & Phê duyệt (${actionModal.step.stepName})`
+            : actionModal.step?.requiresJustification
+            ? `Giải trình & Phê duyệt (${actionModal.step.stepName})`
+            : actionModal.step?.stepName
+            ? `Phê duyệt: ${actionModal.step.stepName}`
             : "Phê duyệt bảng lương"
         }
         description={
-          actionModal.action === "approve" && actionModal.step?.requiresDataInput
-            ? "Nhập doanh thu thực tế để hệ thống tự động đối chiếu tỷ lệ chi phí lương/doanh thu (A) và mức biến động (B) so với kỳ trước."
+          actionModal.action === "approve"
+            ? actionModal.step?.requiresDataInput
+              ? "Nhập doanh thu thực tế để hệ thống tự động đối chiếu tỷ lệ chi phí lương/doanh thu (A) và mức biến động (B) so với kỳ trước."
+              : actionModal.step?.requiresJustification
+              ? "Bước này yêu cầu giải trình nguyên nhân chênh lệch chi phí lương / doanh thu vượt ngưỡng trước khi cấp quản lý phê duyệt."
+              : undefined
             : undefined
         }
-        size={actionModal.action === "approve" && actionModal.step?.requiresDataInput ? "md" : "sm"}
+        size={
+          actionModal.action === "approve" &&
+          (actionModal.step?.requiresDataInput || actionModal.step?.requiresJustification)
+            ? "md"
+            : "sm"
+        }
         footer={
           <>
             <Button
@@ -511,7 +529,10 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
                 isPreviewLoading ||
                 (actionModal.action === "approve" &&
                   actionModal.step?.requiresDataInput &&
-                  (!revenueInput || (previewData?.requiresJustification && !justificationInput.trim()))) ||
+                  !revenueInput) ||
+                (actionModal.action === "approve" &&
+                  actionModal.step?.requiresJustification &&
+                  !justificationInput.trim()) ||
                 (actionModal.action === "reject" && !actionNote.trim())
               }
             >
@@ -527,6 +548,8 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
                 : actionModal.action === "approve"
                 ? actionModal.step?.requiresDataInput
                   ? "Lưu doanh thu & Duyệt"
+                  : actionModal.step?.requiresJustification
+                  ? "Giải trình & Duyệt"
                   : "Phê duyệt"
                 : "Từ chối"}
             </Button>
@@ -645,22 +668,6 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
                     <span className="text-[11px] text-muted-foreground">(&le; 10tr)</span>
                   </div>
                 </div>
-
-                {previewData.requiresJustification && (
-                  <label className="form-field pt-1">
-                    <span className="flex items-center justify-between text-xs font-semibold text-amber-900 dark:text-amber-200">
-                      <span>Lý do giải trình chênh lệch <b className="text-destructive">*</b></span>
-                      <span className="text-[11px] font-normal text-amber-700 dark:text-amber-400">Bắt buộc khi vượt ngưỡng</span>
-                    </span>
-                    <textarea
-                      rows={3}
-                      className="text-xs border-amber-300 dark:border-amber-700 focus:border-amber-500"
-                      placeholder="Nhập chi tiết giải trình nguyên nhân vượt tỷ lệ chênh lệch doanh thu / chi phí lương..."
-                      value={justificationInput}
-                      onChange={(e) => setJustificationInput(e.target.value)}
-                    />
-                  </label>
-                )}
               </div>
             )}
 
@@ -674,14 +681,98 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
               />
             </label>
           </div>
+        ) : actionModal.action === "approve" && actionModal.step?.requiresJustification ? (
+          <div className="space-y-4">
+            {/* Show discrepancy data from Step 5 if available */}
+            {(() => {
+              const step5 = timelineData?.steps?.find((s: any) => s.stepOrder === 5);
+              const s5Data = step5?.stepData;
+              if (!s5Data) return null;
+              return (
+                <div className="space-y-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                  <div className="flex items-start gap-2 text-amber-900 dark:text-amber-200">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <span className="font-bold text-[11px] uppercase tracking-wider block mb-0.5 text-amber-800 dark:text-amber-300">
+                        Số liệu đối soát từ bước 5
+                      </span>
+                      <p className="text-[12px] leading-relaxed">
+                        {s5Data.Message || "Chênh lệch chi phí lương / doanh thu vượt ngưỡng quy định, yêu cầu giải trình."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="p-2 rounded bg-card border border-border/60">
+                      <span className="text-[11px] text-muted-foreground block">Doanh thu tháng</span>
+                      <span className="font-bold text-foreground">{formatCurrency(s5Data.Revenue)}</span>
+                    </div>
+                    <div className="p-2 rounded bg-card border border-border/60">
+                      <span className="text-[11px] text-muted-foreground block">Chi phí lương</span>
+                      <span className="font-bold text-foreground">{formatCurrency(s5Data.PayrollCost)}</span>
+                    </div>
+                    <div className="p-2 rounded bg-card border border-border/60">
+                      <span className="text-[11px] text-muted-foreground block">Tỷ lệ chênh lệch (A)</span>
+                      <span className="font-bold font-mono text-amber-600">
+                        {s5Data.DiffRatioA !== undefined ? `${s5Data.DiffRatioA.toFixed(2)}%` : "—"}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded bg-card border border-border/60">
+                      <span className="text-[11px] text-muted-foreground block">Số tiền chênh lệch (B)</span>
+                      <span className="font-bold font-mono text-amber-600">
+                        {s5Data.DiffAmountB !== undefined ? `${formatCurrency(s5Data.DiffAmountB)}` : "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <label className="form-field">
+              <span className="flex items-center justify-between text-xs font-semibold text-foreground">
+                <span>Nội dung giải trình <b className="text-destructive">*</b></span>
+                <span className="text-[11px] font-normal text-amber-600">Bắt buộc theo bước {actionModal.step.stepOrder}</span>
+              </span>
+              <textarea
+                rows={4}
+                className="w-full text-xs"
+                placeholder="Nhập chi tiết giải trình nguyên nhân chênh lệch chi phí lương và doanh thu để trình cấp thẩm quyền phê duyệt..."
+                value={justificationInput}
+                onChange={(e) => setJustificationInput(e.target.value)}
+                autoFocus
+              />
+            </label>
+
+            <label className="form-field">
+              <span className="text-xs font-medium text-muted-foreground">Ghi chú phê duyệt (Không bắt buộc)</span>
+              <textarea
+                rows={2}
+                placeholder="Nhập ghi chú thêm nếu có..."
+                value={actionNote}
+                onChange={(e) => setActionNote(e.target.value)}
+              />
+            </label>
+          </div>
         ) : (
           <label className="form-field">
-            <span>Ghi chú ({actionModal.action === "reject" ? "Bắt buộc" : "Không bắt buộc"})</span>
+            <span>
+              {actionModal.action === "reject"
+                ? "Lý do từ chối (Bắt buộc)"
+                : actionModal.action === "submit"
+                ? "Ghi chú trình duyệt (Không bắt buộc)"
+                : "Ghi chú phê duyệt (Không bắt buộc)"}
+              {actionModal.action === "reject" && <b className="text-destructive"> *</b>}
+            </span>
             <textarea
               rows={4}
-              placeholder={actionModal.action === "reject" ? "Nhập lý do từ chối..." : "Nhập ghi chú nếu có..."}
+              placeholder={
+                actionModal.action === "reject"
+                  ? "Nhập lý do từ chối và yêu cầu điều chỉnh..."
+                  : "Nhập ghi chú nếu có..."
+              }
               value={actionNote}
               onChange={(e) => setActionNote(e.target.value)}
+              autoFocus
             />
           </label>
         )}
@@ -888,6 +979,8 @@ function WorkflowTab({
         return <StatusBadge tone="neutral">Chờ xác nhận</StatusBadge>;
       case "rejected":
         return <StatusBadge tone="danger">Từ chối</StatusBadge>;
+      case "reset":
+        return <StatusBadge tone="warning">Cần duyệt lại</StatusBadge>;
       default:
         return <StatusBadge tone="neutral">Chờ xử lý</StatusBadge>;
     }
@@ -1009,7 +1102,7 @@ function WorkflowTab({
                 const assignedRole = step.assignedApprovers?.[0]?.roleName;
 
                 const stepLog = history.find((h: any) => h.stepOrder === step.stepOrder);
-                const noteText = stepLog?.note || stepLog?.comment || (isDone ? "Đã xác nhận hoàn tất" : undefined);
+                const note = step.approvalNote || stepLog?.note || stepLog?.comment;
 
                 return (
                   <tr
@@ -1063,28 +1156,47 @@ function WorkflowTab({
                       </span>
                     </td>
                     <td>
-                      <div className="space-y-1">
-                        {step.isAutoSkipped ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
-                            Tự động bỏ qua (An toàn)
-                          </span>
-                        ) : null}
-                        {step.stepData?.Revenue ? (
-                          <div className="text-xs font-semibold text-foreground">
-                            Doanh thu: {formatCurrency(Number(step.stepData.Revenue))}
+                      <div className="space-y-1.5 py-1">
+                        {step.isAutoSkipped && (
+                          <div>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
+                              Tự động bỏ qua (An toàn)
+                            </span>
                           </div>
-                        ) : null}
+                        )}
+
+                        {step.stepData?.Revenue && (
+                          <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                            <span className="text-muted-foreground font-normal">Doanh thu:</span>
+                            <span>{formatCurrency(Number(step.stepData.Revenue))}</span>
+                          </div>
+                        )}
+
                         {step.justification ? (
-                          <div className="text-xs text-amber-800 dark:text-amber-300 bg-amber-500/10 rounded px-1.5 py-1 border border-amber-500/20 leading-tight">
-                            <span className="font-semibold">Giải trình:</span> {step.justification}
+                          <div className="text-xs p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-900 dark:text-amber-200">
+                            <div className="font-semibold text-[11px] text-amber-800 dark:text-amber-300 mb-0.5 flex items-center gap-1">
+                              <MessageSquareText className="w-3 h-3 text-amber-600" />
+                              <span>Giải trình:</span>
+                            </div>
+                            <div className="leading-snug">{step.justification}</div>
+                          </div>
+                        ) : step.requiresJustification && (isActive || step.status === "pending" || step.status === "reset") ? (
+                          <div>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20">
+                              Yêu cầu giải trình
+                            </span>
                           </div>
                         ) : null}
-                        {noteText && !step.isAutoSkipped ? (
-                          <span className={`workflow-note block ${noteText ? "" : "empty"}`}>
-                            {noteText}
-                          </span>
-                        ) : !step.isAutoSkipped && !step.stepData?.Revenue && !step.justification ? (
-                          <span className="workflow-note empty">—</span>
+
+                        {note ? (
+                          <div className="text-xs text-muted-foreground flex items-start gap-1.5">
+                            <span className="font-semibold text-foreground shrink-0">Ghi chú:</span>
+                            <span className="leading-snug">{note}</span>
+                          </div>
+                        ) : isDone && !step.justification && !step.stepData && !step.isAutoSkipped ? (
+                          <span className="text-xs text-muted-foreground">Đã xác nhận hoàn tất</span>
+                        ) : !step.justification && !step.stepData && !step.isAutoSkipped && !step.requiresJustification ? (
+                          <span className="text-xs text-muted-foreground empty">—</span>
                         ) : null}
                       </div>
                     </td>
@@ -1093,8 +1205,18 @@ function WorkflowTab({
                         <div className="workflow-actions">
                           <div className="flex items-center justify-center gap-1.5">
                             <Button size="sm" variant="primary" onClick={() => onAction("approve", step)}>
-                              {step.requiresDataInput ? <FileCheck2 /> : <Check />}
-                              {step.requiresDataInput ? "Nhập DT & Duyệt" : "Duyệt"}
+                              {step.requiresDataInput ? (
+                                <FileCheck2 />
+                              ) : step.requiresJustification ? (
+                                <MessageSquareText />
+                              ) : (
+                                <Check />
+                              )}
+                              {step.requiresDataInput
+                                ? "Nhập DT & Duyệt"
+                                : step.requiresJustification
+                                ? "Giải trình & Duyệt"
+                                : "Duyệt"}
                             </Button>
                             <Button size="sm" onClick={() => onAction("reject", step)}>
                               <RotateCcw /> Từ chối
