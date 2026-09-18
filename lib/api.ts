@@ -32,6 +32,56 @@ import type {
   OtherIncomeRecord,
   SalaryStructure,
   SalaryStructurePayload,
+  AuditLogListResponseV3,
+  CreateDependentRequestV3,
+  DependentDetailV3,
+  DependentDocument,
+  DependentListResponseV3,
+  DependentSummaryResponseV3,
+  DocumentTypeItem,
+  ImportDependentResponseV3,
+  RelationshipItem,
+  UpdateDependentRequestV3,
+  AnnualLeaveEmployee,
+  AnnualLeaveHistoryResponse,
+  AnnualLeaveListResponse,
+  AnnualLeaveSummaryResponse,
+  AnnualLeaveViewFilter,
+  UnionDuesMemberV3,
+  UnionDuesHistoryResponse,
+  UnionDuesListResponse,
+  UnionDuesSummaryResponse,
+  UnionDuesParticipationStatus,
+  UpdateUnionDuesRequestV3,
+  StandardWorkdayEmployeeV3,
+  StandardWorkdayMode,
+  UpdateStandardWorkdayRequestV3,
+  StandardWorkdaySummaryResponse,
+  StandardWorkdayListResponse,
+  SocialInsuranceMemberV3,
+  SocialInsuranceChangeV3,
+  SocialInsuranceChangeType,
+  SocialInsuranceChangeStatus,
+  SocialInsuranceParticipationStatus,
+  SocialInsuranceSummaryResponse,
+  SocialInsuranceMemberListResponse,
+  SocialInsuranceChangeListResponse,
+  BenefitsAllowanceEmployeeV3,
+  BenefitsAllowanceMode,
+  UpdateBenefitsAllowanceRequestV3,
+  BenefitsAllowanceSummaryResponse,
+  BenefitsAllowanceListResponse,
+  EmployeeAllowanceItemV3,
+  OtherDeductionV3,
+  OtherDeductionType,
+  CreateOtherDeductionRequestV3,
+  OtherDeductionsSummaryResponse,
+  OtherDeductionsListResponse,
+  OtherIncomeV3,
+  OtherIncomeType,
+  CreateOtherIncomeRequestV3,
+  OtherIncomesSummaryResponse,
+  OtherIncomesListResponse,
 } from "@/lib/types";
 
 import { handlers } from "@/mocks/handlers";
@@ -678,6 +728,838 @@ export const api = {
     window.URL.revokeObjectURL(downloadUrl);
     document.body.removeChild(a);
   },
+
+  // ================= OpenAPI 3.0 (01-nguoi-phu-thuoc.yaml) Methods =================
+  getDependentRelationshipsV3: () =>
+    request<RelationshipItem[]>("/api/web/payroll/master-data/dependent-relationships").then((res) => res.data),
+
+  getDependentDocumentTypesV3: () =>
+    request<DocumentTypeItem[]>("/api/web/payroll/master-data/dependent-document-types").then((res) => res.data),
+
+  getPayrollCyclesV3: () =>
+    request<Array<{ id: number; code: string; name: string; isCurrent: boolean; startDate?: string; endDate?: string }>>("/api/web/payroll/payroll-cycles").then((res) => res.data),
+
+  getProjectsV3: () =>
+    request<Array<{ projectId: number; projectCode: string; projectName: string; active?: boolean }>>("/api/web/payroll/projects").then((res) => res.data),
+
+  getProjectEmployeesV3: (projectId: number | string) =>
+    request<Array<{ employeeCode: string; fullName: string; gender?: string; projectId?: number; projectCode?: string; projectName?: string; positionName?: string; taxCode?: string; idNumber?: string }>>(`/api/web/payroll/projects/${projectId}/employees`).then((res) => res.data),
+
+  getDependentsSummaryV3: (projectId?: string | number) => {
+    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
+    return request<DependentSummaryResponseV3>(`/api/web/payroll/dependents/summary${query}`).then((res) => res.data);
+  },
+
+  getDependentsV3: (params?: { projectId?: string | number; search?: string; relationship?: string; status?: string; page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && v !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<DependentListResponseV3>(`/api/web/payroll/dependents?${query}`).then((res) => res.data);
+  },
+
+  getDependentDetailV3: (dependentId: number | string) =>
+    request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}`).then((res) => res.data),
+
+  createDependentV3: (payload: CreateDependentRequestV3) =>
+    request<DependentDetailV3>("/api/web/payroll/dependents", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  updateDependentV3: (dependentId: number | string, payload: UpdateDependentRequestV3) =>
+    request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  deleteDependentV3: (dependentId: number | string) =>
+    request<{ id: number }>(`/api/web/payroll/dependents/${dependentId}`, {
+      method: "DELETE",
+    }).then((res) => res.data),
+
+  confirmDependentV3: (dependentId: number | string) =>
+    request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}/confirm`, {
+      method: "POST",
+    }).then((res) => res.data),
+
+  approveDependentV3: (dependentId: number | string) =>
+    request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}/approve`, {
+      method: "POST",
+    }).then((res) => res.data),
+
+  rejectDependentV3: (dependentId: number | string, reason: string) =>
+    request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }).then((res) => res.data),
+
+  bulkConfirmDependentsV3: (dependentIds: number[]) =>
+    request<{ confirmedCount: number }>("/api/web/payroll/dependents/bulk-confirm", {
+      method: "POST",
+      body: JSON.stringify({ dependentIds }),
+    }).then((res) => res.data),
+
+  getDependentDocumentsV3: (dependentId: number | string) =>
+    request<DependentDocument[]>(`/api/web/payroll/dependents/${dependentId}/documents`).then((res) => res.data),
+
+  uploadDependentDocumentV3: (dependentId: number | string, formData: FormData) =>
+    request<DependentDocument>(`/api/web/payroll/dependents/${dependentId}/documents`, {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data),
+
+  deleteDependentDocumentV3: (dependentId: number | string, documentId: number | string) =>
+    request<{ documentId: number }>(`/api/web/payroll/dependents/${dependentId}/documents/${documentId}`, {
+      method: "DELETE",
+    }).then((res) => res.data),
+
+  downloadDependentImportTemplateV3: async (): Promise<void> => {
+    const res = await fetch("/api/web/payroll/dependents/import/template");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Template_Import_NguoiPhuThuoc_V3.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importDependentsExcelV3: async (file: File): Promise<ImportDependentResponseV3> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<ImportDependentResponseV3>("/api/web/payroll/dependents/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  getDependentAuditLogsV3: (params?: { dependentId?: number | string; page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<AuditLogListResponseV3>(`/api/web/payroll/dependents/audit-logs?${query}`).then((res) => res.data);
+  },
+
+  // ================= 02. Phép năm (Annual Leave) OpenAPI 3.0 Methods =================
+  getAnnualLeaveSummaryV3: (projectId?: string | number) => {
+    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
+    return request<AnnualLeaveSummaryResponse>(`/api/web/payroll/annual-leave/summary${query}`).then((res) => res.data);
+  },
+
+  getAnnualLeaveEmployeesV3: (params?: {
+    projectId?: string | number;
+    view?: AnnualLeaveViewFilter | string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && v !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<AnnualLeaveListResponse>(`/api/web/payroll/annual-leave/employees?${query}`).then((res) => res.data);
+  },
+
+  getAnnualLeaveDetailV3: (employeeCode: string) =>
+    request<AnnualLeaveEmployee>(`/api/web/payroll/annual-leave/employees/${encodeURIComponent(employeeCode)}`).then((res) => res.data),
+
+  getAnnualLeaveHistoryV3: (
+    employeeCode: string,
+    params?: { year?: number | string; page?: number; pageSize?: number }
+  ) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<AnnualLeaveHistoryResponse>(
+      `/api/web/payroll/annual-leave/employees/${encodeURIComponent(employeeCode)}/history?${query}`
+    ).then((res) => res.data);
+  },
+
+  exportAnnualLeaveExcelV3: async (params?: {
+    projectId?: string | number;
+    view?: AnnualLeaveViewFilter | string;
+    search?: string;
+    year?: number | string;
+  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number; exportedAt: string }> => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && v !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ fileName: string; fileUrl: string; totalRecords: number; exportedAt: string }>(
+      `/api/web/payroll/annual-leave/export?${query}`
+    ).then((res) => res.data);
+  },
+
+  // ================= 03. Công đoàn phí (Union Dues) OpenAPI 3.0 Methods =================
+  getUnionDuesSummaryV3: (projectId?: string | number) => {
+    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
+    return request<UnionDuesSummaryResponse>(`/api/web/payroll/union-dues/summary${query}`).then((res) => res.data);
+  },
+
+  getUnionDuesMembersV3: (params?: {
+    projectId?: string | number;
+    participationStatus?: UnionDuesParticipationStatus | string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && v !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<UnionDuesListResponse>(`/api/web/payroll/union-dues/members?${query}`).then((res) => res.data);
+  },
+
+  getUnionDuesMemberDetailV3: (employeeCode: string) =>
+    request<{ data: UnionDuesMemberV3 }>(`/api/web/payroll/union-dues/members/${encodeURIComponent(employeeCode)}`).then((res) => res.data.data),
+
+  updateUnionDuesMemberV3: (employeeCode: string, payload: UpdateUnionDuesRequestV3) =>
+    request<{ data: UnionDuesMemberV3 }>(`/api/web/payroll/union-dues/members/${encodeURIComponent(employeeCode)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data.data),
+
+  getUnionDuesHistoryV3: (employeeCode: string, params?: { page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<UnionDuesHistoryResponse>(
+      `/api/web/payroll/union-dues/members/${encodeURIComponent(employeeCode)}/history?${query}`
+    ).then((res) => res.data);
+  },
+
+  exportUnionDuesExcelV3: async (params?: {
+    projectId?: string | number;
+    participationStatus?: string;
+    search?: string;
+  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number; exportedAt: string }> => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ fileName: string; fileUrl: string; totalRecords: number; exportedAt: string }>(
+      `/api/web/payroll/union-dues/export?${query}`
+    ).then((res) => res.data);
+  },
+
+  downloadUnionDuesImportTemplateV3: async (): Promise<void> => {
+    const res = await fetch("/api/web/payroll/union-dues/import/template");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Template_Import_CongDoanPhi_V3.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importUnionDuesExcelV3: async (file: File, projectId?: number | string): Promise<{ totalRows: number; importedRows: number; errors: any[] }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (projectId) formData.append("projectId", String(projectId));
+    return request<{ totalRows: number; importedRows: number; errors: any[] }>("/api/web/payroll/union-dues/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  getUnionDuesAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ items: any[]; total: number; page: number; pageSize: number }>(
+      `/api/web/payroll/union-dues/audit-logs?${query}`
+    ).then((res) => res.data);
+  },
+
+  // ================= 04. Ngày công chuẩn (Standard Workdays) OpenAPI 3.0 Methods =================
+  getStandardWorkdaysSummaryV3: (projectId?: string | number) => {
+    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
+    return request<StandardWorkdaySummaryResponse>(`/api/web/payroll/standard-workdays/summary${query}`).then((res) => res.data);
+  },
+
+  getStandardWorkdayProjectDefaultV3: (projectId?: string | number) => {
+    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
+    return request<{ projectId: number; defaultStandardDays: number; note: string }>(
+      `/api/web/payroll/standard-workdays/project-default${query}`
+    ).then((res) => res.data);
+  },
+
+  getStandardWorkdaysEmployeesV3: (params?: {
+    projectId?: string | number;
+    mode?: StandardWorkdayMode | string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<StandardWorkdayListResponse>(`/api/web/payroll/standard-workdays/employees?${query}`).then((res) => res.data);
+  },
+
+  getStandardWorkdayDetailV3: (employeeCode: string) =>
+    request<StandardWorkdayEmployeeV3>(`/api/web/payroll/standard-workdays/employees/${encodeURIComponent(employeeCode)}`).then((res) => res.data),
+
+  updateStandardWorkdayV3: (employeeCode: string, payload: UpdateStandardWorkdayRequestV3) =>
+    request<StandardWorkdayEmployeeV3>(`/api/web/payroll/standard-workdays/employees/${encodeURIComponent(employeeCode)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  restoreStandardWorkdayDefaultV3: (employeeCode: string) =>
+    request<StandardWorkdayEmployeeV3>(
+      `/api/web/payroll/standard-workdays/employees/${encodeURIComponent(employeeCode)}/restore-project-default`,
+      { method: "POST" }
+    ).then((res) => res.data),
+
+  getStandardWorkdayHistoryV3: (employeeCode: string) =>
+    request<{ employeeCode: string; history: any[] }>(
+      `/api/web/payroll/standard-workdays/employees/${encodeURIComponent(employeeCode)}/history`
+    ).then((res) => res.data),
+
+  exportStandardWorkdaysExcelV3: async (params?: {
+    projectId?: string | number;
+    mode?: string;
+    search?: string;
+  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number }> => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ fileName: string; fileUrl: string; totalRecords: number }>(
+      `/api/web/payroll/standard-workdays/export?${query}`
+    ).then((res) => res.data);
+  },
+
+  downloadStandardWorkdaysImportTemplateV3: async (): Promise<void> => {
+    const res = await fetch("/api/web/payroll/standard-workdays/import/template");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Mau_Import_Ngay_Cong_Chuan.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importStandardWorkdaysExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (projectId) formData.append("projectId", String(projectId));
+    return request<any>("/api/web/payroll/standard-workdays/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  getStandardWorkdaysAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ items: any[]; total: number }>(`/api/web/payroll/standard-workdays/audit-logs?${query}`).then((res) => res.data);
+  },
+
+  // ================= 05. Bảo hiểm xã hội (Social Insurance D02-LT) OpenAPI 3.0 Methods =================
+  getSocialInsuranceSummaryV3: (projectId?: string | number) => {
+    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
+    return request<SocialInsuranceSummaryResponse>(`/api/web/payroll/social-insurance/summary${query}`).then((res) => res.data);
+  },
+
+  getSocialInsuranceMembersV3: (params?: {
+    projectId?: string | number;
+    status?: SocialInsuranceParticipationStatus | string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<SocialInsuranceMemberListResponse>(`/api/web/payroll/social-insurance/members?${query}`).then((res) => res.data);
+  },
+
+  getSocialInsuranceMemberDetailV3: (employeeCode: string) =>
+    request<SocialInsuranceMemberV3>(`/api/web/payroll/social-insurance/members/${encodeURIComponent(employeeCode)}`).then((res) => res.data),
+
+  getSocialInsuranceMemberHistoryV3: (employeeCode: string) =>
+    request<{ employeeCode: string; history: any[] }>(
+      `/api/web/payroll/social-insurance/members/${encodeURIComponent(employeeCode)}/history`
+    ).then((res) => res.data),
+
+  getSocialInsuranceChangesV3: (params?: {
+    projectId?: string | number;
+    changeType?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<SocialInsuranceChangeListResponse>(`/api/web/payroll/social-insurance/changes?${query}`).then((res) => res.data);
+  },
+
+  getSocialInsuranceChangeDetailV3: (changeId: number | string) =>
+    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}`).then((res) => res.data),
+
+  createSocialInsuranceChangeV3: (payload: {
+    employeeCode: string;
+    changeType: SocialInsuranceChangeType;
+    effectiveMonth: string;
+    oldSalary?: number;
+    newSalary?: number;
+    reason: string;
+    documents?: any[];
+  }) =>
+    request<SocialInsuranceChangeV3>("/api/web/payroll/social-insurance/changes", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  updateSocialInsuranceChangeV3: (changeId: number | string, payload: Partial<SocialInsuranceChangeV3>) =>
+    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  deleteSocialInsuranceChangeV3: (changeId: number | string) =>
+    request<{ id: number }>(`/api/web/payroll/social-insurance/changes/${changeId}`, {
+      method: "DELETE",
+    }).then((res) => res.data),
+
+  confirmSocialInsuranceReconciliationV3: (changeId: number | string, payload: { reconciliationCode: string; note?: string }) =>
+    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}/confirm-reconciliation`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  approveSocialInsuranceChangeV3: (changeId: number | string, payload?: { note?: string }) =>
+    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}/approve`, {
+      method: "POST",
+      body: JSON.stringify(payload ?? {}),
+    }).then((res) => res.data),
+
+  rejectSocialInsuranceChangeV3: (changeId: number | string, payload: { reason: string }) =>
+    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}/reject`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  getSocialInsuranceChangeDocumentsV3: (changeId: number | string) =>
+    request<any[]>(`/api/web/payroll/social-insurance/changes/${changeId}/documents`).then((res) => res.data),
+
+  uploadSocialInsuranceDocumentV3: async (changeId: number | string, file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<any>(`/api/web/payroll/social-insurance/changes/${changeId}/documents`, {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  deleteSocialInsuranceDocumentV3: (changeId: number | string, documentId: string | number) =>
+    request<{ success: boolean }>(`/api/web/payroll/social-insurance/changes/${changeId}/documents/${documentId}`, {
+      method: "DELETE",
+    }).then((res) => res.data),
+
+  exportSocialInsuranceExcelV3: async (params?: {
+    projectId?: string | number;
+    status?: string;
+    search?: string;
+  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number }> => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ fileName: string; fileUrl: string; totalRecords: number }>(
+      `/api/web/payroll/social-insurance/export?${query}`
+    ).then((res) => res.data);
+  },
+
+  downloadSocialInsuranceImportTemplateV3: async (): Promise<void> => {
+    const res = await fetch("/api/web/payroll/social-insurance/import/template");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Mau_Import_BHXH.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importSocialInsuranceExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (projectId) formData.append("projectId", String(projectId));
+    return request<any>("/api/web/payroll/social-insurance/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  getSocialInsuranceAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ items: any[]; total: number }>(`/api/web/payroll/social-insurance/audit-logs?${query}`).then((res) => res.data);
+  },
+
+  // ================= 06. Chế độ phụ cấp (Benefits & Allowances) OpenAPI 3.0 Methods =================
+  getBenefitsAllowanceSummaryV3: (projectId?: string | number) => {
+    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
+    return request<BenefitsAllowanceSummaryResponse>(`/api/web/payroll/benefits-allowances/summary${query}`).then((res) => res.data);
+  },
+
+  getMasterAllowanceTypesV3: () =>
+    request<Array<{ code: string; name: string; defaultAmount: number; unit?: string }>>(
+      "/api/web/payroll/master-data/allowance-types"
+    ).then((res) => res.data),
+
+  getBenefitsAllowanceProjectDefaultsV3: () =>
+    request<EmployeeAllowanceItemV3[]>("/api/web/payroll/benefits-allowances/project-defaults").then((res) => res.data),
+
+  getBenefitsAllowanceEmployeesV3: (params?: {
+    projectId?: string | number;
+    mode?: BenefitsAllowanceMode | string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<BenefitsAllowanceListResponse>(`/api/web/payroll/benefits-allowances/employees?${query}`).then((res) => res.data);
+  },
+
+  getBenefitsAllowanceDetailV3: (employeeCode: string) =>
+    request<BenefitsAllowanceEmployeeV3>(`/api/web/payroll/benefits-allowances/employees/${encodeURIComponent(employeeCode)}`).then((res) => res.data),
+
+  updateBenefitsAllowanceV3: (employeeCode: string, payload: UpdateBenefitsAllowanceRequestV3) =>
+    request<BenefitsAllowanceEmployeeV3>(`/api/web/payroll/benefits-allowances/employees/${encodeURIComponent(employeeCode)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  restoreBenefitsAllowanceDefaultV3: (employeeCode: string) =>
+    request<BenefitsAllowanceEmployeeV3>(
+      `/api/web/payroll/benefits-allowances/employees/${encodeURIComponent(employeeCode)}/restore-project-default`,
+      { method: "POST" }
+    ).then((res) => res.data),
+
+  getBenefitsAllowanceHistoryV3: (employeeCode: string) =>
+    request<{ employeeCode: string; history: any[] }>(
+      `/api/web/payroll/benefits-allowances/employees/${encodeURIComponent(employeeCode)}/history`
+    ).then((res) => res.data),
+
+  exportBenefitsAllowancesExcelV3: async (params?: {
+    projectId?: string | number;
+    mode?: string;
+    search?: string;
+  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number }> => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ fileName: string; fileUrl: string; totalRecords: number }>(
+      `/api/web/payroll/benefits-allowances/export?${query}`
+    ).then((res) => res.data);
+  },
+
+  downloadBenefitsAllowancesImportTemplateV3: async (): Promise<void> => {
+    const res = await fetch("/api/web/payroll/benefits-allowances/import/template");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Mau_Import_Phu_Cap.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importBenefitsAllowancesExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (projectId) formData.append("projectId", String(projectId));
+    return request<any>("/api/web/payroll/benefits-allowances/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  getBenefitsAllowancesAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ items: any[]; total: number }>(`/api/web/payroll/benefits-allowances/audit-logs?${query}`).then((res) => res.data);
+  },
+
+  // ================= 07. Khoản giảm trừ khác (Other Deductions) OpenAPI 3.0 Methods =================
+  getOtherDeductionsSummaryV3: (params?: { projectId?: string | number; month?: string }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<OtherDeductionsSummaryResponse>(`/api/web/payroll/other-deductions/summary?${query}`).then((res) => res.data);
+  },
+
+  getMasterOtherDeductionTypesV3: () =>
+    request<Array<{ code: string; name: string }>>("/api/web/payroll/master-data/other-deduction-types").then((res) => res.data),
+
+  getOtherDeductionsListV3: (params?: {
+    projectId?: string | number;
+    employeeCode?: string;
+    month?: string;
+    type?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<OtherDeductionsListResponse>(`/api/web/payroll/other-deductions?${query}`).then((res) => res.data);
+  },
+
+  getOtherDeductionDetailV3: (deductionId: number | string) =>
+    request<OtherDeductionV3>(`/api/web/payroll/other-deductions/${deductionId}`).then((res) => res.data),
+
+  createOtherDeductionV3: (payload: CreateOtherDeductionRequestV3) =>
+    request<OtherDeductionV3>("/api/web/payroll/other-deductions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  updateOtherDeductionV3: (deductionId: number | string, payload: Partial<OtherDeductionV3>) =>
+    request<OtherDeductionV3>(`/api/web/payroll/other-deductions/${deductionId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  deleteOtherDeductionV3: (deductionId: number | string) =>
+    request<{ id: number }>(`/api/web/payroll/other-deductions/${deductionId}`, {
+      method: "DELETE",
+    }).then((res) => res.data),
+
+  uploadOtherDeductionAttachmentV3: async (deductionId: number | string, file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<any>(`/api/web/payroll/other-deductions/${deductionId}/attachment`, {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  deleteOtherDeductionAttachmentV3: (deductionId: number | string) =>
+    request<{ success: boolean }>(`/api/web/payroll/other-deductions/${deductionId}/attachment`, {
+      method: "DELETE",
+    }).then((res) => res.data),
+
+  exportOtherDeductionsExcelV3: async (params?: {
+    projectId?: string | number;
+    month?: string;
+    type?: string;
+  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number }> => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ fileName: string; fileUrl: string; totalRecords: number }>(
+      `/api/web/payroll/other-deductions/export?${query}`
+    ).then((res) => res.data);
+  },
+
+  downloadOtherDeductionsImportTemplateV3: async (): Promise<void> => {
+    const res = await fetch("/api/web/payroll/other-deductions/import/template");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Mau_Import_Giam_Tru.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importOtherDeductionsExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (projectId) formData.append("projectId", String(projectId));
+    return request<any>("/api/web/payroll/other-deductions/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  getOtherDeductionsAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ items: any[]; total: number }>(`/api/web/payroll/other-deductions/audit-logs?${query}`).then((res) => res.data);
+  },
+
+  // ================= 08. Thu nhập khác (Other Incomes) OpenAPI 3.0 Methods =================
+  getOtherIncomesSummaryV3: (params?: { projectId?: string | number; month?: string }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<OtherIncomesSummaryResponse>(`/api/web/payroll/other-incomes/summary?${query}`).then((res) => res.data);
+  },
+
+  getMasterOtherIncomeTypesV3: () =>
+    request<Array<{ code: string; name: string }>>("/api/web/payroll/master-data/other-income-types").then((res) => res.data),
+
+  getOtherIncomesListV3: (params?: {
+    projectId?: string | number;
+    employeeCode?: string;
+    month?: string;
+    type?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<OtherIncomesListResponse>(`/api/web/payroll/other-incomes?${query}`).then((res) => res.data);
+  },
+
+  getOtherIncomeDetailV3: (incomeId: number | string) =>
+    request<OtherIncomeV3>(`/api/web/payroll/other-incomes/${incomeId}`).then((res) => res.data),
+
+  createOtherIncomeV3: (payload: CreateOtherIncomeRequestV3) =>
+    request<OtherIncomeV3>("/api/web/payroll/other-incomes", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  updateOtherIncomeV3: (incomeId: number | string, payload: Partial<OtherIncomeV3>) =>
+    request<OtherIncomeV3>(`/api/web/payroll/other-incomes/${incomeId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  deleteOtherIncomeV3: (incomeId: number | string) =>
+    request<{ id: number }>(`/api/web/payroll/other-incomes/${incomeId}`, {
+      method: "DELETE",
+    }).then((res) => res.data),
+
+  uploadOtherIncomeAttachmentV3: async (incomeId: number | string, file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<any>(`/api/web/payroll/other-incomes/${incomeId}/attachment`, {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  deleteOtherIncomeAttachmentV3: (incomeId: number | string) =>
+    request<{ success: boolean }>(`/api/web/payroll/other-incomes/${incomeId}/attachment`, {
+      method: "DELETE",
+    }).then((res) => res.data),
+
+  exportOtherIncomesExcelV3: async (params?: {
+    projectId?: string | number;
+    month?: string;
+    type?: string;
+  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number }> => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ fileName: string; fileUrl: string; totalRecords: number }>(
+      `/api/web/payroll/other-incomes/export?${query}`
+    ).then((res) => res.data);
+  },
+
+  downloadOtherIncomesImportTemplateV3: async (): Promise<void> => {
+    const res = await fetch("/api/web/payroll/other-incomes/import/template");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Mau_Import_Thu_Nhap.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importOtherIncomesExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (projectId) formData.append("projectId", String(projectId));
+    return request<any>("/api/web/payroll/other-incomes/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  getOtherIncomesAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && String(v) !== "")
+        .map(([k, v]) => [k, String(v)])
+    );
+    return request<{ items: any[]; total: number }>(`/api/web/payroll/other-incomes/audit-logs?${query}`).then((res) => res.data);
+  },
+
+
+
   getLeaveRecords: (params?: { projectId?: string }) => {
     const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
     return request<LeaveRecord[]>(`/api/leave-records?${query}`).then((item) => item.data);
@@ -775,7 +1657,7 @@ export const api = {
     projectId: string,
     groupId: string | number,
     payload: { employeeCodes?: string[]; employeeIds?: string[] }
-  ): Promise<{ success: boolean; message?: string }> => {
+  ): Promise<{ success: boolean; message?: string; updatedCount?: number }> => {
     await new Promise((res) => setTimeout(res, 250));
     const codes = payload.employeeCodes || payload.employeeIds || [];
     const group = (seedDatabase.projectEmployeeGroups ?? []).find((g) => g.id === String(groupId));
@@ -785,6 +1667,7 @@ export const api = {
     return {
       success: true,
       message: `Đã phân bổ ${codes.length} nhân viên vào nhóm thành công (Demo)`,
+      updatedCount: codes.length,
     };
   },
   getActivityLogs: (params?: { projectId?: string; module?: ActivityLogModule; q?: string }) => {

@@ -4,14 +4,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Coins,
   Check,
+  Download,
+  FileSpreadsheet,
+  History,
   Info,
   Pencil,
+  Plus,
+  RotateCcw,
   Search,
   SlidersHorizontal,
   Upload,
+  UploadCloud,
+  Users,
+  Wallet,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ExcelImportModal } from "@/components/employees/excel-import-modal";
+import { ExcelImportModal, type ExcelImportColumn } from "@/components/employees/excel-import-modal";
 import { SubtabActivityLog } from "@/components/employees/subtab-activity-log";
 import { useToast } from "@/components/providers";
 import {
@@ -21,28 +30,18 @@ import {
   ErrorState,
   LoadingBlock,
   Modal,
-  StatusBadge,
   TablePaginationFooter,
   TableRowActions,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Employee, EmployeePolicyItem, EmployeePolicyRecord } from "@/lib/types";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
-
-function formatAllowanceValue(pol: EmployeePolicyItem) {
-  const valObj = pol.isCustom ? pol.customValue : pol.defaultValue;
-  if (valObj?.amount !== undefined && typeof valObj.amount === "number") {
-    if (valObj.amount === 0) return "0đ";
-    return `${(valObj.amount / 1000).toLocaleString("vi-VN")}k`;
-  }
-  if (valObj?.multiplier !== undefined) {
-    return `${valObj.multiplier}%`;
-  }
-  if (valObj?.rate !== undefined) {
-    return `${valObj.rate}%`;
-  }
-  return "";
-}
+import type {
+  BenefitsAllowanceEmployeeV3,
+  BenefitsAllowanceMode,
+  Employee,
+  EmployeeAllowanceItemV3,
+  UpdateBenefitsAllowanceRequestV3,
+} from "@/lib/types";
 
 export function EmployeePoliciesSubtab({
   projectId,
@@ -57,445 +56,426 @@ export function EmployeePoliciesSubtab({
   const queryClient = useQueryClient();
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterMode, setFilterMode] = useState<"all" | "shift_leader" | "chinh_thuc" | "hoc_viec">("all");
+  const [selectedMode, setSelectedMode] = useState<BenefitsAllowanceMode>("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  // Selection / Modal state
-  const [editRecord, setEditRecord] = useState<EmployeePolicyRecord | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [formPolicies, setFormPolicies] = useState<EmployeePolicyItem[]>([]);
-  const [formBaseSalary, setFormBaseSalary] = useState<number>(6300000);
-  const [formInsuranceSalary, setFormInsuranceSalary] = useState<number>(6300000);
-  const [formEffectiveFrom, setFormEffectiveFrom] = useState<string>("2026-08-01");
+  // Edit Modal State
+  const [editEmployee, setEditEmployee] = useState<BenefitsAllowanceEmployeeV3 | null>(null);
+  const [editAllowances, setEditAllowances] = useState<Array<{ policyId: string; policyCode: string; policyName: string; amount: number; isEnabled: boolean }>>([]);
+  const [editReason, setEditReason] = useState("");
 
-  // Detail Modal state
-  const [detailRecord, setDetailRecord] = useState<EmployeePolicyRecord | null>(null);
-  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  // History Modal State
+  const [historyEmployee, setHistoryEmployee] = useState<BenefitsAllowanceEmployeeV3 | null>(null);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Import modal state
+  // Import Modal State
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadPreviewRows, setUploadPreviewRows] = useState<Array<{
-    employeeCode: string;
-    employeeName: string;
-    policyCode: string;
-    policyName: string;
-    amount: number;
-    reason: string;
-  }>>([]);
+  const [importPreviewRows, setImportPreviewRows] = useState<any[]>([]);
 
-  // Register Header Action: Import phụ cấp
+  // Master Allowance Types Query
+  const masterTypesQuery = useQuery({
+    queryKey: ["master-allowance-types"],
+    queryFn: () => api.getMasterAllowanceTypesV3(),
+  });
+
+  // Summary Query
+  const summaryQuery = useQuery({
+    queryKey: ["benefits-allowances-summary", projectId],
+    queryFn: () => api.getBenefitsAllowanceSummaryV3(projectId),
+  });
+
+  // Employees List Query
+  const listQuery = useQuery({
+    queryKey: ["benefits-allowances-employees", projectId, selectedMode, searchTerm, currentPage, pageSize],
+    queryFn: () =>
+      api.getBenefitsAllowanceEmployeesV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        mode: selectedMode,
+        search: searchTerm || undefined,
+        page: currentPage,
+        pageSize,
+      }),
+  });
+
+  // Export Mutation
+  const handleExport = async () => {
+    try {
+      const data = await api.exportBenefitsAllowancesExcelV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        mode: selectedMode,
+        search: searchTerm,
+      });
+      notify(`Đã xuất ${data.totalRecords} bản ghi phụ cấp ra file ${data.fileName}`);
+    } catch (err: any) {
+      notify(err?.message || "Lỗi khi xuất file Excel", "error");
+    }
+  };
+
+  // Register Header Actions
   useEffect(() => {
     if (!setHeaderAction) return;
     setHeaderAction(
-      <Button
-        variant="secondary"
-        onClick={() => setImportModalOpen(true)}
-        className="gap-1.5 font-semibold text-xs h-8 px-3"
-      >
-        <Upload className="w-3.5 h-3.5" /> Import phụ cấp
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="secondary"
+          onClick={handleExport}
+          className="gap-1.5 font-semibold text-xs h-8 px-3"
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Xuất Excel
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => setImportModalOpen(true)}
+          className="gap-1.5 font-semibold text-xs h-8 px-3"
+        >
+          <UploadCloud className="w-3.5 h-3.5" /> Import phụ cấp
+        </Button>
+      </div>
     );
     return () => setHeaderAction(null);
-  }, [setHeaderAction]);
+  }, [setHeaderAction, projectId, selectedMode, searchTerm]);
 
-  const policiesQuery = useQuery({
-    queryKey: ["employee-policies", projectId],
-    queryFn: () => api.getEmployeePolicies({ projectId: projectId === "all" ? undefined : projectId }),
+  // Update Mutation
+  const updateMutation = useMutation({
+    mutationFn: ({ code, payload }: { code: string; payload: UpdateBenefitsAllowanceRequestV3 }) =>
+      api.updateBenefitsAllowanceV3(code, payload),
+    onSuccess: (res) => {
+      notify(`Đã cập nhật phụ cấp cho nhân viên ${res.employee.fullName}`);
+      queryClient.invalidateQueries({ queryKey: ["benefits-allowances-employees"] });
+      queryClient.invalidateQueries({ queryKey: ["benefits-allowances-summary"] });
+      setEditEmployee(null);
+    },
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi cập nhật phụ cấp", "error");
+    },
   });
 
-  const employeePolicies = policiesQuery.data ?? [];
-
-  const employeeMap = useMemo(() => {
-    const map = new Map<string, Employee>();
-    (employees || []).forEach((emp) => {
-      map.set(emp.id, emp);
-      if (emp.code) map.set(emp.code, emp);
-    });
-    return map;
-  }, [employees]);
-
-  const filteredList = useMemo(() => {
-    return employeePolicies.filter((item) => {
-      const term = searchTerm.toLowerCase();
-      const matchSearch =
-        !searchTerm ||
-        item.employeeName.toLowerCase().includes(term) ||
-        item.employeeCode.toLowerCase().includes(term);
-
-      if (!matchSearch) return false;
-      if (filterMode === "shift_leader") return item.role === "shift_leader";
-      if (filterMode === "chinh_thuc") return item.role === "chinh_thuc";
-      if (filterMode === "hoc_viec") return item.role === "hoc_viec";
-      return true;
-    });
-  }, [employeePolicies, searchTerm, filterMode]);
-
-  const counts = useMemo(() => {
-    return {
-      all: employeePolicies.length,
-      shiftLeader: employeePolicies.filter((p) => p.role === "shift_leader").length,
-      official: employeePolicies.filter((p) => p.role === "chinh_thuc").length,
-      probation: employeePolicies.filter((p) => p.role === "hoc_viec").length,
-    };
-  }, [employeePolicies]);
-
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
-  const paginatedList = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredList.slice(start, start + pageSize);
-  }, [filteredList, page, pageSize]);
-
-  // Open edit modal
-  const openEditModal = (rec: EmployeePolicyRecord) => {
-    setEditRecord(rec);
-    setFormPolicies(JSON.parse(JSON.stringify(rec.policies || [])));
-    setFormBaseSalary(rec.baseSalary || 6300000);
-    setFormInsuranceSalary(rec.insuranceSalary || 6300000);
-    setFormEffectiveFrom(rec.effectiveFrom || (rec.updatedAt ? rec.updatedAt.slice(0, 10) : "2026-08-01"));
-    setModalOpen(true);
-  };
-
-  // Open detail modal
-  const openDetailModal = (rec: EmployeePolicyRecord) => {
-    setDetailRecord(rec);
-    setDetailModalOpen(true);
-  };
-
-  // Update single policy item in form state
-  const handleTogglePolicy = (policyId: string, enabled: boolean) => {
-    setFormPolicies((prev) =>
-      prev.map((item) => {
-        if (item.policyId === policyId) {
-          return { ...item, isEnabled: enabled };
-        }
-        return item;
-      })
-    );
-  };
-
-  const handleUpdatePolicyAmount = (policyId: string, amount: number, reason?: string) => {
-    setFormPolicies((prev) =>
-      prev.map((item) => {
-        if (item.policyId === policyId) {
-          const isDefault = amount === (item.defaultValue?.amount ?? 0);
-          return {
-            ...item,
-            isCustom: !isDefault,
-            customValue: { ...item.customValue, amount },
-            reason: reason !== undefined ? reason : item.reason,
-          };
-        }
-        return item;
-      })
-    );
-  };
-
-  const handleUpdatePolicyReason = (policyId: string, reason: string) => {
-    setFormPolicies((prev) =>
-      prev.map((item) => {
-        if (item.policyId === policyId) {
-          return { ...item, reason };
-        }
-        return item;
-      })
-    );
-  };
-
-  // Save mutation
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!editRecord) return;
-      return api.updateEmployeePolicies(editRecord.employeeId, {
-        policies: formPolicies,
-        baseSalary: formBaseSalary,
-        insuranceSalary: formInsuranceSalary,
-        effectiveFrom: formEffectiveFrom,
-      });
+  // Restore Default Mutation
+  const restoreMutation = useMutation({
+    mutationFn: (code: string) => api.restoreBenefitsAllowanceDefaultV3(code),
+    onSuccess: (res) => {
+      notify(`Đã khôi phục phụ cấp dự án cho nhân viên ${res.employee.fullName}`);
+      queryClient.invalidateQueries({ queryKey: ["benefits-allowances-employees"] });
+      queryClient.invalidateQueries({ queryKey: ["benefits-allowances-summary"] });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["employee-policies"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-      notify("Đã lưu thiết lập chế độ & phụ cấp nhân viên thành công!");
-      setModalOpen(false);
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi khôi phục phụ cấp", "error");
     },
-    onError: (err: Error) => notify(err.message, "error"),
   });
 
-  // Batch import mutation
+  const masterTypes = masterTypesQuery.data || [];
+
+  const handleOpenEdit = (emp: BenefitsAllowanceEmployeeV3) => {
+    setEditEmployee(emp);
+    setEditReason("");
+    const mapped = masterTypes.map((mt) => {
+      const existing = emp.allowances.find((a) => a.policyCode === mt.code);
+      return {
+        policyId: String(existing?.policyId || `pol-${mt.code.toLowerCase()}`),
+        policyCode: mt.code,
+        policyName: mt.name,
+        amount: existing ? existing.amount : mt.defaultAmount,
+        isEnabled: Boolean(existing && existing.amount > 0),
+      };
+    });
+    setEditAllowances(mapped);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editEmployee) return;
+    const active = editAllowances
+      .filter((a) => a.isEnabled)
+      .map((a) => ({
+        policyId: a.policyId,
+        amount: a.amount,
+        isCustomized: true,
+      }));
+
+    updateMutation.mutate({
+      code: editEmployee.employee.employeeCode,
+      payload: {
+        allowances: active,
+        reason: editReason.trim() || "Điều chỉnh phụ cấp cá nhân",
+      },
+    });
+  };
+
+  const handleViewHistory = async (emp: BenefitsAllowanceEmployeeV3) => {
+    setHistoryEmployee(emp);
+    setLoadingHistory(true);
+    try {
+      const res = await api.getBenefitsAllowanceHistoryV3(emp.employee.employeeCode);
+      setHistoryList(res.history || []);
+    } catch {
+      setHistoryList([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const excelColumns: ExcelImportColumn[] = [
+    { key: "employeeCode", label: "Mã NLĐ", width: "120px" },
+    { key: "fullName", label: "Họ và tên NLĐ", width: "160px" },
+    { key: "policyCode", label: "Mã phụ cấp", width: "100px" },
+    { key: "amount", label: "Mức phụ cấp", align: "right", render: (r) => <span className="font-bold text-primary">{formatCurrency(r.amount)}</span> },
+    { key: "reason", label: "Lý do / Căn cứ" },
+  ];
+
+  const handleSimulateUpload = () => {
+    const mockRows = [
+      { employeeCode: "NV-00124", fullName: "Nguyễn Văn An", policyCode: "RESP", amount: 2000000, reason: "Phụ cấp trách nhiệm tổ trưởng" },
+      { employeeCode: "NV-00125", fullName: "Trần Thị Mai", policyCode: "HOUSING", amount: 1500000, reason: "Hỗ trợ nhà ở chuyên gia xa nhà" },
+      { employeeCode: "NV-00127", fullName: "Phạm Quốc Bảo", policyCode: "PHONE", amount: 500000, reason: "Phụ cấp liên lạc điều phối kho" },
+    ];
+    setImportPreviewRows(mockRows);
+    notify("Đã tải dữ liệu mẫu import thành công (3 dòng).");
+  };
+
   const importMutation = useMutation({
     mutationFn: async () => {
-      const targetProj = projectId === "all" ? (employees[0]?.projectId ?? "prj-jss") : projectId;
-      return api.batchImportEmployeePolicies({
-        projectId: targetProj,
-        items: uploadPreviewRows.map((r) => ({
-          employeeCode: r.employeeCode,
-          policyCode: r.policyCode,
-          amount: r.amount,
-          isEnabled: true,
-          reason: r.reason,
-        })),
-      });
+      const dummyFile = new File(["dummy"], "import_phu_cap.xlsx");
+      return api.importBenefitsAllowancesExcelV3(dummyFile, projectId);
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["employee-policies"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["benefits-allowances-employees"] });
+      queryClient.invalidateQueries({ queryKey: ["benefits-allowances-summary"] });
+      notify(`Import thành công! Đã xử lý ${res?.totalRows || 3} dòng dữ liệu.`);
       setImportModalOpen(false);
-      setUploadPreviewRows([]);
-      notify(`Đã cập nhật phụ cấp thành công cho ${data.length} nhân sự!`);
+      setImportPreviewRows([]);
     },
-    onError: (err: Error) => notify(err.message, "error"),
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi khi import file", "error");
+    },
   });
 
-  const handleSimulateFileUpload = () => {
-    setIsUploading(true);
-    setTimeout(() => {
-      setIsUploading(false);
-      const targetEmps = employees.filter(
-        (e) => projectId === "all" || e.projectId === (projectId === "all" ? "prj-jss" : projectId)
-      );
-      setUploadPreviewRows([
-        {
-          employeeCode: targetEmps[0]?.code ?? "EMP-001",
-          employeeName: targetEmps[0]?.name ?? "Nguyễn Văn An",
-          policyCode: "RESPONSIBILITY_ALLOWANCE",
-          policyName: "Phụ cấp trách nhiệm",
-          amount: 1500000,
-          reason: "Bổ nhiệm Trưởng ca sản xuất (QĐ số 42)",
-        },
-        {
-          employeeCode: targetEmps[1]?.code ?? "EMP-002",
-          employeeName: targetEmps[1]?.name ?? "Trần Thị Bình",
-          policyCode: "TRAVEL_ALLOWANCE",
-          policyName: "Phụ cấp đi lại",
-          amount: 600000,
-          reason: "Hỗ trợ tuyến đường xa > 20km",
-        },
-        {
-          employeeCode: targetEmps[2]?.code ?? "EMP-003",
-          employeeName: targetEmps[2]?.name ?? "Lê Hoàng Cường",
-          policyCode: "HOUSING_ALLOWANCE",
-          policyName: "Phụ cấp nhà ở",
-          amount: 900000,
-          reason: "Hỗ trợ lưu trú công nhân ngoại tỉnh",
-        },
-        {
-          employeeCode: targetEmps[3]?.code ?? "EMP-004",
-          employeeName: targetEmps[3]?.name ?? "Phạm Minh Đức",
-          policyCode: "CHILD_CARE_ALLOWANCE",
-          policyName: "Phụ cấp con nhỏ",
-          amount: 500000,
-          reason: "Hỗ trợ nuôi con nhỏ",
-        },
-      ]);
-    }, 600);
-  };
-
-  const calculatedFormTotalAllowance = useMemo(() => {
-    return formPolicies
-      .filter(
-        (i) =>
-          i.isEnabled &&
-          i.policyId !== "pol-base-salary" &&
-          i.policyId !== "pol-insurance-salary" &&
-          i.policyId !== "pol-hourly-rate" &&
-          !i.policyId.startsWith("pol-ot")
-      )
-      .reduce((sum, i) => {
-        const val = i.isCustom ? i.customValue?.amount : i.defaultValue?.amount;
-        return sum + (typeof val === "number" ? val : 0);
-      }, 0);
-  }, [formPolicies]);
-
-  const renderRoleBadge = (role: string) => {
-    if (role === "shift_leader") return <StatusBadge tone="info">Trưởng ca / Tổ trưởng</StatusBadge>;
-    if (role === "hoc_viec") return <StatusBadge tone="warning">Học việc / Thử việc</StatusBadge>;
-    return <StatusBadge tone="neutral">Chính thức</StatusBadge>;
-  };
-
-  if (policiesQuery.isLoading) return <LoadingBlock rows={6} />;
-  if (policiesQuery.isError) {
-    return (
-      <ErrorState
-        message="Không thể tải danh sách chế độ người lao động"
-        retry={() => policiesQuery.refetch()}
-      />
-    );
-  }
+  const summary = summaryQuery.data;
+  const listData = listQuery.data;
+  const items = listData?.items || [];
+  const totalRecords = listData?.total || 0;
+  const totalCalculated = editAllowances
+    .filter((a) => a.isEnabled)
+    .reduce((s, a) => s + (Number(a.amount) || 0), 0);
 
   return (
-    <div className="employee-policies-subtab">
-      {/* Integrated Flat Card Table */}
+    <div className="space-y-5">
+      {/* 4 KPI Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Tổng số nhân sự</div>
+            <div className="text-xl font-bold text-foreground mt-0.5">{summary?.total ?? "..."}</div>
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+            <Check className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Theo chuẩn dự án</div>
+            <div className="text-xl font-bold text-emerald-600 mt-0.5">{summary?.projectDefaultCount ?? "..."}</div>
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
+            <SlidersHorizontal className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Tùy chỉnh cá nhân</div>
+            <div className="text-xl font-bold text-amber-600 mt-0.5">{summary?.customCount ?? "..."}</div>
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+            <Wallet className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium">Tổng quỹ phụ cấp/tháng</div>
+            <div className="text-xl font-bold text-indigo-600 mt-0.5">
+              {formatCurrency(summary?.totalMonthlyAllowanceAmount ?? 0)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Info Notice Banner */}
+      <div className="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/50 rounded-xl p-3.5 flex items-start gap-3">
+        <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+        <div className="text-xs text-blue-900 dark:text-blue-200 space-y-1">
+          <p className="font-semibold">Nguyên tắc phụ cấp &amp; trợ cấp:</p>
+          <p>
+            Các khoản phụ cấp theo quy chế dự án được tự động áp dụng khi tính bảng lương hàng tháng.
+            Quản trị viên có thể tùy chỉnh hoặc bổ sung các phụ cấp đặc thù (trách nhiệm, nhà ở, chuyên cần) cho từng cá nhân.
+          </p>
+        </div>
+      </div>
+
+      {/* Main Table */}
       <div className="integrated-table-card">
-        {/* Card Toolbar: Single Row */}
+        {/* Toolbar */}
         <div className="table-card-toolbar">
           <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-            {/* Left: Status Segmentation Pills */}
-            <div className="filter-status-pills">
+            {/* Left: Mode Filter Pills */}
+            <div className="filter-status-pills flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
-                className={`pill-btn ${filterMode === "all" ? "active" : ""}`}
-                onClick={() => setFilterMode("all")}
+                onClick={() => { setSelectedMode("ALL"); setCurrentPage(1); }}
+                className={`pill-btn ${selectedMode === "ALL" ? "active" : ""}`}
               >
-                Tất cả ({counts.all})
+                Tất cả ({summary?.total ?? 0})
               </button>
               <button
                 type="button"
-                className={`pill-btn info ${filterMode === "shift_leader" ? "active" : ""}`}
-                onClick={() => setFilterMode("shift_leader")}
+                onClick={() => { setSelectedMode("PROJECT_DEFAULT"); setCurrentPage(1); }}
+                className={`pill-btn success ${selectedMode === "PROJECT_DEFAULT" ? "active" : ""}`}
               >
-                Trưởng ca / Quản lý ({counts.shiftLeader})
+                Mặc định ({summary?.projectDefaultCount ?? 0})
               </button>
               <button
                 type="button"
-                className={`pill-btn success ${filterMode === "chinh_thuc" ? "active" : ""}`}
-                onClick={() => setFilterMode("chinh_thuc")}
+                onClick={() => { setSelectedMode("CUSTOM"); setCurrentPage(1); }}
+                className={`pill-btn warning ${selectedMode === "CUSTOM" ? "active" : ""}`}
               >
-                Chính thức ({counts.official})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn warning ${filterMode === "hoc_viec" ? "active" : ""}`}
-                onClick={() => setFilterMode("hoc_viec")}
-              >
-                Học việc ({counts.probation})
+                Tùy chỉnh ({summary?.customCount ?? 0})
               </button>
             </div>
 
             {/* Right: Search */}
-            <div className="flex items-center gap-2.5 ml-auto">
-              <label className="search-field" style={{ minWidth: "260px" }}>
-                <Search />
-                <input
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Tìm theo tên NV, mã NV..."
-                />
-              </label>
+            <div className="relative min-w-[240px] max-w-[320px] ml-auto">
+              <Search className="search-icon-fixed text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Tìm theo tên, mã NV, phòng ban..."
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                className="search-box-input w-full pl-10 pr-8 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Content Table */}
-        {filteredList.length === 0 ? (
-          <EmptyState
-            title="Không tìm thấy bản ghi chế độ nhân viên"
-            description="Chưa có dữ liệu chế độ người lao động phù hợp với tiêu chí lọc."
-            action={
-              <Button variant="primary" onClick={() => setImportModalOpen(true)}>
-                <Upload /> Tải lên danh sách phụ cấp ngay
-              </Button>
-            }
-          />
+        {listQuery.isLoading ? (
+          <div className="p-8">
+            <LoadingBlock />
+          </div>
+        ) : listQuery.isError ? (
+          <div className="p-8">
+            <ErrorState message="Không thể tải danh sách phụ cấp nhân viên" retry={() => listQuery.refetch()} />
+          </div>
+        ) : items.length === 0 ? (
+          <div className="p-12">
+            <EmptyState
+              title="Không tìm thấy dữ liệu"
+              description="Không có nhân sự nào phù hợp với điều kiện tìm kiếm hoặc bộ lọc hiện tại."
+            />
+          </div>
         ) : (
           <div className="data-table-wrap">
             <div className="data-table-scroll">
-              <table className="data-table min-w-[1100px]">
+              <table className="data-table min-w-[1050px]">
                 <thead>
                   <tr>
                     <th style={{ width: "45px" }} className="text-center">STT</th>
-                    <th style={{ minWidth: "165px" }}>NGƯỜI LAO ĐỘNG</th>
-                    <th style={{ width: "150px" }}>CHỨC DANH</th>
-                    <th className="text-right" style={{ width: "135px" }}>LƯƠNG CƠ BẢN</th>
-                    <th style={{ minWidth: "290px" }}>CÁC KHOẢN PHỤ CẤP ÁP DỤNG</th>
-                    <th className="text-right" style={{ width: "145px" }}>TỔNG PHỤ CẤP</th>
-                    <th style={{ width: "135px" }} className="text-center">NGÀY ÁP DỤNG</th>
-                    <th style={{ width: "60px" }} className="text-center">THAO TÁC</th>
+                    <th style={{ minWidth: "200px" }}>NHÂN VIÊN</th>
+                    <th style={{ width: "140px" }} className="text-right">LƯƠNG CƠ BẢN</th>
+                    <th style={{ minWidth: "240px" }}>CÁC KHOẢN PHỤ CẤP</th>
+                    <th style={{ width: "130px" }} className="text-center">CHẾ ĐỘ</th>
+                    <th style={{ width: "140px" }} className="text-right">TỔNG PHỤ CẤP</th>
+                    <th style={{ width: "80px" }} className="text-center">THAO TÁC</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedList.map((item, idx) => {
-                    const rawStt = (page - 1) * pageSize + idx + 1;
+                  {items.map((item, idx) => {
+                    const rawStt = (currentPage - 1) * pageSize + idx + 1;
                     const stt = String(rawStt).padStart(2, "0");
-                    const emp = employeeMap.get(item.employeeId) || employeeMap.get(item.employeeCode);
-                    const projectCode = item.projectCode || emp?.projectCode;
-
-                    // Active allowances list
-                    const activeAllowances = (item.policies || []).filter(
-                      (p) =>
-                        p.isEnabled &&
-                        p.policyId !== "pol-base-salary" &&
-                        p.policyId !== "pol-insurance-salary" &&
-                        p.policyId !== "pol-hourly-rate" &&
-                        !p.policyId.startsWith("pol-ot")
-                    );
-
-                    const visibleAllowances = activeAllowances.slice(0, 2);
-                    const remainingCount = activeAllowances.length - visibleAllowances.length;
+                    const isCustom = item.mode === "CUSTOM";
 
                     return (
-                      <tr key={item.id}>
+                      <tr key={item.employee.employeeCode} className="hover:bg-secondary/40 transition-colors">
                         <td className="text-center text-muted font-medium">{stt}</td>
                         <td>
                           <div className="employee-cell-info">
-                            <span className="employee-cell-name font-bold text-foreground">{item.employeeName}</span>
+                            <span className="employee-cell-name font-semibold text-foreground">{item.employee.fullName}</span>
                             <span className="employee-cell-sub">
-                              <span className="employee-code-badge">{item.employeeCode}</span>
-                              {projectCode && <span className="text-muted text-[11.5px] font-normal">· {projectCode}</span>}
+                              <span className="employee-code-badge">{item.employee.employeeCode}</span>
+                              <span className="text-muted text-[11px] font-normal">· {item.employee.department || "Văn phòng"}</span>
                             </span>
                           </div>
                         </td>
-                        <td>{renderRoleBadge(item.role)}</td>
-                        <td className="text-right font-semibold">
-                          {item.baseSalary ? formatCurrency(item.baseSalary) : "—"}
+                        <td className="text-right font-medium text-foreground">
+                          {formatCurrency(item.baseSalary)}
                         </td>
                         <td>
-                          {activeAllowances.length === 0 ? (
-                            <span className="text-xs text-muted italic">Không có phụ cấp riêng</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {item.allowances.map((a) => (
+                              <span
+                                key={a.policyCode}
+                                className={cn(
+                                  "inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border font-medium",
+                                  a.isCustomized
+                                    ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 font-semibold"
+                                    : "bg-secondary/60 text-muted-foreground border-border"
+                                )}
+                              >
+                                <span>{a.policyName}:</span>
+                                <span className="font-bold">{formatCurrency(a.amount)}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="text-center">
+                          {isCustom ? (
+                            <Badge tone="warning">Tùy chỉnh</Badge>
                           ) : (
-                            <div className="flex flex-wrap items-center gap-1.5 py-0.5">
-                              {visibleAllowances.map((pol) => {
-                                const valStr = formatAllowanceValue(pol);
-                                const cleanName = pol.policyName.replace(/:$/, "").trim();
-                                return (
-                                  <span
-                                    key={pol.policyId}
-                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11.5px] font-medium border ${
-                                      pol.isCustom
-                                        ? "bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-700/60 font-semibold"
-                                        : "bg-secondary text-secondary-foreground border-border/80"
-                                    }`}
-                                    title={pol.reason || (pol.isCustom ? "Đã điều chỉnh riêng" : "Theo định mức chuẩn")}
-                                  >
-                                    <span>{cleanName}</span>
-                                    <strong className="text-primary">{valStr}</strong>
-                                  </span>
-                                );
-                              })}
-                              {remainingCount > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => openDetailModal(item)}
-                                  className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary/20 border border-primary/30 transition-colors cursor-pointer"
-                                >
-                                  +{remainingCount} khoản
-                                </button>
-                              )}
-                            </div>
+                            <Badge tone="success">Mặc định dự án</Badge>
                           )}
                         </td>
-                        <td className="text-right font-bold text-primary">
-                          {formatCurrency(item.totalAllowance)}
-                        </td>
-                        <td className="text-center text-[13px] text-muted">
-                          {item.effectiveFrom ? formatDate(item.effectiveFrom) : "01/08/2026"}
+                        <td className="text-right">
+                          <span className="font-bold text-sm text-primary font-mono">
+                            +{formatCurrency(item.totalMonthlyAllowance)}
+                          </span>
                         </td>
                         <td className="text-center">
                           <TableRowActions
                             items={[
                               {
                                 key: "edit",
-                                label: "Chỉnh sửa chế độ",
-                                icon: <Pencil />,
-                                onClick: () => openEditModal(item),
+                                label: "Tùy chỉnh phụ cấp",
+                                icon: <Pencil className="w-3.5 h-3.5" />,
+                                onClick: () => handleOpenEdit(item),
                               },
                               {
-                                key: "detail",
-                                label: `Xem chi tiết phụ cấp (${activeAllowances.length})`,
-                                icon: <Coins />,
-                                onClick: () => openDetailModal(item),
+                                key: "history",
+                                label: "Xem lịch sử thay đổi",
+                                icon: <History className="w-3.5 h-3.5" />,
+                                onClick: () => handleViewHistory(item),
                               },
+                              ...(isCustom
+                                ? [
+                                    {
+                                      key: "restore",
+                                      label: "Khôi phục mặc định dự án",
+                                      icon: <RotateCcw className="w-3.5 h-3.5" />,
+                                      onClick: () => restoreMutation.mutate(item.employee.employeeCode),
+                                    },
+                                  ]
+                                : []),
                             ]}
                           />
                         </td>
@@ -505,421 +485,184 @@ export function EmployeePoliciesSubtab({
                 </tbody>
               </table>
             </div>
-
-            {/* Attached Table Footer */}
-            <TablePaginationFooter
-              totalItems={filteredList.length}
-              currentPage={page}
-              pageSize={pageSize}
-              onPageChange={setPage}
-              onPageSizeChange={(newSize) => {
-                setPageSize(newSize);
-                setPage(1);
-              }}
-            />
           </div>
+        )}
+
+        {/* Pagination Footer */}
+        {totalRecords > 0 && (
+          <TablePaginationFooter
+            totalItems={totalRecords}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(newSize) => { setPageSize(newSize); setCurrentPage(1); }}
+          />
         )}
       </div>
 
-      {/* BOTTOM AUDIT / ACTIVITY LOG */}
+      {/* Subtab Activity / Audit Log */}
       <SubtabActivityLog
         projectId={projectId}
         module="policies"
-        title="Nhật ký điều chỉnh Chế độ & Phụ cấp"
-        description="Lịch sử tùy biến phụ cấp riêng, khôi phục chuẩn và import Excel phụ cấp"
+        title="Nhật ký biến động Chế độ & Phụ cấp"
+        description="Lịch sử tùy chỉnh, bổ sung và khôi phục các khoản phụ cấp lương của nhân sự"
       />
 
-      {/* Modal 1: Thiết lập chế độ đãi ngộ & Phụ cấp người lao động */}
-      <Modal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
-        title={`Chỉnh sửa chế độ & phụ cấp: ${editRecord?.employeeName}`}
-        description={`Mã NV: ${editRecord?.employeeCode} · Chức danh: ${editRecord?.roleTitle} · Dự án: ${editRecord?.projectCode || "JSS-ST"}`}
-        size="lg"
-        footer={
-          <>
-            <Button onClick={() => setModalOpen(false)}>Hủy</Button>
-            <Button
-              variant="primary"
-              loading={saveMutation.isPending}
-              onClick={() => saveMutation.mutate()}
-              className="gap-1.5 font-semibold"
-            >
-              <Check className="w-3.5 h-3.5" /> Lưu cấu hình chế độ
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          {/* Quick Summary Header Strip - Sticky with distinct shadow */}
-          <div className="sticky -top-5 z-20 bg-card/95 backdrop-blur-md p-3.5 rounded-xl border border-border shadow-md">
-            <div className="grid grid-cols-3 gap-3 text-xs">
-              <div>
-                <span className="text-muted-foreground font-medium block mb-0.5">Lương cơ bản (LCB)</span>
-                <strong className="text-base font-mono font-bold text-foreground">
-                  {formatCurrency(formBaseSalary)}
-                </strong>
+      {/* Edit Modal */}
+      {editEmployee && (
+        <Modal
+          open={Boolean(editEmployee)}
+          onOpenChange={(open) => !open && setEditEmployee(null)}
+          title={`Tùy chỉnh phụ cấp - ${editEmployee.employee.fullName}`}
+          description={`Mã NV: ${editEmployee.employee.employeeCode} | Lương cơ bản: ${formatCurrency(editEmployee.baseSalary)}`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setEditEmployee(null)}>
+                Hủy bỏ
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSaveEdit}
+                disabled={updateMutation.isPending}
+              >
+                {updateMutation.isPending ? "Đang lưu..." : "Lưu phụ cấp"}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4 py-2">
+            <div className="space-y-2.5">
+              <label className="block text-xs font-semibold text-foreground">
+                Danh sách các khoản phụ cấp áp dụng:
+              </label>
+              <div className="border border-border rounded-lg divide-y divide-border overflow-hidden">
+                {editAllowances.map((a, i) => (
+                  <div key={a.policyCode} className="p-3 flex items-center justify-between gap-3 bg-card hover:bg-muted/30 transition-colors">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={a.isEnabled}
+                        onChange={(e) => {
+                          const copy = [...editAllowances];
+                          copy[i].isEnabled = e.target.checked;
+                          setEditAllowances(copy);
+                        }}
+                        className="rounded border-border text-primary focus:ring-primary w-4 h-4"
+                      />
+                      <span className="text-xs font-medium text-foreground">{a.policyName}</span>
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step={50000}
+                        disabled={!a.isEnabled}
+                        value={a.amount}
+                        onChange={(e) => {
+                          const copy = [...editAllowances];
+                          copy[i].amount = Number(e.target.value);
+                          setEditAllowances(copy);
+                        }}
+                        className="w-36 px-2.5 py-1.5 text-xs text-right bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 text-foreground font-semibold"
+                      />
+                      <span className="text-xs text-muted-foreground">VNĐ</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div>
-                <span className="text-muted-foreground font-medium block mb-0.5">Lương đóng BHXH</span>
-                <strong className="text-base font-mono font-bold text-foreground">
-                  {formatCurrency(formInsuranceSalary)}
-                </strong>
-              </div>
-              <div>
-                <span className="text-muted-foreground font-medium block mb-0.5">Tổng phụ cấp hàng tháng</span>
-                <strong className="text-base font-mono font-bold text-primary">
-                  {formatCurrency(calculatedFormTotalAllowance)}
-                </strong>
-              </div>
+            </div>
+
+            {/* Total summary */}
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Tổng phụ cấp hàng tháng:</span>
+              <span className="text-sm font-bold text-primary">{formatCurrency(totalCalculated)}</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">
+                Lý do điều chỉnh tùy chỉnh <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Nhập lý do điều chỉnh chế độ phụ cấp..."
+                value={editReason}
+                onChange={(e) => setEditReason(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-foreground resize-none"
+              />
             </div>
           </div>
+        </Modal>
+      )}
 
-          {/* Policy List Groupings */}
-          <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
-            {/* Group 1: Lương cơ sở & Ngày áp dụng */}
-            <div className="p-3.5 rounded-lg border border-border bg-card">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground mb-3 flex items-center gap-1.5">
-                <Coins className="w-4 h-4 text-primary" /> Mức Lương cơ sở &amp; Ngày áp dụng
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <label className="form-field">
-                  <span className="font-semibold text-foreground text-xs">Ngày áp dụng *</span>
-                  <input
-                    type="date"
-                    value={formEffectiveFrom}
-                    onChange={(e) => setFormEffectiveFrom(e.target.value)}
-                    required
-                  />
-                </label>
-                <label className="form-field">
-                  <span className="font-semibold text-foreground text-xs">Mức Lương cơ bản (VNĐ) *</span>
-                  <input
-                    type="number"
-                    step="100000"
-                    value={formBaseSalary}
-                    onChange={(e) => setFormBaseSalary(Number(e.target.value))}
-                    required
-                  />
-                </label>
-                <label className="form-field">
-                  <span className="font-semibold text-foreground text-xs">Lương đóng Bảo hiểm Xã hội (VNĐ) *</span>
-                  <input
-                    type="number"
-                    step="100000"
-                    value={formInsuranceSalary}
-                    onChange={(e) => setFormInsuranceSalary(Number(e.target.value))}
-                    required
-                  />
-                </label>
-              </div>
-            </div>
-
-            {/* Group 2: Các khoản phụ cấp định kỳ */}
-            <div className="p-3.5 rounded-lg border border-border bg-card">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground mb-3 flex items-center gap-1.5">
-                <SlidersHorizontal className="w-4 h-4 text-primary" /> Các khoản phụ cấp &amp; Trợ cấp tháng
-              </h4>
-
-              <div className="space-y-2.5">
-                {formPolicies
-                  .filter(
-                    (p) =>
-                      p.policyId !== "pol-base-salary" &&
-                      p.policyId !== "pol-insurance-salary" &&
-                      p.policyId !== "pol-hourly-rate" &&
-                      !p.policyId.startsWith("pol-ot")
-                  )
-                  .map((pol) => {
-                    const defaultAmt = pol.defaultValue?.amount ?? 0;
-                    const currentAmt = pol.isCustom ? pol.customValue?.amount ?? defaultAmt : defaultAmt;
-                    const cleanName = pol.policyName.replace(/:$/, "").trim();
-
-                    return (
-                      <div
-                        key={pol.policyId}
-                        className={cn(
-                          "p-3 rounded-lg border transition-colors",
-                          pol.isEnabled
-                            ? "bg-secondary/40 border-border"
-                            : "bg-secondary/10 border-border/40 opacity-60"
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={pol.isEnabled}
-                              onChange={(e) => handleTogglePolicy(pol.policyId, e.target.checked)}
-                            />
-                            <span className="font-bold text-sm text-foreground">
-                              {cleanName}
-                            </span>
-                          </label>
-
-                          <span className="text-xs text-muted-foreground font-medium">
-                            Chuẩn dự án: <strong className="font-mono text-foreground font-semibold">{formatCurrency(defaultAmt)}</strong>
-                          </span>
-                        </div>
-
-                        {pol.isEnabled && (
-                          <div className="grid grid-cols-2 gap-3 mt-2.5 pt-2.5 border-t border-border">
-                            <label className="form-field">
-                              <span className="text-xs font-semibold text-foreground">Mức tiền áp dụng cho NLĐ (VNĐ)</span>
-                              <input
-                                type="number"
-                                step="50000"
-                                value={currentAmt}
-                                onChange={(e) =>
-                                  handleUpdatePolicyAmount(pol.policyId, Number(e.target.value))
-                                }
-                              />
-                            </label>
-                            <label className="form-field">
-                              <span className="text-xs font-semibold text-foreground">Ghi chú / Quyết định</span>
-                              <input
-                                type="text"
-                                placeholder="VD: QĐ số 42/QĐ-BĐH..."
-                                value={pol.reason || ""}
-                                onChange={(e) => handleUpdatePolicyReason(pol.policyId, e.target.value)}
-                              />
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal 2: Reusable Excel Import Modal */}
-      <ExcelImportModal
-        open={importModalOpen}
-        onOpenChange={setImportModalOpen}
-        title="Tải Lên Danh Sách Phụ Cấp &amp; Chế Độ Nhân Sự"
-        description="Tải lên tệp Excel danh sách các khoản phụ cấp hoặc mức lương thỏa thuận được thiết lập cho từng người lao động."
-        sampleTemplateName="Mau_Che_Do_Phu_Cap_Nhan_Vien.xlsx"
-        sampleTemplateDescription="Bảng kê gồm: Mã NV, Họ và tên, Mã chế độ (VD: RESPONSIBILITY_ALLOWANCE, TRAVEL_ALLOWANCE, HOUSING_ALLOWANCE), Mức tiền và Lý do điều chỉnh."
-        onDownloadSample={() => notify("Đã tải xuống biểu mẫu Mau_Che_Do_Phu_Cap_Nhan_Vien.xlsx")}
-        columns={[
-          {
-            key: "employeeCode",
-            label: "Mã NV",
-            width: "110px",
-            render: (row) => <code>{row.employeeCode}</code>,
-          },
-          {
-            key: "employeeName",
-            label: "Họ và tên",
-            render: (row) => <strong>{row.employeeName}</strong>,
-          },
-          {
-            key: "policyName",
-            label: "Tên khoản chế độ / Phụ cấp",
-            render: (row) => <Badge tone="info">{row.policyName?.replace(/:$/, "").trim()}</Badge>,
-          },
-          {
-            key: "amount",
-            label: "Mức áp dụng",
-            align: "right",
-            render: (row) => (
-              <strong className="font-mono text-primary font-bold">
-                {formatCurrency(row.amount)}
-              </strong>
-            ),
-          },
-          {
-            key: "reason",
-            label: "Lý do điều chỉnh",
-            render: (row) => <span className="text-xs font-medium text-foreground">{row.reason}</span>,
-          },
-        ]}
-        previewRows={uploadPreviewRows}
-        stats={[
-          {
-            label: "Tổng bản ghi",
-            value: `${uploadPreviewRows.length} nhân sự`,
-            tone: "primary",
-          },
-          {
-            label: "Số khoản phụ cấp",
-            value: `${uploadPreviewRows.length} khoản`,
-            tone: "warning",
-          },
-          {
-            label: "Thẩm định dữ liệu",
-            value: "Hợp lệ 100%",
-            tone: "success",
-          },
-        ]}
-        onSimulateUpload={handleSimulateFileUpload}
-        isUploading={isUploading}
-        onConfirmImport={() => importMutation.mutate()}
-        confirmLoading={importMutation.isPending}
-        onClearPreview={() => setUploadPreviewRows([])}
-      />
-
-      {/* Modal 3: View Full Allowance Details */}
-      <Modal
-        open={detailModalOpen}
-        onOpenChange={setDetailModalOpen}
-        title={`Chi tiết Chế độ & Phụ cấp: ${detailRecord?.employeeName}`}
-        description={`Mã NV: ${detailRecord?.employeeCode} · Chức danh: ${detailRecord?.roleTitle} · Dự án: ${detailRecord?.projectCode || "JSS-ST"}`}
-        size="md"
-        footer={
-          <>
-            <Button onClick={() => setDetailModalOpen(false)}>Đóng</Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                const rec = detailRecord;
-                setDetailModalOpen(false);
-                if (rec) openEditModal(rec);
-              }}
-            >
-              <Pencil /> Chỉnh sửa cấu hình
+      {/* History Modal */}
+      {historyEmployee && (
+        <Modal
+          open={Boolean(historyEmployee)}
+          onOpenChange={(open) => !open && setHistoryEmployee(null)}
+          title={`Lịch sử điều chỉnh phụ cấp - ${historyEmployee.employee.fullName}`}
+          description={`Mã NV: ${historyEmployee.employee.employeeCode}`}
+          footer={
+            <Button variant="secondary" onClick={() => setHistoryEmployee(null)}>
+              Đóng
             </Button>
-          </>
-        }
-      >
-        {detailRecord && (() => {
-          const activeAll = (detailRecord.policies || []).filter(
-            (p) =>
-              p.isEnabled &&
-              p.policyId !== "pol-base-salary" &&
-              p.policyId !== "pol-insurance-salary" &&
-              p.policyId !== "pol-hourly-rate" &&
-              !p.policyId.startsWith("pol-ot")
-          );
-
-          return (
-            <div className="space-y-4">
-              {/* Summary Strip - Sticky with distinct shadow */}
-              <div className="sticky -top-5 z-20 bg-card/95 backdrop-blur-md p-3.5 rounded-xl border border-border shadow-md">
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-muted-foreground font-medium block mb-0.5">Tổng phụ cấp hàng tháng</span>
-                    <strong className="text-lg font-mono font-bold text-primary">
-                      {formatCurrency(detailRecord.totalAllowance)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground font-medium block mb-0.5">Số khoản đang áp dụng</span>
-                    <strong className="text-lg font-mono font-bold text-foreground">
-                      {activeAll.length} khoản phụ cấp
-                    </strong>
-                  </div>
+          }
+        >
+          <div className="py-2 space-y-3">
+            {loadingHistory ? (
+              <LoadingBlock />
+            ) : historyList.length === 0 ? (
+              <EmptyState title="Chưa có lịch sử" description="Nhân sự này chưa có ghi nhận điều chỉnh nào." />
+            ) : (
+              <div className="data-table-wrap border rounded-lg overflow-hidden">
+                <div className="data-table-scroll">
+                  <table className="data-table compact-table min-w-[600px]">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "130px" }}>THỜI GIAN</th>
+                        <th style={{ width: "140px" }} className="text-right">TỔNG PHỤ CẤP</th>
+                        <th style={{ width: "120px" }} className="text-center">CHẾ ĐỘ</th>
+                        <th>LÝ DO ĐIỀU CHỈNH</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyList.map((h, i) => (
+                        <tr key={i}>
+                          <td className="text-muted">{formatDate(h.updatedAt)}</td>
+                          <td className="text-right font-bold text-foreground">{formatCurrency(h.totalMonthlyAllowance)}</td>
+                          <td className="text-center">
+                            {h.mode === "CUSTOM" ? <Badge tone="warning">Tùy chỉnh</Badge> : <Badge tone="success">Mặc định</Badge>}
+                          </td>
+                          <td className="text-foreground">{h.reason || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            )}
+          </div>
+        </Modal>
+      )}
 
-              {/* Allowances List Table / Cards */}
-              <div className="space-y-2.5 max-h-[50vh] overflow-y-auto pr-1">
-                {activeAll.length === 0 ? (
-                  <div className="text-center py-6 text-muted-foreground text-xs">
-                    Người lao động này hiện không có khoản phụ cấp nào được áp dụng.
-                  </div>
-                ) : (
-                  activeAll.map((pol) => {
-                    const defaultAmt = pol.defaultValue?.amount ?? 0;
-                    const valText = formatAllowanceValue(pol);
-                    const cleanName = pol.policyName.replace(/:$/, "").trim();
-                    const amtNumber = pol.isCustom ? pol.customValue?.amount : pol.defaultValue?.amount;
-
-                    return (
-                      <div
-                        key={pol.policyId}
-                        className="p-3 rounded-lg border border-border bg-card flex items-center justify-between gap-3 shadow-2xs"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-bold text-sm text-foreground flex items-center gap-2">
-                            <span>{cleanName}</span>
-                          </div>
-                          {pol.reason ? (
-                            <div className="text-xs text-muted-foreground mt-0.5 font-medium">{pol.reason}</div>
-                          ) : (
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              Chuẩn dự án: {formatCurrency(defaultAmt)}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="text-right shrink-0">
-                          <span className="font-mono font-bold text-base text-primary block">
-                            {typeof amtNumber === "number"
-                              ? formatCurrency(amtNumber)
-                              : valText}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          );
-        })()}
-      </Modal>
-
-      {/* Modal 3: Import phụ cấp Excel */}
+      {/* Excel Import Modal */}
       <ExcelImportModal
         open={importModalOpen}
         onOpenChange={setImportModalOpen}
-        title="Import phụ cấp người lao động"
-        description="Tải lên bảng tổng hợp phụ cấp định kỳ của nhân viên theo mẫu chuẩn hệ thống."
-        sampleTemplateName="Mau_Phu_Cap_Nhan_Vien.xlsx"
-        sampleTemplateDescription="Bảng kê gồm: Mã NV, Họ tên, Mã phụ cấp, Tên phụ cấp, Mức phụ cấp áp dụng và Lý do."
-        onDownloadSample={() => notify("Đã tải xuống biểu mẫu Mau_Phu_Cap_Nhan_Vien.xlsx")}
-        columns={[
-          {
-            key: "employeeCode",
-            label: "Mã NV",
-            width: "120px",
-            render: (row) => <code>{row.employeeCode}</code>,
-          },
-          {
-            key: "employeeName",
-            label: "Họ và tên",
-            render: (row) => <strong>{row.employeeName}</strong>,
-          },
-          {
-            key: "policyName",
-            label: "Khoản phụ cấp",
-            render: (row) => <Badge tone="info">{row.policyName}</Badge>,
-          },
-          {
-            key: "amount",
-            label: "Mức phụ cấp",
-            align: "right",
-            render: (row) => (
-              <strong className="font-mono text-primary font-bold">
-                {formatCurrency(row.amount)}
-              </strong>
-            ),
-          },
-          {
-            key: "reason",
-            label: "Lý do",
-            render: (row) => <span className="text-xs">{row.reason}</span>,
-          },
-        ]}
-        previewRows={uploadPreviewRows}
+        title="Import Danh sách phụ cấp nhân viên từ Excel"
+        description="Tải lên danh sách các khoản phụ cấp cần tùy chỉnh hoặc cập nhật hàng loạt."
+        sampleTemplateName="Mau_Import_Phu_Cap.xlsx"
+        sampleTemplateDescription="Biểu mẫu chuẩn bao gồm: Mã NV, Họ tên, Mã phụ cấp, Mức tiền, Lý do."
+        columns={excelColumns}
+        previewRows={importPreviewRows}
         stats={[
-          {
-            label: "Tổng bản ghi",
-            value: `${uploadPreviewRows.length} dòng`,
-            tone: "primary",
-          },
+          { label: "Số dòng hợp lệ", value: importPreviewRows.length, tone: "primary" },
         ]}
-        isUploading={isUploading}
-        onSimulateUpload={handleSimulateFileUpload}
-        onConfirmImport={() => {
-          setImportModalOpen(false);
-          setUploadPreviewRows([]);
-          notify(`Đã cập nhật thành công phụ cấp cho ${uploadPreviewRows.length} nhân viên!`);
-        }}
+        onDownloadSample={() => api.downloadBenefitsAllowancesImportTemplateV3()}
+        onSimulateUpload={handleSimulateUpload}
+        onConfirmImport={() => importMutation.mutate()}
+        confirmLoading={importMutation.isPending}
+        confirmLabel={`Nhập ${importPreviewRows.length || ""} bản ghi vào hệ thống`}
+        onClearPreview={() => setImportPreviewRows([])}
       />
     </div>
   );

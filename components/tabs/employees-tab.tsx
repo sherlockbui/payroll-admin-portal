@@ -138,8 +138,10 @@ export function EmployeesTab({
               type="button"
               className={`subnav-item ${isActive ? "active" : ""}`}
               onClick={() => {
-                setHeaderAction(null);
-                setActiveSubtab(tab.id);
+                if (activeSubtab !== tab.id) {
+                  setHeaderAction(null);
+                  setActiveSubtab(tab.id);
+                }
               }}
             >
               <Icon />
