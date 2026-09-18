@@ -80,14 +80,14 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
     }, 300);
     return () => clearTimeout(timer);
   }, [query]);
-  
+
   const [actionModal, setActionModal] = useState<{ action: WorkflowAction, open: boolean }>({ action: "approve", open: false });
   const [actionNote, setActionNote] = useState("");
 
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [confirmationFilter, setConfirmationFilter] = useState("all");
   const [confirmationQuery, setConfirmationQuery] = useState("");
-  
+
   const { role } = useUserRole();
   const { notify } = useToast();
   const router = useRouter();
@@ -108,7 +108,7 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
   const [calculatingPhase, setCalculatingPhase] = useState<"idle" | "running">("idle");
   const [calcProgress, setCalcProgress] = useState(0);
   const [calcStep, setCalcStep] = useState(0);
-  
+
   // Queries
   const { data: run, isLoading: isRunLoading } = usePayrollDetail(id);
   const { data: matrixData, isLoading: isMatrixLoading, isFetching: isMatrixFetching } = usePayrollMatrix(id, {
@@ -117,7 +117,7 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
     search: debouncedQuery.trim() || undefined,
   });
   const { data: timelineData, isLoading: isTimelineLoading, error: timelineError } = useWorkflowTimeline(id);
-  
+
   // Mutations
   const submitMut = useSubmitWorkflow();
   const approveMut = useApproveWorkflow();
@@ -367,13 +367,13 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
             </div>
           )}
           {activeTab === "workflow" && (
-            <WorkflowTab 
-              run={run} 
-              timeline={timelineData} 
+            <WorkflowTab
+              run={run}
+              timeline={timelineData}
               isLoading={isTimelineLoading}
               error={timelineError}
-              onAction={openActionDialog} 
-              onOpenConfirmations={openConfirmations} 
+              onAction={openActionDialog}
+              onOpenConfirmations={openConfirmations}
             />
           )}
         </main>
@@ -637,9 +637,9 @@ function WorkflowTab({
   const getStepBadge = (status: string) => {
     switch (status) {
       case "approved":
-        return <StatusBadge tone="success">Đã hoàn tất</StatusBadge>;
-      case "in_progress":
-        return <StatusBadge tone="warning">Đang xử lý</StatusBadge>;
+        return <StatusBadge tone="success">Đã xác nhận</StatusBadge>;
+      case "pending":
+        return <StatusBadge tone="neutral">Chờ xác nhận</StatusBadge>;
       case "rejected":
         return <StatusBadge tone="danger">Từ chối</StatusBadge>;
       default:
@@ -702,9 +702,8 @@ function WorkflowTab({
           <h2>Tiến trình phê duyệt</h2>
           <p>
             {isWorkflowStarted
-              ? `Bước hiện tại: Bước ${currentStepOrder} · ${currentStepName}${
-                  currentStepDeadline ? ` · Hạn chót: ${formatDateTime(currentStepDeadline)}` : ""
-                }`
+              ? `Bước hiện tại: Bước ${currentStepOrder} · ${currentStepName}${currentStepDeadline ? ` · Hạn chót: ${formatDateTime(currentStepDeadline)}` : ""
+              }`
               : "Kỳ lương chưa được khởi tạo quy trình duyệt."}
           </p>
         </div>
@@ -781,9 +780,7 @@ function WorkflowTab({
                     </div>
                   </td>
                   <td style={{ textAlign: "center" }}>
-                    {getStepBadge(
-                      isDone ? "approved" : isActive ? "in_progress" : isCorrection ? "rejected" : "pending"
-                    )}
+                    {getStepBadge(step.status)}
                   </td>
                   <td>
                     <div className="workflow-assignee">
@@ -846,10 +843,8 @@ function WorkflowTab({
                         <UserCheck /> Xem xác nhận NLĐ
                       </Button>
                     ) : isDone ? (
-                      <div className="workflow-done-check">
-                        <span className="text-xs font-semibold text-emerald-600 inline-flex items-center gap-1">
-                          <Check className="w-4 h-4" /> Đã hoàn tất
-                        </span>
+                      <div className="workflow-done-check" title="Đã hoàn tất">
+                        <Check />
                       </div>
                     ) : (
                       <span className="workflow-no-action">—</span>
@@ -1067,12 +1062,12 @@ function PayslipConfirmationPanel({
       item.status === "disputed"
         ? item.disputeAt || item.disputedAt
         : item.status === "resolved"
-        ? item.resolvedAt
-        : item.status === "confirmed"
-        ? item.confirmedAt
-        : item.status === "viewed"
-        ? item.viewedAt
-        : null;
+          ? item.resolvedAt
+          : item.status === "confirmed"
+            ? item.confirmedAt
+            : item.status === "viewed"
+              ? item.viewedAt
+              : null;
 
     if (!time) return <span className="text-muted-foreground">—</span>;
     return <span className="confirmation-time">{formatDateTime(time)}</span>;

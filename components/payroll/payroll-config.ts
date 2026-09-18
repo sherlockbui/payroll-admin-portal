@@ -4,7 +4,7 @@ import type { UserRole } from "@/components/providers";
 export const periodStatusConfig: Record<string, { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
   draft: { label: "Bản nháp", tone: "neutral" },
   calculated: { label: "Đã tính", tone: "info" },
-  submitted: { label: "Đã chốt", tone: "info" },
+  submitted: { label: "Đã gửi duyệt", tone: "info" },
   locked: { label: "Đã khóa", tone: "success" },
 };
 
@@ -12,7 +12,6 @@ export const periodStatusConfig: Record<string, { label: string; tone: "neutral"
 export const workflowStatusConfig: Record<string, { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
   not_started: { label: "Chưa duyệt", tone: "neutral" },
   pending: { label: "Chờ duyệt", tone: "warning" },
-  in_progress: { label: "Đang xử lý", tone: "warning" },
   approved: { label: "Đã duyệt", tone: "success" },
   rejected: { label: "Từ chối", tone: "danger" },
 };
@@ -46,9 +45,9 @@ export function getPayrollStatuses(run?: any, timeline?: any) {
     }
   }
 
-  return { 
-    periodStatus, 
-    workflowStatus, 
+  return {
+    periodStatus,
+    workflowStatus,
     isStarted,
     currentStepOrder,
     currentStepName,
