@@ -23,12 +23,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useToast, useUserRole, type UserRole } from "@/components/providers";
 import {
-  roleActors,
   statusConfig,
   periodStatusConfig,
   workflowStatusConfig,
   getPayrollStatuses,
-  workflowSteps,
 } from "@/components/payroll/payroll-config";
 import { PayrollFullTable } from "@/components/payroll/payroll-full-table";
 import { Badge, Button, Modal, StatusBadge, TablePaginationFooter, UserAvatar } from "@/components/ui";
@@ -44,9 +42,10 @@ import {
   useConfirmationStats,
   useResolveDispute,
   useCalculatePayroll,
+  usePreviewRevenue,
 } from "@/lib/hooks/use-payroll";
 import { payrollApi } from "@/lib/payroll-api";
-import type { PayrollPeriod, WorkflowStep, WorkflowInstance, ConfirmationStatus, ConfirmationItem, ConfirmationStats, DisputeRecord } from "@/lib/payroll-types";
+import type { PayrollPeriod, WorkflowStep, WorkflowInstance, ConfirmationStatus, ConfirmationItem, ConfirmationStats, DisputeRecord, PreviewRevenueResult } from "@/lib/payroll-types";
 
 type DetailTab = "overview" | "workflow";
 
@@ -81,8 +80,17 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const [actionModal, setActionModal] = useState<{ action: WorkflowAction, open: boolean }>({ action: "approve", open: false });
+  const [actionModal, setActionModal] = useState<{
+    action: WorkflowAction;
+    open: boolean;
+    step?: WorkflowStep;
+  }>({ action: "approve", open: false });
   const [actionNote, setActionNote] = useState("");
+  const [revenueInput, setRevenueInput] = useState("");
+  const [justificationInput, setJustificationInput] = useState("");
+  const [previewData, setPreviewData] = useState<PreviewRevenueResult | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [confirmationFilter, setConfirmationFilter] = useState("all");
@@ -123,6 +131,7 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
   const approveMut = useApproveWorkflow();
   const rejectMut = useRejectWorkflow();
   const calculateMut = useCalculatePayroll();
+  const previewMut = usePreviewRevenue();
 
   const handleExportExcel = async () => {
     if (!run) return;
@@ -252,9 +261,53 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
     }
   };
 
-  const openActionDialog = (action: WorkflowAction) => {
+  const handleRevenueInputChange = (value: string) => {
+    const raw = value.replace(/[^\d]/g, "");
+    if (!raw) {
+      setRevenueInput("");
+      setPreviewData(null);
+      setPreviewError(null);
+      return;
+    }
+    const formatted = Number(raw).toLocaleString("vi-VN");
+    setRevenueInput(formatted);
+  };
+
+  useEffect(() => {
+    if (!actionModal.open || actionModal.action !== "approve" || !actionModal.step?.requiresDataInput) {
+      return;
+    }
+    const rawVal = Number(revenueInput.replace(/[^\d]/g, ""));
+    if (!rawVal || rawVal <= 0) {
+      setPreviewData(null);
+      setPreviewError(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setIsPreviewLoading(true);
+        setPreviewError(null);
+        const res = await previewMut.mutateAsync({ id, revenue: rawVal });
+        setPreviewData(res);
+      } catch (err: any) {
+        setPreviewError(err.message || "Không thể tính toán xem trước đối soát");
+        setPreviewData(null);
+      } finally {
+        setIsPreviewLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [revenueInput, actionModal.open, actionModal.action, actionModal.step]);
+
+  const openActionDialog = (action: WorkflowAction, step?: WorkflowStep) => {
     setActionNote("");
-    setActionModal({ action, open: true });
+    const initialRev = step?.stepData?.Revenue ? Number(step.stepData.Revenue).toLocaleString("vi-VN") : "";
+    setRevenueInput(initialRev);
+    setJustificationInput(step?.justification || "");
+    setPreviewData(null);
+    setPreviewError(null);
+    setIsPreviewLoading(false);
+    setActionModal({ action, open: true, step });
   };
 
   const handleActionSubmit = async () => {
@@ -263,7 +316,35 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
         await submitMut.mutateAsync({ id, note: actionNote });
         notify("Đã gửi trình duyệt bảng lương");
       } else if (actionModal.action === "approve") {
-        await approveMut.mutateAsync({ id, payload: { note: actionNote } });
+        const isInputRequired = actionModal.step?.requiresDataInput;
+        let stepData: any = undefined;
+        let justification: string | undefined = undefined;
+
+        if (isInputRequired) {
+          const rawRevenue = Number(revenueInput.replace(/[^\d]/g, ""));
+          if (!rawRevenue || rawRevenue <= 0) {
+            notify("Vui lòng nhập doanh thu dự án hợp lệ", "warning");
+            return;
+          }
+          stepData = { Revenue: rawRevenue };
+
+          if (previewData?.requiresJustification) {
+            if (!justificationInput.trim()) {
+              notify("Chênh lệch vượt ngưỡng quy định. Vui lòng nhập giải trình trước khi duyệt.", "warning");
+              return;
+            }
+            justification = justificationInput.trim();
+          }
+        }
+
+        await approveMut.mutateAsync({
+          id,
+          payload: {
+            note: actionNote,
+            stepData,
+            justification,
+          },
+        });
         notify("Đã duyệt bảng lương bước hiện tại");
       } else if (actionModal.action === "reject") {
         await rejectMut.mutateAsync({ id, reason: actionNote });
@@ -389,11 +470,221 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
         />
       </Modal>
 
-      <Modal open={actionModal.open} onOpenChange={(o) => setActionModal({ ...actionModal, open: o })} title={actionModal.action === "submit" ? "Trình duyệt bảng lương" : actionModal.action === "approve" ? "Phê duyệt bảng lương" : "Từ chối bảng lương"} size="sm" footer={<><Button onClick={() => setActionModal({ ...actionModal, open: false })}>Hủy</Button><Button variant={actionModal.action === "reject" ? "danger" : "primary"} onClick={handleActionSubmit}>{actionModal.action === "reject" ? <XCircle /> : <Send />}{actionModal.action === "submit" ? "Trình duyệt" : actionModal.action === "approve" ? "Phê duyệt" : "Từ chối"}</Button></>}>
-        <label className="form-field">
-          <span>Ghi chú ({actionModal.action === "reject" ? "Bắt buộc" : "Không bắt buộc"})</span>
-          <textarea rows={4} value={actionNote} onChange={(e) => setActionNote(e.target.value)} />
-        </label>
+      <Modal
+        open={actionModal.open}
+        onOpenChange={(o) => {
+          if (!approveMut.isPending && !submitMut.isPending && !rejectMut.isPending) {
+            setActionModal({ ...actionModal, open: o });
+          }
+        }}
+        title={
+          actionModal.action === "submit"
+            ? "Trình duyệt bảng lương"
+            : actionModal.action === "reject"
+            ? "Từ chối bảng lương"
+            : actionModal.step?.requiresDataInput
+            ? `Nhập số liệu & Phê duyệt (${actionModal.step.stepName})`
+            : "Phê duyệt bảng lương"
+        }
+        description={
+          actionModal.action === "approve" && actionModal.step?.requiresDataInput
+            ? "Nhập doanh thu thực tế để hệ thống tự động đối chiếu tỷ lệ chi phí lương/doanh thu (A) và mức biến động (B) so với kỳ trước."
+            : undefined
+        }
+        size={actionModal.action === "approve" && actionModal.step?.requiresDataInput ? "md" : "sm"}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              disabled={approveMut.isPending || submitMut.isPending || rejectMut.isPending}
+              onClick={() => setActionModal({ ...actionModal, open: false })}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant={actionModal.action === "reject" ? "danger" : "primary"}
+              onClick={handleActionSubmit}
+              disabled={
+                approveMut.isPending ||
+                submitMut.isPending ||
+                rejectMut.isPending ||
+                isPreviewLoading ||
+                (actionModal.action === "approve" &&
+                  actionModal.step?.requiresDataInput &&
+                  (!revenueInput || (previewData?.requiresJustification && !justificationInput.trim()))) ||
+                (actionModal.action === "reject" && !actionNote.trim())
+              }
+            >
+              {approveMut.isPending || submitMut.isPending || rejectMut.isPending ? (
+                <RefreshCw className="spin" />
+              ) : actionModal.action === "reject" ? (
+                <XCircle />
+              ) : (
+                <Send />
+              )}
+              {actionModal.action === "submit"
+                ? "Trình duyệt"
+                : actionModal.action === "approve"
+                ? actionModal.step?.requiresDataInput
+                  ? "Lưu doanh thu & Duyệt"
+                  : "Phê duyệt"
+                : "Từ chối"}
+            </Button>
+          </>
+        }
+      >
+        {actionModal.action === "approve" && actionModal.step?.requiresDataInput ? (
+          <div className="space-y-4">
+            <label className="form-field">
+              <span className="flex items-center justify-between">
+                <span>
+                  {actionModal.step.dataInputSchema?.Revenue?.label || "Doanh thu tháng này (VNĐ)"} <b className="text-destructive">*</b>
+                </span>
+                <span className="text-[11px] font-normal text-muted-foreground">Đơn vị: VNĐ</span>
+              </span>
+              <div className="relative">
+                <input
+                  type="text"
+                  className="w-full text-base font-semibold tracking-wide pr-9"
+                  placeholder={actionModal.step.dataInputSchema?.Revenue?.placeholder || "Ví dụ: 500.000.000"}
+                  value={revenueInput}
+                  onChange={(e) => handleRevenueInputChange(e.target.value)}
+                  autoFocus
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground pointer-events-none">
+                  đ
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Nhập số tiền để hệ thống tự động đối chiếu tỷ lệ chi phí lương với tháng trước.
+              </p>
+            </label>
+
+            {isPreviewLoading && (
+              <div className="p-3 rounded-lg border border-border/70 bg-muted/20 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                <RefreshCw className="w-3.5 h-3.5 spin text-primary" />
+                <span>Đang tính toán xem trước đối soát doanh thu...</span>
+              </div>
+            )}
+
+            {previewError && (
+              <div className="p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-xs text-destructive flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{previewError}</span>
+              </div>
+            )}
+
+            {previewData && (
+              <div className="space-y-3 rounded-xl border border-border/80 bg-secondary/20 p-3.5">
+                <div
+                  className={cn(
+                    "p-3 rounded-lg flex items-start gap-2.5 text-xs",
+                    previewData.isSafe
+                      ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20"
+                      : "bg-amber-500/10 text-amber-900 dark:text-amber-200 border border-amber-500/20"
+                  )}
+                >
+                  {previewData.isSafe ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="font-bold uppercase tracking-wider text-[11px]">
+                        {previewData.isSafe ? "Ngưỡng an toàn" : "Cần giải trình chênh lệch"}
+                      </span>
+                      <Badge tone={previewData.isSafe ? "success" : "warning"}>
+                        {previewData.isSafe ? "Đạt chuẩn" : "Vượt ngưỡng"}
+                      </Badge>
+                    </div>
+                    <p className="text-[12px] leading-relaxed">{previewData.message}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 rounded-lg bg-card border border-border/60">
+                    <div className="text-[11px] text-muted-foreground">Doanh thu kỳ này</div>
+                    <div className="text-sm font-bold text-foreground mt-0.5">
+                      {formatCurrency(previewData.currentRevenue)}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-card border border-border/60">
+                    <div className="text-[11px] text-muted-foreground">Chi phí lương kỳ này</div>
+                    <div className="text-sm font-bold text-foreground mt-0.5">
+                      {formatCurrency(previewData.currentPayrollCost)}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-card/60 border border-border/40">
+                    <div className="text-[11px] text-muted-foreground">Doanh thu kỳ trước</div>
+                    <div className="text-xs font-semibold text-muted-foreground mt-0.5">
+                      {previewData.prevRevenue ? formatCurrency(previewData.prevRevenue) : "Chưa có"}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-card/60 border border-border/40">
+                    <div className="text-[11px] text-muted-foreground">Chi phí lương kỳ trước</div>
+                    <div className="text-xs font-semibold text-muted-foreground mt-0.5">
+                      {previewData.prevPayrollCost ? formatCurrency(previewData.prevPayrollCost) : "Chưa có"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-card border border-border/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">Tỷ lệ (A):</span>
+                    <span className={cn("font-bold font-mono", Math.abs(previewData.diffRatioA) > 1.5 ? "text-amber-600" : "text-foreground")}>
+                      {previewData.diffRatioA !== undefined ? `${previewData.diffRatioA > 0 ? "+" : ""}${previewData.diffRatioA.toFixed(2)}%` : "0%"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">(&le; 1.5%)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">Số tiền (B):</span>
+                    <span className={cn("font-bold font-mono", Math.abs(previewData.diffAmountB) > 10000000 ? "text-amber-600" : "text-foreground")}>
+                      {previewData.diffAmountB !== undefined ? `${previewData.diffAmountB > 0 ? "+" : ""}${previewData.diffAmountB.toLocaleString("vi-VN")} đ` : "0 đ"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">(&le; 10tr)</span>
+                  </div>
+                </div>
+
+                {previewData.requiresJustification && (
+                  <label className="form-field pt-1">
+                    <span className="flex items-center justify-between text-xs font-semibold text-amber-900 dark:text-amber-200">
+                      <span>Lý do giải trình chênh lệch <b className="text-destructive">*</b></span>
+                      <span className="text-[11px] font-normal text-amber-700 dark:text-amber-400">Bắt buộc khi vượt ngưỡng</span>
+                    </span>
+                    <textarea
+                      rows={3}
+                      className="text-xs border-amber-300 dark:border-amber-700 focus:border-amber-500"
+                      placeholder="Nhập chi tiết giải trình nguyên nhân vượt tỷ lệ chênh lệch doanh thu / chi phí lương..."
+                      value={justificationInput}
+                      onChange={(e) => setJustificationInput(e.target.value)}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+
+            <label className="form-field">
+              <span className="text-xs font-medium text-muted-foreground">Ghi chú phê duyệt (Không bắt buộc)</span>
+              <textarea
+                rows={2}
+                placeholder="Nhập ghi chú thêm nếu có..."
+                value={actionNote}
+                onChange={(e) => setActionNote(e.target.value)}
+              />
+            </label>
+          </div>
+        ) : (
+          <label className="form-field">
+            <span>Ghi chú ({actionModal.action === "reject" ? "Bắt buộc" : "Không bắt buộc"})</span>
+            <textarea
+              rows={4}
+              placeholder={actionModal.action === "reject" ? "Nhập lý do từ chối..." : "Nhập ghi chú nếu có..."}
+              value={actionNote}
+              onChange={(e) => setActionNote(e.target.value)}
+            />
+          </label>
+        )}
       </Modal>
 
       <Modal
@@ -519,45 +810,6 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
   );
 }
 
-const v3StepMeta: Record<number, { title: string; owner: string; time: string; description: string }> = {
-  1: {
-    title: "C&B lập & trình duyệt",
-    owner: "Kế toán C&B",
-    time: "02 ngày",
-    description: "C&B lập bảng lương, đối chiếu dữ liệu công và gửi trình duyệt lên cấp quản lý dự án.",
-  },
-  2: {
-    title: "BCSX / Admin xác nhận",
-    owner: "Admin dự án / BCSX",
-    time: "01 ngày",
-    description: "Đối chiếu ngày công, hồ sơ nhân sự, ATM, MST, tạm giữ, vi phạm và các khoản ứng lương.",
-  },
-  3: {
-    title: "CDA / GSDA xác nhận",
-    owner: "CDA / GSDA / Quản lý dự án",
-    time: "01 ngày",
-    description: "Kiểm tra tổng thể dữ liệu bảng lương và xác nhận trước khi phát hành phiếu lương.",
-  },
-  4: {
-    title: "Người lao động xác nhận",
-    owner: "Người lao động dự án",
-    time: "02 ngày",
-    description: "NLĐ nhận phiếu lương qua ứng dụng di động, xác nhận hoặc gửi khiếu nại trong thời hạn.",
-  },
-  5: {
-    title: "Kế toán nhập doanh thu",
-    owner: "Kế toán Thanh toán",
-    time: "01 ngày",
-    description: "Kế toán nhập doanh thu dự án thực tế và đối chiếu tỷ lệ chi phí lương/doanh thu.",
-  },
-  6: {
-    title: "C&B hoàn tất & khóa sổ",
-    owner: "Kế toán C&B",
-    time: "Ngày chi lương",
-    description: "Lưu dữ liệu hoàn tất làm cơ sở lập danh sách chi lương và khóa sổ kỳ lương.",
-  },
-};
-
 function WorkflowTab({
   run,
   timeline,
@@ -570,7 +822,7 @@ function WorkflowTab({
   timeline: any;
   isLoading: boolean;
   error?: any;
-  onAction: (action: WorkflowAction) => void;
+  onAction: (action: WorkflowAction, step?: WorkflowStep) => void;
   onOpenConfirmations: () => void;
 }) {
   const { data: confirmStats } = useConfirmationStats(run.id);
@@ -593,17 +845,8 @@ function WorkflowTab({
     );
   }
 
-  const defaultSteps: WorkflowStep[] = [
-    { stepOrder: 1, stepName: "C&B lập & trình duyệt", status: "pending", completedAt: undefined },
-    { stepOrder: 2, stepName: "BCSX / Admin xác nhận", status: "pending", completedAt: undefined },
-    { stepOrder: 3, stepName: "CDA / GSDA xác nhận", status: "pending", completedAt: undefined },
-    { stepOrder: 4, stepName: "Người lao động xác nhận", status: "pending", completedAt: undefined },
-    { stepOrder: 5, stepName: "Kế toán nhập doanh thu", status: "pending", completedAt: undefined },
-    { stepOrder: 6, stepName: "C&B hoàn tất & khóa sổ", status: "pending", completedAt: undefined },
-  ];
-
   const instance = timeline?.instance;
-  const steps = timeline?.steps && timeline.steps.length > 0 ? timeline.steps : defaultSteps;
+  const steps: WorkflowStep[] = timeline?.steps && timeline.steps.length > 0 ? timeline.steps : [];
   const history = timeline?.history || [];
 
   const isWorkflowStarted = Boolean(
@@ -634,7 +877,10 @@ function WorkflowTab({
 
   const { periodStatus, workflowStatus } = getPayrollStatuses(run, timeline);
 
-  const getStepBadge = (status: string) => {
+  const getStepBadge = (status: string, isAutoSkipped?: boolean) => {
+    if (isAutoSkipped) {
+      return <StatusBadge tone="info">Tự động bỏ qua</StatusBadge>;
+    }
     switch (status) {
       case "approved":
         return <StatusBadge tone="success">Đã xác nhận</StatusBadge>;
@@ -698,7 +944,7 @@ function WorkflowTab({
     <section className="payroll-workflow-tab payroll-page-tab-panel">
       <header className="workflow-table-heading">
         <div>
-          <span className="eyebrow"><History /> QUY TRÌNH THEO PKT.QT06</span>
+          <span className="eyebrow"><History /> TIẾN TRÌNH PHÊ DUYỆT</span>
           <h2>Tiến trình phê duyệt</h2>
           <p>
             {isWorkflowStarted
@@ -744,115 +990,138 @@ function WorkflowTab({
             </tr>
           </thead>
           <tbody>
-            {steps.map((step: WorkflowStep) => {
-              const isActive = isWorkflowActive && currentStepOrder === step.stepOrder;
-              const isDone = step.status === "approved" || step.stepOrder < currentStepOrder;
-              const isCorrection = step.status === "rejected";
-              const stepMeta = v3StepMeta[step.stepOrder] || {
-                title: step.stepName,
-                owner: "Người phụ trách",
-                time: "01 ngày",
-                description: "",
-              };
+            {steps.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: "center", padding: "32px", color: "var(--muted-foreground)" }}>
+                  Chưa có dữ liệu tiến trình phê duyệt
+                </td>
+              </tr>
+            ) : (
+              steps.map((step: WorkflowStep) => {
+                const isActive = isWorkflowActive && currentStepOrder === step.stepOrder;
+                const isDone = step.status === "approved" || step.stepOrder < currentStepOrder;
+                const isCorrection = step.status === "rejected";
 
-              const assignedNames =
-                step.assignedApprovers && step.assignedApprovers.length > 0
-                  ? step.assignedApprovers.map((a: any) => a.fullName).join(", ")
-                  : undefined;
-              const assignedRole = step.assignedApprovers?.[0]?.roleName;
+                const assignedNames =
+                  step.assignedApprovers && step.assignedApprovers.length > 0
+                    ? step.assignedApprovers.map((a: any) => a.fullName).join(", ")
+                    : undefined;
+                const assignedRole = step.assignedApprovers?.[0]?.roleName;
 
-              const stepLog = history.find((h: any) => h.stepOrder === step.stepOrder);
-              const noteText = stepLog?.note || stepLog?.comment || (isDone ? "Đã xác nhận hoàn tất" : undefined);
+                const stepLog = history.find((h: any) => h.stepOrder === step.stepOrder);
+                const noteText = stepLog?.note || stepLog?.comment || (isDone ? "Đã xác nhận hoàn tất" : undefined);
 
-              return (
-                <tr
-                  className={`${isActive ? "active" : ""} ${isDone ? "done" : ""} ${isCorrection ? "correction" : ""}`}
-                  key={step.stepOrder}
-                >
-                  <td style={{ textAlign: "center" }}>
-                    <span className="workflow-step-number">{String(step.stepOrder).padStart(2, "0")}</span>
-                  </td>
-                  <td>
-                    <div className="workflow-step-cell">
-                      <strong>{step.stepName || stepMeta.title}</strong>
-                      {stepMeta.description && <p>{stepMeta.description}</p>}
-                      <small>{stepMeta.owner} {stepMeta.time ? `· SLA ${stepMeta.time}` : ""}</small>
-                    </div>
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    {getStepBadge(step.status)}
-                  </td>
-                  <td>
-                    <div className="workflow-assignee">
-                      {step.stepOrder === 4 ? (
-                        <>
-                          <strong>Người lao động dự án</strong>
-                          <small>Xác nhận phiếu lương trên ứng dụng</small>
-                          <div className="workflow-employee-progress">
-                            <span><i style={{ width: `${progressPercent}%` }} /></span>
-                            <b>{confirmedCount}/{totalEmployees} · {progressPercent}%</b>
-                          </div>
-                        </>
-                      ) : isDone && (step.approvedByName || stepLog?.actorName) ? (
-                        <>
-                          <strong>{step.approvedByName || stepLog?.actorName}</strong>
-                          <small>{assignedRole || stepMeta.owner}</small>
-                        </>
-                      ) : assignedNames ? (
-                        <>
-                          <strong>{assignedNames}</strong>
-                          <small>{assignedRole || stepMeta.owner}</small>
-                        </>
-                      ) : (
-                        <>
-                          <strong>{stepMeta.owner}</strong>
-                          <small>Đang chờ phân công</small>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    <span className="workflow-time">
-                      {step.completedAt ? formatDateTime(step.completedAt) : "—"}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`workflow-note ${noteText ? "" : "empty"}`}>
-                      {noteText ?? "—"}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    {isActive ? (
-                      <div className="workflow-actions">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <Button size="sm" variant="primary" onClick={() => onAction("approve")}>
-                            <Check /> Duyệt
-                          </Button>
-                          <Button size="sm" onClick={() => onAction("reject")}>
-                            <RotateCcw /> Từ chối
-                          </Button>
-                        </div>
-                        {step.stepOrder === 4 && (
-                          <Button size="sm" variant="secondary" onClick={onOpenConfirmations}>
-                            <UserCheck /> Xem xác nhận NLĐ
-                          </Button>
+                return (
+                  <tr
+                    className={`${isActive ? "active" : ""} ${isDone ? "done" : ""} ${isCorrection ? "correction" : ""}`}
+                    key={step.stepOrder}
+                  >
+                    <td style={{ textAlign: "center" }}>
+                      <span className="workflow-step-number">{String(step.stepOrder).padStart(2, "0")}</span>
+                    </td>
+                    <td>
+                      <div className="workflow-step-cell">
+                        <strong>{step.stepName}</strong>
+                        {step.deadlineAt && (
+                          <small className="text-muted-foreground">
+                            Hạn xử lý: {formatDateTime(step.deadlineAt)}
+                          </small>
                         )}
                       </div>
-                    ) : step.stepOrder === 4 ? (
-                      <Button size="sm" variant="secondary" onClick={onOpenConfirmations}>
-                        <UserCheck /> Xem xác nhận NLĐ
-                      </Button>
-                    ) : isDone ? (
-                      <div className="workflow-done-check" title="Đã hoàn tất">
-                        <Check />
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      {getStepBadge(step.status, step.isAutoSkipped)}
+                    </td>
+                    <td>
+                      <div className="workflow-assignee">
+                        {step.stepOrder === 4 && totalEmployees > 0 ? (
+                          <>
+                            <strong>Người lao động dự án</strong>
+                            <div className="workflow-employee-progress">
+                              <span><i style={{ width: `${progressPercent}%` }} /></span>
+                              <b>{confirmedCount}/{totalEmployees} · {progressPercent}%</b>
+                            </div>
+                          </>
+                        ) : assignedNames ? (
+                          <>
+                            <strong>{assignedNames}</strong>
+                            {assignedRole && <small>{assignedRole}</small>}
+                          </>
+                        ) : isDone && (step.approvedByName || stepLog?.actorName) ? (
+                          <>
+                            <strong>{step.approvedByName || stepLog?.actorName}</strong>
+                            <small>Đã xác nhận</small>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </div>
-                    ) : (
-                      <span className="workflow-no-action">—</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <span className="workflow-time">
+                        {step.completedAt ? formatDateTime(step.completedAt) : "—"}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="space-y-1">
+                        {step.isAutoSkipped ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
+                            Tự động bỏ qua (An toàn)
+                          </span>
+                        ) : null}
+                        {step.stepData?.Revenue ? (
+                          <div className="text-xs font-semibold text-foreground">
+                            Doanh thu: {formatCurrency(Number(step.stepData.Revenue))}
+                          </div>
+                        ) : null}
+                        {step.justification ? (
+                          <div className="text-xs text-amber-800 dark:text-amber-300 bg-amber-500/10 rounded px-1.5 py-1 border border-amber-500/20 leading-tight">
+                            <span className="font-semibold">Giải trình:</span> {step.justification}
+                          </div>
+                        ) : null}
+                        {noteText && !step.isAutoSkipped ? (
+                          <span className={`workflow-note block ${noteText ? "" : "empty"}`}>
+                            {noteText}
+                          </span>
+                        ) : !step.isAutoSkipped && !step.stepData?.Revenue && !step.justification ? (
+                          <span className="workflow-note empty">—</span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      {isActive ? (
+                        <div className="workflow-actions">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Button size="sm" variant="primary" onClick={() => onAction("approve", step)}>
+                              {step.requiresDataInput ? <FileCheck2 /> : <Check />}
+                              {step.requiresDataInput ? "Nhập DT & Duyệt" : "Duyệt"}
+                            </Button>
+                            <Button size="sm" onClick={() => onAction("reject", step)}>
+                              <RotateCcw /> Từ chối
+                            </Button>
+                          </div>
+                          {step.stepOrder === 4 && (
+                            <Button size="sm" variant="secondary" onClick={onOpenConfirmations}>
+                              <UserCheck /> Xem xác nhận NLĐ
+                            </Button>
+                          )}
+                        </div>
+                      ) : step.stepOrder === 4 ? (
+                        <Button size="sm" variant="secondary" onClick={onOpenConfirmations}>
+                          <UserCheck /> Xem xác nhận NLĐ
+                        </Button>
+                      ) : isDone ? (
+                        <div className="workflow-done-check" title="Đã hoàn tất">
+                          <Check />
+                        </div>
+                      ) : (
+                        <span className="workflow-no-action">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
@@ -891,8 +1160,7 @@ function WorkflowTab({
           <div className="space-y-3">
             {history.map((h: any, i: number) => {
               const config = getActionConfig(h.action);
-              const stepMeta = v3StepMeta[h.stepOrder];
-              const stepTitle = h.stepName || stepMeta?.title;
+              const stepTitle = h.stepName || (h.stepOrder ? steps.find((s: any) => s.stepOrder === h.stepOrder)?.stepName : "");
               const isPlaceholderNote = !h.comment || h.comment === "string" || h.comment === "null";
 
               return (

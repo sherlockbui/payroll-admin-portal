@@ -734,6 +734,33 @@ Khi người dùng truy cập các màn hình quản lý bảng lương:
 
 ---
 
+#### 3.5. Tính toán xem trước đối soát doanh thu (Preview Revenue)
+- **Method:** `GET`
+- **URL:** `/periods/{id}/workflow/preview-revenue`
+- **Mô tả:** Được gọi trong Bước 5 khi Kế toán nhập doanh thu dự án tháng này. Hệ thống tự động tính toán đối soát với chi phí lương kỳ này, doanh thu & chi phí lương kỳ trước, tính chênh lệch tỷ lệ A và chênh lệch số tiền B, đồng thời xác định xem chênh lệch có trong ngưỡng an toàn hay bắt buộc phải giải trình (`requiresJustification`).
+- **Query Parameters:**
+  - `revenue` (`decimal`, Bắt buộc): Số tiền doanh thu tháng này cần đối soát (vd: `500000000`).
+- **Response `200 OK`:**
+```json
+{
+  "success": true,
+  "data": {
+    "currentPayrollCost": 120000000,
+    "currentRevenue": 500000000,
+    "prevPayrollCost": 110000000,
+    "prevRevenue": 480000000,
+    "diffRatioA": 1.0833,
+    "diffAmountB": 5416500,
+    "isSafe": true,
+    "requiresJustification": false,
+    "message": "Chênh lệch trong ngưỡng an toàn: A = 1.08%, B = 5,416,500 đ. Không yêu cầu giải trình."
+  },
+  "message": "Tính toán xem trước đối soát doanh thu thành công."
+}
+```
+
+---
+
 ### NHÓM 4: CỔNG NHÂN VIÊN (EMPLOYEE PORTAL)
 
 #### 4.1. Người lao động tự xem phiếu lương của mình

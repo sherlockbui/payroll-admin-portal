@@ -195,6 +195,18 @@ export interface WorkflowInstance {
   currentApprovers?: WorkflowApprover[];
 }
 
+export interface PreviewRevenueResult {
+  currentPayrollCost: number;
+  currentRevenue: number;
+  prevPayrollCost: number;
+  prevRevenue: number;
+  diffRatioA: number;
+  diffAmountB: number;
+  isSafe: boolean;
+  requiresJustification: boolean;
+  message: string;
+}
+
 export interface WorkflowStep {
   instanceStepId?: number;
   stepOrder: number;
@@ -208,6 +220,15 @@ export interface WorkflowStep {
   approvedAt?: string | null;
   completedAt?: string | null;
   requiresDataInput?: boolean;
+  dataInputSchema?: Record<string, {
+    type?: string;
+    label?: string;
+    required?: boolean;
+    placeholder?: string;
+  }> | null;
+  stepData?: any;
+  justification?: string | null;
+  isAutoSkipped?: boolean;
   assignedApprovers?: WorkflowApprover[];
 }
 

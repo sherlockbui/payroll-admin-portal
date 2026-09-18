@@ -10,6 +10,7 @@ import type {
   PayrollMatrix,
   WorkflowTimeline,
   ConfirmationStats,
+  PreviewRevenueResult,
 } from "./payroll-types";
 
 // Temporarily point to ngrok backend
@@ -172,6 +173,10 @@ export const payrollApi = {
     
   rejectWorkflow: (id: number, reason: string) =>
     payrollRequest<any>(`/periods/${id}/workflow/reject`, { method: "POST", body: JSON.stringify({ reason }) }).then((res) => res.data),
+
+  // 3.4 Xem trước đối soát doanh thu (Preview Revenue)
+  previewRevenue: (id: number, revenue: number) =>
+    payrollRequest<PreviewRevenueResult>(`/periods/${id}/workflow/preview-revenue?revenue=${revenue}`).then((res) => res.data),
     
   getWorkflowTimeline: async (id: number): Promise<WorkflowTimeline | null> => {
     try {

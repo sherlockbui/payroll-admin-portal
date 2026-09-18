@@ -167,6 +167,13 @@ export function useWorkflowTimeline(id: number) {
   });
 }
 
+export function usePreviewRevenue() {
+  return useMutation({
+    mutationFn: ({ id, revenue }: { id: number; revenue: number }) =>
+      payrollApi.previewRevenue(id, revenue),
+  });
+}
+
 // 5. Quản lý xác nhận
 export function useConfirmationStats(id: number, params?: { status?: string; search?: string; page?: number; pageSize?: number }) {
   return useQuery({
