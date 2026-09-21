@@ -25,7 +25,7 @@ import { useToast, useUserRole } from "@/components/providers";
 import { getPayrollStatuses, getWorkflowStage, statusConfig } from "@/components/payroll/payroll-config";
 import { Badge, Button, Modal, MonthPicker, ProjectSelect, StatusBadge, TablePaginationFooter } from "@/components/ui";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
-import { usePayrollPeriods, useSyncTimesheet, useApprovedTimesheets, usePayrollProjects } from "@/lib/hooks/use-payroll";
+import { usePayrollPeriods, useSyncTimesheet, useCalculatePayroll, useApprovedTimesheets, usePayrollProjects } from "@/lib/hooks/use-payroll";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 
@@ -44,14 +44,14 @@ export function PayrollWorkspacePage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  
+
   const [createOpen, setCreateOpen] = useState(false);
   const [createSheetId, setCreateSheetId] = useState<number | null>(null);
-  
+
   const [generating, setGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [generationStep, setGenerationStep] = useState(0);
-  
+
   const { notify } = useToast();
   const router = useRouter();
 
@@ -74,10 +74,10 @@ export function PayrollWorkspacePage() {
     if (!filterProject) return null;
     return allProjects?.find(
       (p) =>
-        p.id === Number(filterProject) ||
         p.projectId === Number(filterProject) ||
-        String(p.id) === String(filterProject) ||
-        String(p.projectId) === String(filterProject)
+        String(p.projectId) === String(filterProject) ||
+        p.id === Number(filterProject) ||
+        String(p.id) === String(filterProject)
     );
   }, [allProjects, filterProject]);
 
@@ -95,6 +95,7 @@ export function PayrollWorkspacePage() {
   const totalPayrolls = periodsData?.total || 0;
 
   const syncMutation = useSyncTimesheet();
+  const calculateMutation = useCalculatePayroll();
 
   const handleOpenCreateModal = () => {
     if (!filterProject || filterProject === "all") {
@@ -108,28 +109,45 @@ export function PayrollWorkspacePage() {
   const handleGenerate = async () => {
     if (!createSheetId) return;
     setGenerating(true);
-    setGenerationProgress(4);
+    setGenerationProgress(10);
+    setGenerationStep(0);
     try {
-      for (let index = 0; index < generationSteps.length; index += 1) {
-        setGenerationStep(index);
-        const target = (index + 1) * 20;
-        for (let progress = index * 20 + 8; progress <= target; progress += 4) {
-          await new Promise((resolve) => window.setTimeout(resolve, 90));
-          setGenerationProgress(Math.min(progress, 100));
-        }
-      }
-      
+      // Step 1: Kiểm tra trạng thái bảng công
+      setGenerationStep(0);
+      setGenerationProgress(15);
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+
+      // Step 2: Đối chiếu Master Data nhân sự
+      setGenerationStep(1);
+      setGenerationProgress(30);
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+
+      // Step 3: Tổng hợp chế độ lương và bảo hiểm
+      setGenerationStep(2);
+      setGenerationProgress(45);
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+
+      // Step 4: Khởi tạo bảng lương dự thảo (Sync Timesheet)
+      setGenerationStep(3);
+      setGenerationProgress(65);
       const res = await syncMutation.mutateAsync({
         projectTimesheetId: createSheetId,
+      });
+
+      // Step 5: Chạy tính toán bảng lương (Trigger Calculation)
+      setGenerationStep(4);
+      setGenerationProgress(90);
+      await calculateMutation.mutateAsync({
+        id: res.payrollPeriodId,
       });
 
       setGenerationProgress(100);
       await new Promise((resolve) => window.setTimeout(resolve, 350));
       setCreateOpen(false);
-      notify(`Đã tạo/đồng bộ bảng lương thành công`);
+      notify("Đã tạo và tính toán bảng lương thành công");
       router.push(`/payroll/${res.payrollPeriodId}`);
     } catch (error: any) {
-      notify(error.message || "Không thể tạo bảng lương.", "error");
+      notify(error.message || "Không thể tạo và tính toán bảng lương.", "error");
     } finally {
       setGenerating(false);
       setGenerationProgress(0);
@@ -241,7 +259,7 @@ export function PayrollWorkspacePage() {
                       ? 100
                       : Math.min(100, Math.max(12, Math.round(((stage - 1) / 8) * 100)));
                     const feedbackCount = run.disputeCount ?? (run as any).feedbackCount ?? 0;
-                    
+
                     return (
                       <tr key={run.id} onClick={() => router.push(`/payroll/${run.id}`)}>
                         <td>
@@ -340,7 +358,29 @@ export function PayrollWorkspacePage() {
         )}
       </section>
 
-      <Modal open={createOpen} onOpenChange={(open) => { if (!generating) setCreateOpen(open); }} title={generating ? "Đang tạo bảng lương" : "Tạo bảng lương mới"} description={generating ? "Hệ thống đang đối chiếu dữ liệu và thực hiện công thức tính." : "Chọn bảng công đã duyệt để đồng bộ dữ liệu vào kỳ lương mới."} size="lg" footer={generating ? undefined : <><Button onClick={() => setCreateOpen(false)}>Hủy</Button><Button variant="primary" disabled={!createSheetId} onClick={handleGenerate}>Tạo bảng lương</Button></>}>
+      <Modal
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!generating) setCreateOpen(open);
+        }}
+        title={generating ? "Đang tạo & tính toán bảng lương" : "Tạo & Tính bảng lương mới"}
+        description={
+          generating
+            ? "Hệ thống đang đồng bộ dữ liệu và thực thi công thức tính toán."
+            : "Chọn bảng công đã duyệt để đồng bộ dữ liệu và tự động tính toán kỳ lương mới."
+        }
+        size="lg"
+        footer={
+          generating ? undefined : (
+            <>
+              <Button onClick={() => setCreateOpen(false)}>Hủy</Button>
+              <Button variant="primary" disabled={!createSheetId} onClick={handleGenerate}>
+                Tạo & Tính bảng lương
+              </Button>
+            </>
+          )
+        }
+      >
         {generating ? (
           <div className="generation-panel">
             <div className="generation-orbit"><CircleDollarSign /><span>{generationProgress}%</span></div>
@@ -430,7 +470,7 @@ export function PayrollWorkspacePage() {
                           </em>
                         </div>
                         <StatusBadge tone={isCreated ? "neutral" : "success"}>
-                          {isCreated ? "Đã tạo bảng lương" : "Đã chốt"}
+                          {isCreated ? "Đã tạo bảng lương" : "Đã duyệt"}
                         </StatusBadge>
                       </label>
                     );

@@ -486,27 +486,27 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
           actionModal.action === "submit"
             ? "Trình duyệt bảng lương"
             : actionModal.action === "reject"
-            ? "Từ chối bảng lương"
-            : actionModal.step?.requiresDataInput
-            ? `Nhập số liệu & Phê duyệt (${actionModal.step.stepName})`
-            : actionModal.step?.requiresJustification
-            ? `Giải trình & Phê duyệt (${actionModal.step.stepName})`
-            : actionModal.step?.stepName
-            ? `Phê duyệt: ${actionModal.step.stepName}`
-            : "Phê duyệt bảng lương"
+              ? "Từ chối bảng lương"
+              : actionModal.step?.requiresDataInput
+                ? `Nhập số liệu & Phê duyệt (${actionModal.step.stepName})`
+                : actionModal.step?.requiresJustification
+                  ? `Giải trình & Phê duyệt (${actionModal.step.stepName})`
+                  : actionModal.step?.stepName
+                    ? `Phê duyệt: ${actionModal.step.stepName}`
+                    : "Phê duyệt bảng lương"
         }
         description={
           actionModal.action === "approve"
             ? actionModal.step?.requiresDataInput
               ? "Nhập doanh thu thực tế để hệ thống tự động đối chiếu tỷ lệ chi phí lương/doanh thu (A) và mức biến động (B) so với kỳ trước."
               : actionModal.step?.requiresJustification
-              ? "Bước này yêu cầu giải trình nguyên nhân chênh lệch chi phí lương / doanh thu vượt ngưỡng trước khi cấp quản lý phê duyệt."
-              : undefined
+                ? "Bước này yêu cầu giải trình nguyên nhân chênh lệch chi phí lương / doanh thu vượt ngưỡng trước khi cấp quản lý phê duyệt."
+                : undefined
             : undefined
         }
         size={
           actionModal.action === "approve" &&
-          (actionModal.step?.requiresDataInput || actionModal.step?.requiresJustification)
+            (actionModal.step?.requiresDataInput || actionModal.step?.requiresJustification)
             ? "md"
             : "sm"
         }
@@ -546,12 +546,12 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
               {actionModal.action === "submit"
                 ? "Trình duyệt"
                 : actionModal.action === "approve"
-                ? actionModal.step?.requiresDataInput
-                  ? "Lưu doanh thu & Duyệt"
-                  : actionModal.step?.requiresJustification
-                  ? "Giải trình & Duyệt"
-                  : "Phê duyệt"
-                : "Từ chối"}
+                  ? actionModal.step?.requiresDataInput
+                    ? "Lưu doanh thu & Duyệt"
+                    : actionModal.step?.requiresJustification
+                      ? "Giải trình & Duyệt"
+                      : "Phê duyệt"
+                  : "Từ chối"}
             </Button>
           </>
         }
@@ -759,8 +759,8 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
               {actionModal.action === "reject"
                 ? "Lý do từ chối (Bắt buộc)"
                 : actionModal.action === "submit"
-                ? "Ghi chú trình duyệt (Không bắt buộc)"
-                : "Ghi chú phê duyệt (Không bắt buộc)"}
+                  ? "Ghi chú trình duyệt (Không bắt buộc)"
+                  : "Ghi chú phê duyệt (Không bắt buộc)"}
               {actionModal.action === "reject" && <b className="text-destructive"> *</b>}
             </span>
             <textarea
@@ -1215,8 +1215,8 @@ function WorkflowTab({
                               {step.requiresDataInput
                                 ? "Nhập DT & Duyệt"
                                 : step.requiresJustification
-                                ? "Giải trình & Duyệt"
-                                : "Duyệt"}
+                                  ? "Giải trình & Duyệt"
+                                  : "Duyệt"}
                             </Button>
                             <Button size="sm" onClick={() => onAction("reject", step)}>
                               <RotateCcw /> Từ chối
