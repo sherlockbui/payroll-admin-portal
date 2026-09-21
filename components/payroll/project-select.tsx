@@ -66,13 +66,13 @@ export function ProjectSelect({
       setProjectCache((prev) => {
         const next = new Map(prev);
         for (const p of projects) {
-          const pId = p.id ?? p.projectId;
+          const pId = p.projectId ?? p.id;
           if (pId != null) {
             next.set(pId, p);
             next.set(String(pId), p);
-            if (p.projectId != null) {
-              next.set(p.projectId, p);
-              next.set(String(p.projectId), p);
+            if (p.id != null) {
+              next.set(p.id, p);
+              next.set(String(p.id), p);
             }
           }
         }
@@ -86,10 +86,10 @@ export function ProjectSelect({
     if (value === "" || value == null) return null;
     const directMatch = projects.find(
       (p) =>
-        p.id === Number(value) ||
         p.projectId === Number(value) ||
-        String(p.id) === String(value) ||
-        String(p.projectId) === String(value)
+        String(p.projectId) === String(value) ||
+        p.id === Number(value) ||
+        String(p.id) === String(value)
     );
     if (directMatch) return directMatch;
     return projectCache.get(value) || projectCache.get(Number(value)) || null;
@@ -295,13 +295,13 @@ export function ProjectSelect({
                 </div>
               ) : (
                 projects.map((project) => {
-                  const pId = project.id ?? project.projectId;
+                  const pId = project.projectId ?? project.id;
                   const isSelected =
                     !isAllSelected &&
-                    (Number(value) === project.id ||
-                      Number(value) === project.projectId ||
-                      String(value) === String(project.id) ||
-                      String(value) === String(project.projectId));
+                    (Number(value) === project.projectId ||
+                      String(value) === String(project.projectId) ||
+                      Number(value) === project.id ||
+                      String(value) === String(project.id));
 
                   return (
                     <button

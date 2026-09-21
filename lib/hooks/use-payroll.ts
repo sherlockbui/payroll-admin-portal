@@ -65,7 +65,18 @@ export function useSyncTimesheet() {
 export function useCalculatePayroll() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, employeeCode }: { id: number; employeeCode?: string }) => payrollApi.calculatePayroll(id, employeeCode || null),
+    mutationFn: ({
+      id,
+      employeeCodes,
+      employeeCode,
+    }: {
+      id: number;
+      employeeCodes?: string[] | null;
+      employeeCode?: string | null;
+    }) => {
+      const codes = employeeCodes ?? (employeeCode ? [employeeCode] : null);
+      return payrollApi.calculatePayroll(id, codes);
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["payroll-period", variables.id] });
       queryClient.invalidateQueries({ queryKey: ["payroll-summary", variables.id] });
@@ -156,19 +167,28 @@ export function useWorkflowTimeline(id: number) {
   });
 }
 
+export function usePreviewRevenue() {
+  return useMutation({
+    mutationFn: ({ id, revenue }: { id: number; revenue: number }) =>
+      payrollApi.previewRevenue(id, revenue),
+  });
+}
+
 // 5. Quản lý xác nhận
 export function useConfirmationStats(id: number, params?: { status?: string; search?: string; page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ["confirmation-stats", id, params],
     queryFn: () => payrollApi.getConfirmationStats(id, params),
     enabled: !!id,
+    placeholderData: (prev) => prev,
   });
 }
 
 export function useResolveDispute() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, confirmationId, resolutionNote }: { id: number; confirmationId: number; resolutionNote: string }) => payrollApi.resolveDispute(id, confirmationId, resolutionNote),
+    mutationFn: ({ id, confirmationId, resolvedNote, resolutionNote }: { id: number; confirmationId: number; resolvedNote?: string; resolutionNote?: string }) =>
+      payrollApi.resolveDispute(id, confirmationId, resolvedNote ?? resolutionNote ?? ""),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["confirmation-stats", variables.id] });
     },

@@ -1,11 +1,58 @@
 import type { UserRole } from "@/components/providers";
 
-export const statusConfig: Record<string, { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info"; short: string }> = {
-  draft: { label: "Bản nháp", short: "Nháp", tone: "neutral" },
-  calculated: { label: "Đã tính toán", short: "Đã tính", tone: "info" },
-  submitted: { label: "Chờ phê duyệt", short: "Chờ duyệt", tone: "warning" },
-  locked: { label: "Đã hoàn tất & khóa", short: "Đã khóa", tone: "success" },
+// 1. Trạng thái dữ liệu bảng lương (Period / Payroll Data Status)
+export const periodStatusConfig: Record<string, { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
+  draft: { label: "Bản nháp", tone: "neutral" },
+  calculated: { label: "Đã tính", tone: "info" },
+  submitted: { label: "Đã gửi duyệt", tone: "info" },
+  locked: { label: "Đã khóa", tone: "success" },
 };
+
+// 2. Trạng thái quy trình duyệt (Workflow Approval Status)
+export const workflowStatusConfig: Record<string, { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
+  not_started: { label: "Chưa duyệt", tone: "neutral" },
+  pending: { label: "Chờ duyệt", tone: "warning" },
+  approved: { label: "Đã duyệt", tone: "success" },
+  rejected: { label: "Từ chối", tone: "danger" },
+};
+
+// Alias for backwards compatibility
+export const statusConfig = periodStatusConfig;
+
+export function getPayrollStatuses(run?: any, timeline?: any) {
+  const periodStatus = (run?.status && periodStatusConfig[run.status])
+    ? periodStatusConfig[run.status]
+    : { label: run?.status || "—", tone: "neutral" as const };
+
+  const isStarted = Boolean(
+    timeline?.instance?.id ||
+    timeline?.instanceId ||
+    run?.wfInstanceId ||
+    (run?.status !== "draft" && run?.status !== "calculated")
+  );
+
+  const currentStepOrder = timeline?.instance?.currentStepOrder ?? run?.wfCurrentStepOrder;
+  const currentStepName = timeline?.instance?.currentStepName ?? run?.wfCurrentStepName;
+
+  let workflowStatus = workflowStatusConfig.not_started;
+
+  if (isStarted) {
+    if (run?.status === "locked") {
+      workflowStatus = workflowStatusConfig.approved;
+    } else {
+      const wfStatus = String(timeline?.instance?.status || timeline?.status || "pending").toLowerCase();
+      workflowStatus = workflowStatusConfig[wfStatus] || workflowStatusConfig.pending;
+    }
+  }
+
+  return {
+    periodStatus,
+    workflowStatus,
+    isStarted,
+    currentStepOrder,
+    currentStepName,
+  };
+}
 
 
 

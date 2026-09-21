@@ -5664,6 +5664,11 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .project-select-popover {
   min-width: 320px;
 }
+.payroll-readonly-box {
+  height: 38px;
+  min-height: 38px;
+  box-sizing: border-box;
+}
 .payroll-header-actions { display: flex; align-items: center; gap: 10px; }
 .payroll-action-btn { height: 38px; padding: 0 16px; font-size: 13px; font-weight: 600; background: #038b8c; color: white; border-radius: 6px; display: inline-flex; align-items: center; gap: 8px; border: none; cursor: pointer; transition: background 0.15s; }
 .payroll-action-btn:hover { background: #026d6e; }
@@ -5698,7 +5703,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .payroll-period-filter .month-picker-trigger { width: 100%; }
 
 .payroll-table-wrap { width: 100%; overflow-x: auto; }
-.payroll-table { width: 100%; min-width: 1000px; border-collapse: collapse; }
+.payroll-table { width: 100%; min-width: 1080px; border-collapse: collapse; }
 .payroll-table th { height: 40px; padding: 8px 14px; color: #475569; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; letter-spacing: .03em; text-align: left; text-transform: uppercase; white-space: nowrap; }
 .payroll-table td { min-height: 52px; padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; vertical-align: middle; }
 .payroll-table tbody tr { transition: background .15s; }
@@ -5717,8 +5722,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .money-value { color: var(--foreground) !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .deduction-value { color: var(--destructive) !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .muted-dash { color: var(--muted); }
-.payroll-progress-cell { min-width: 190px; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
-.payroll-progress-cell > div { width: 100%; height: 4px; border-radius: 999px; background: var(--secondary); overflow: hidden; }
+.payroll-progress-cell { min-width: 130px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.payroll-progress-cell > div { width: 90px; max-width: 100%; height: 4px; border-radius: 999px; background: var(--secondary); overflow: hidden; }
 .payroll-progress-cell > div span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), #38bdf8); }
 .payroll-feedback-trigger { min-width: 44px; height: 28px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid transparent; border-radius: 999px; font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }
 .payroll-feedback-trigger.warning { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 28%, transparent); background: var(--warning-soft); }
@@ -6169,7 +6174,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .payroll-line-view-switch button:hover { color: var(--foreground); }
 .payroll-line-view-switch button.active { color: var(--primary); background: var(--card); box-shadow: var(--shadow-sm); }
 .payroll-line-view-switch button svg { width: 14px; height: 14px; }
-.payroll-line-search { width: min(300px, 100%); }
+.payroll-line-search { width: min(460px, 100%); min-width: 360px; }
 .text-center { text-align: center !important; }
 .text-right { text-align: right !important; }
 .text-left { text-align: left !important; }
@@ -6205,6 +6210,10 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .payroll-lines-table tbody tr:hover td { background-color: color-mix(in srgb, var(--primary) 5%, var(--card)); }
 .payroll-lines-table tbody tr:hover td.payroll-line-employee-sticky,
 .payroll-lines-table tbody tr:hover td.payroll-line-action-sticky { background-color: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.payroll-lines-table tbody tr.is-selected td { background-color: color-mix(in srgb, var(--primary) 8%, var(--card)); }
+.payroll-lines-table tbody tr.is-selected td.payroll-line-employee-sticky { background-color: color-mix(in srgb, var(--primary) 12%, var(--card)); }
+.payroll-lines-table tbody tr.is-selected:hover td { background-color: color-mix(in srgb, var(--primary) 12%, var(--card)); }
+.payroll-lines-table tbody tr.is-selected:hover td.payroll-line-employee-sticky { background-color: color-mix(in srgb, var(--primary) 16%, var(--card)); }
 
 /* Column Alignments (Centered for days, hours, text; Right-aligned for currency) */
 .payroll-lines-table thead th.payroll-col-days,

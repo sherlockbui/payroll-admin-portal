@@ -319,13 +319,31 @@ Khi người dùng truy cập các màn hình quản lý bảng lương:
   - Tự động nạp các khoản Thu nhập khác (`payroll.payroll_other_income`, tiền lương điều chỉnh `adjustment_salary`, lương hỗ trợ dự án khác `support_other_project_salary`) và cộng vào `grossSalary`.
   - Tự động nạp các khoản Khấu trừ khác (`payroll.payroll_other_deduction`, tạm ứng lương, tạm ứng qua ứng dụng Ekko) và trừ vào `totalDeduction` cùng `netSalary`.
   - **Tối ưu hóa Senior BE:** Để tránh response payload phình to hàng chục MB gây nghẽn băng thông và timeout khi dự án có hàng nghìn công nhân, API này **chỉ trả về Báo cáo kết quả thực thi (Execution Summary)**. Sau khi tính xong, Frontend gọi API `2.4 (GET /employees)` hoặc `2.6 (GET /payroll-sheet)` có phân trang để hiển thị bảng dữ liệu.
-- **Request Body:**
+- **Request Body (Tùy chọn):**
 ```json
+// Trường hợp 1: Tính toàn bộ nhân viên trong kỳ lương
+{}
+// hoặc gửi null / body rỗng
+
+// Trường hợp 2: Tính cho 1 nhân viên cụ thể (gửi mảng 1 phần tử)
 {
-  "employeeCode": null
+  "employeeCodes": [
+    "00092"
+  ]
+}
+
+// Trường hợp 3: Tính cho nhiều nhân viên cụ thể (gửi mảng nhiều phần tử)
+{
+  "employeeCodes": [
+    "00092",
+    "00287",
+    "00315"
+  ]
 }
 ```
-*(Nếu `employeeCode` = null: Tính cho toàn bộ nhân viên; nếu có giá trị: Chỉ tính cho nhân viên cụ thể đó).*
+| Thuộc tính | Kiểu | Bắt buộc | Mô tả |
+|---|---|:---:|---|
+| `employeeCodes` | `string[]` | | Danh sách mã các nhân viên cần tính toán (`["00092"]` hoặc `["00092", "00287"]`). Nếu để `null` hoặc mảng rỗng `[]`: Tính toán cho toàn bộ nhân viên trong kỳ |
 
 - **Response `200 OK`:**
 ```json
@@ -716,6 +734,33 @@ Khi người dùng truy cập các màn hình quản lý bảng lương:
 
 ---
 
+#### 3.5. Tính toán xem trước đối soát doanh thu (Preview Revenue)
+- **Method:** `GET`
+- **URL:** `/periods/{id}/workflow/preview-revenue`
+- **Mô tả:** Được gọi trong Bước 5 khi Kế toán nhập doanh thu dự án tháng này. Hệ thống tự động tính toán đối soát với chi phí lương kỳ này, doanh thu & chi phí lương kỳ trước, tính chênh lệch tỷ lệ A và chênh lệch số tiền B, đồng thời xác định xem chênh lệch có trong ngưỡng an toàn hay bắt buộc phải giải trình (`requiresJustification`).
+- **Query Parameters:**
+  - `revenue` (`decimal`, Bắt buộc): Số tiền doanh thu tháng này cần đối soát (vd: `500000000`).
+- **Response `200 OK`:**
+```json
+{
+  "success": true,
+  "data": {
+    "currentPayrollCost": 120000000,
+    "currentRevenue": 500000000,
+    "prevPayrollCost": 110000000,
+    "prevRevenue": 480000000,
+    "diffRatioA": 1.0833,
+    "diffAmountB": 5416500,
+    "isSafe": true,
+    "requiresJustification": false,
+    "message": "Chênh lệch trong ngưỡng an toàn: A = 1.08%, B = 5,416,500 đ. Không yêu cầu giải trình."
+  },
+  "message": "Tính toán xem trước đối soát doanh thu thành công."
+}
+```
+
+---
+
 ### NHÓM 4: CỔNG NHÂN VIÊN (EMPLOYEE PORTAL)
 
 #### 4.1. Người lao động tự xem phiếu lương của mình
@@ -826,7 +871,7 @@ Khi người dùng truy cập các màn hình quản lý bảng lương:
 - **Request Body:**
 ```json
 {
-  "resolutionNote": "Đã đối chiếu bảng quẹt thẻ ca D12 ngày 03/06. Tiền làm thêm 4h đã được cộng chính xác trong mục OT_NORMAL_SALARY (1.225.385 đ)."
+  "resolvedNote": "Đã đối chiếu bảng quẹt thẻ ca D12 ngày 03/06. Tiền làm thêm 4h đã được cộng chính xác trong mục OT_NORMAL_SALARY (1.225.385 đ)."
 }
 ```
 - **Response `200 OK` (Semantic Entity Result):**
@@ -837,7 +882,7 @@ Khi người dùng truy cập các màn hình quản lý bảng lương:
   "data": {
     "confirmationId": 801,
     "status": "resolved",
-    "resolutionNote": "Đã đối chiếu bảng quẹt thẻ ca D12 ngày 03/06. Tiền làm thêm 4h đã được cộng chính xác trong mục OT_NORMAL_SALARY (1.225.385 đ).",
+    "resolvedNote": "Đã đối chiếu bảng quẹt thẻ ca D12 ngày 03/06. Tiền làm thêm 4h đã được cộng chính xác trong mục OT_NORMAL_SALARY (1.225.385 đ).",
     "resolvedAt": "2026-06-28T09:00:00"
   }
 }

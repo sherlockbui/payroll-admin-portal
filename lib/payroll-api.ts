@@ -10,6 +10,7 @@ import type {
   PayrollMatrix,
   WorkflowTimeline,
   ConfirmationStats,
+  PreviewRevenueResult,
 } from "./payroll-types";
 
 // Temporarily point to ngrok backend
@@ -98,9 +99,17 @@ export const payrollApi = {
   syncTimesheet: (payload: { projectTimesheetId: number; payrollPeriodId?: number; forceResetManual?: boolean }) =>
     payrollRequest<any>("/periods/sync-timesheet", { method: "POST", body: JSON.stringify(payload) }).then((res) => res.data),
     
-  // 2.2 Chạy tính toán bảng lương
-  calculatePayroll: (id: number, employeeCode: string | null = null) =>
-    payrollRequest<CalculationSummary>(`/periods/${id}/calculate`, { method: "POST", body: JSON.stringify({ employeeCode }) }).then((res) => res.data),
+  // 2.2 Chạy tính toán bảng lương (hỗ trợ tính toàn bộ hoặc nhóm mã nhân viên)
+  calculatePayroll: (id: number, employeeCodes?: string[] | null) => {
+    const body: Record<string, any> = {};
+    if (employeeCodes && employeeCodes.length > 0) {
+      body.employeeCodes = employeeCodes;
+    }
+    return payrollRequest<CalculationSummary>(`/periods/${id}/calculate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).then((res) => res.data);
+  },
     
   // 2.3 Dashboard KPI tổng quan kỳ lương
   getSummary: (id: number) =>
@@ -164,11 +173,51 @@ export const payrollApi = {
     
   rejectWorkflow: (id: number, reason: string) =>
     payrollRequest<any>(`/periods/${id}/workflow/reject`, { method: "POST", body: JSON.stringify({ reason }) }).then((res) => res.data),
+
+  // 3.4 Xem trước đối soát doanh thu (Preview Revenue)
+  previewRevenue: (id: number, revenue: number) =>
+    payrollRequest<PreviewRevenueResult>(`/periods/${id}/workflow/preview-revenue?revenue=${revenue}`).then((res) => res.data),
     
   getWorkflowTimeline: async (id: number): Promise<WorkflowTimeline | null> => {
     try {
-      const res = await payrollRequest<WorkflowTimeline>(`/periods/${id}/workflow`);
-      return res.data;
+      const res = await payrollRequest<any>(`/periods/${id}/workflow`);
+      const data = res.data;
+      if (!data) return null;
+
+      const instance: WorkflowInstance = data.instance || {
+        id: data.instanceId,
+        entityType: "MONTHLY_PAYROLL",
+        entityId: id,
+        status: data.status,
+        currentStepOrder: data.currentStepOrder,
+        currentStepName: data.currentStepName,
+        stepDeadline: data.stepDeadline ?? data.deadlineAt ?? null,
+        canApprove: data.canApprove,
+        canReject: data.canReject,
+        currentApprovers: data.currentApprovers || [],
+      };
+
+      const history = data.history || (data.actionLogs || []).map((log: any) => ({
+        stepOrder: log.stepOrder,
+        stepName: log.stepName,
+        action: log.action,
+        actorName: log.actorName,
+        comment: log.note || log.comment || "",
+        note: log.note || log.comment || "",
+        createdAt: log.createdAt,
+      }));
+
+      const steps = (data.steps || []).map((s: any) => ({
+        ...s,
+        completedAt: s.completedAt || s.approvedAt,
+      }));
+
+      return {
+        ...data,
+        instance,
+        steps,
+        history,
+      };
     } catch (err: any) {
       if (err instanceof PayrollApiError && (err.status === 404 || err.code === "NOT_FOUND")) {
         return null;
@@ -184,9 +233,23 @@ export const payrollApi = {
         .filter(([, v]) => v !== undefined && v !== null && v !== "")
         .map(([k, v]) => [k, String(v)])
     );
-    return payrollRequest<ConfirmationStats>(`/periods/${id}/confirmations?${query}`).then((res) => res.data);
+    return payrollRequest<ConfirmationStats>(`/periods/${id}/confirmations?${query}`).then((res) => {
+      const data = res.data;
+      if (data) {
+        if (!data.items && (data as any).disputes) {
+          data.items = (data as any).disputes;
+        }
+        if (!data.disputes && data.items) {
+          data.disputes = data.items;
+        }
+      }
+      return data;
+    });
   },
   
-  resolveDispute: (id: number, confirmationId: number, resolutionNote: string) =>
-    payrollRequest<any>(`/periods/${id}/confirmations/${confirmationId}/resolve`, { method: "POST", body: JSON.stringify({ resolutionNote }) }).then((res) => res.data),
+  resolveDispute: (id: number, confirmationId: number, resolvedNote: string) =>
+    payrollRequest<any>(`/periods/${id}/confirmations/${confirmationId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ resolvedNote }),
+    }).then((res) => res.data),
 };
