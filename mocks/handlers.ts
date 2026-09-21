@@ -6,7 +6,6 @@ import type {
   ApiResponse,
   AttendanceConfig,
   AuditLogV3,
-  BulkConfirmRequestV3,
   CreateDependentRequestV3,
   DataMapping,
   Dependent,
@@ -128,23 +127,23 @@ let mockSalaryStructuresStore: Array<{
   isActive: boolean;
   description: string | null;
 }> = [
-  {
-    id: 1,
-    projectId: "1017",
-    code: "STR_KCV_NM_2026",
-    name: "Cấu trúc bảng lương KCV-NM theo Quy chế V03",
-    isActive: true,
-    description: "Áp dụng cho toàn bộ khối nhà máy năm 2026",
-  },
-  {
-    id: 2,
-    projectId: "1017",
-    code: "STR_OFFICE_2026",
-    name: "Cấu trúc lương Khối Văn phòng & Quản lý",
-    isActive: true,
-    description: "Quy chế chi trả cho nhân sự văn phòng và quản lý dự án",
-  },
-];
+    {
+      id: 1,
+      projectId: "1017",
+      code: "STR_KCV_NM_2026",
+      name: "Cấu trúc bảng lương KCV-NM theo Quy chế V03",
+      isActive: true,
+      description: "Áp dụng cho toàn bộ khối nhà máy năm 2026",
+    },
+    {
+      id: 2,
+      projectId: "1017",
+      code: "STR_OFFICE_2026",
+      name: "Cấu trúc lương Khối Văn phòng & Quản lý",
+      isActive: true,
+      description: "Quy chế chi trả cho nhân sự văn phòng và quản lý dự án",
+    },
+  ];
 
 const ok = <T,>(data: T, init?: ResponseInit) =>
   HttpResponse.json<ApiResponse<T>>({ data }, init);
@@ -686,264 +685,7 @@ export const handlers = [
     return ok(list);
   }),
 
-  http.get("/api/dependents", async ({ request }) => {
-    await delay(200);
-    const url = new URL(request.url);
-    const projId = url.searchParams.get("projectId");
-    const employeeId = url.searchParams.get("employeeId");
-    const status = url.searchParams.get("status");
-    const database = readMockDatabase();
-    let list = database.dependents ?? [];
-    if (projId && projId !== "all") {
-      list = list.filter((d) => d.projectId === projId);
-    }
-    if (employeeId) {
-      list = list.filter((d) => d.employeeId === employeeId);
-    }
-    if (status && status !== "all") {
-      list = list.filter((d) => d.status === status);
-    }
-    return ok(list);
-  }),
 
-  http.post("/api/dependents", async ({ request }) => {
-    await delay(300);
-    const payload = (await request.json()) as Partial<Dependent>;
-    const database = readMockDatabase();
-    const employee = database.employees.find((e) => e.id === payload.employeeId || e.code === payload.employeeCode);
-    const newDep: Dependent = {
-      id: uid("dep"),
-      employeeId: employee?.id ?? payload.employeeId ?? "",
-      employeeCode: employee?.code ?? payload.employeeCode ?? "",
-      employeeName: employee?.name ?? payload.employeeName ?? "",
-      projectId: employee?.projectId ?? payload.projectId ?? "",
-      fullName: payload.fullName ?? "",
-      relationship: payload.relationship ?? "child",
-      dob: payload.dob ?? "2020-01-01",
-      idCardOrTaxCode: payload.idCardOrTaxCode ?? "",
-      startDate: payload.startDate ?? new Date().toISOString().slice(0, 7),
-      endDate: payload.endDate,
-      attachmentUrl: payload.attachmentUrl ?? "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=600&auto=format&fit=crop&q=80",
-      attachmentName: payload.attachmentName ?? "CCCD_DinhKem.pdf",
-      attachmentType: payload.attachmentType ?? "cccd_2_sided",
-      creationMode: payload.creationMode ?? "bcsx_declare",
-      status: "pending_approval",
-    };
-    mutateMockDatabase((db) => {
-      db.dependents = [newDep, ...(db.dependents ?? [])];
-      const logItem: ActivityLogItem = {
-        id: uid("act"),
-        projectId: newDep.projectId || "prj-jss",
-        module: "dependents",
-        employeeId: newDep.employeeId,
-        employeeCode: newDep.employeeCode,
-        employeeName: newDep.employeeName,
-        actionType: "create",
-        actionLabel: "BCSX khai báo mới NPT",
-        details: `Khai báo NPT ${newDep.fullName} (Quan hệ: ${newDep.relationship === "child" ? "Con ruột / Con nuôi" : newDep.relationship === "spouse" ? "Vợ / Chồng" : newDep.relationship === "parent" ? "Cha / Mẹ" : "Người phụ thuộc khác"})`,
-        changedBy: "Nguyễn Văn Hùng (BCSX)",
-        reason: newDep.attachmentName || "Khai báo NPT mới",
-        createdAt: new Date().toISOString(),
-      };
-      db.activityLogs = [logItem, ...(db.activityLogs ?? [])];
-    });
-    return ok(newDep);
-  }),
-
-  http.post("/api/dependents/import", async ({ request }) => {
-    await delay(400);
-    const payload = (await request.json()) as { projectId: string; items: Partial<Dependent>[] };
-    const database = readMockDatabase();
-    const newDeps: Dependent[] = (payload.items ?? []).map((item) => {
-      const emp = database.employees.find((e) => e.code === item.employeeCode || e.id === item.employeeId);
-      return {
-        id: uid("dep"),
-        employeeId: emp?.id ?? item.employeeId ?? "",
-        employeeCode: emp?.code ?? item.employeeCode ?? "",
-        employeeName: emp?.name ?? item.employeeName ?? "",
-        projectId: payload.projectId,
-        fullName: item.fullName ?? "",
-        relationship: item.relationship ?? "child",
-        dob: item.dob ?? "2019-01-01",
-        idCardOrTaxCode: item.idCardOrTaxCode ?? "",
-        startDate: item.startDate ?? "2026-08",
-        attachmentUrl: item.attachmentUrl ?? "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=600&auto=format&fit=crop&q=80",
-        attachmentName: item.attachmentName ?? "CCCD_Import.pdf",
-        attachmentType: item.attachmentType ?? "cccd_2_sided",
-        creationMode: "accountant_import",
-        status: "pending_approval",
-      };
-    });
-    mutateMockDatabase((db) => {
-      db.dependents = [...newDeps, ...(db.dependents ?? [])];
-    });
-    return ok(newDeps);
-  }),
-
-  http.post("/api/dependents/confirm", async ({ request }) => {
-    await delay(300);
-    const payload = (await request.json()) as { ids: string[]; verifiedBy?: string };
-    const targetIds = new Set(payload.ids ?? []);
-    const verifiedBy = payload.verifiedBy ?? "Trần Thu Trang (Kế toán)";
-    const verifiedAt = new Date().toISOString().replace("T", " ").slice(0, 16);
-
-    let updatedList: Dependent[] = [];
-    mutateMockDatabase((db) => {
-      db.dependents = (db.dependents ?? []).map((d) => {
-        if (targetIds.has(d.id)) {
-          return {
-            ...d,
-            status: "approved",
-            verifiedBy,
-            verifiedAt,
-            rejectionReason: undefined,
-          };
-        }
-        return d;
-      });
-      updatedList = db.dependents.filter((d) => targetIds.has(d.id));
-
-      // Synchronize Tax Config approved dependents count
-      const empIds = new Set(updatedList.map((d) => d.employeeId));
-      db.taxConfigs = (db.taxConfigs ?? []).map((tc) => {
-        if (empIds.has(tc.employeeId)) {
-          const approvedCount = db.dependents.filter((d) => d.employeeId === tc.employeeId && d.status === "approved").length;
-          return {
-            ...tc,
-            approvedDependentsCount: approvedCount,
-            dependentDeduction: approvedCount * 4400000,
-          };
-        }
-        return tc;
-      });
-
-      updatedList.forEach((d) => {
-        const logItem: ActivityLogItem = {
-          id: uid("act"),
-          projectId: d.projectId || "prj-jss",
-          module: "dependents",
-          employeeId: d.employeeId,
-          employeeCode: d.employeeCode,
-          employeeName: d.employeeName,
-          actionType: "approve",
-          actionLabel: "Kế toán xét duyệt NPT",
-          details: `Duyệt hồ sơ NPT ${d.fullName} hợp lệ (Giảm trừ 4.400.000đ/tháng)`,
-          changedBy: verifiedBy,
-          reason: "Hồ sơ CCCD/Khai sinh hợp lệ",
-          createdAt: new Date().toISOString(),
-        };
-        db.activityLogs = [logItem, ...(db.activityLogs ?? [])];
-      });
-    });
-    return ok(updatedList);
-  }),
-
-  http.post("/api/dependents/:id/reject", async ({ params, request }) => {
-    await delay(300);
-    const id = String(params.id);
-    const payload = (await request.json()) as { reason: string };
-    const verifiedBy = "Trần Thu Trang (Kế toán)";
-    const verifiedAt = new Date().toISOString().replace("T", " ").slice(0, 16);
-
-    let rejectedItem: Dependent | undefined;
-    mutateMockDatabase((db) => {
-      const idx = (db.dependents ?? []).findIndex((d) => d.id === id);
-      if (idx >= 0) {
-        db.dependents[idx] = {
-          ...db.dependents[idx],
-          status: "rejected",
-          verifiedBy,
-          verifiedAt,
-          rejectionReason: payload.reason,
-        };
-        rejectedItem = db.dependents[idx];
-
-        // Sync Tax Config
-        const empId = rejectedItem.employeeId;
-        const approvedCount = db.dependents.filter((d) => d.employeeId === empId && d.status === "approved").length;
-        const tcIdx = (db.taxConfigs ?? []).findIndex((tc) => tc.employeeId === empId);
-        if (tcIdx >= 0) {
-          db.taxConfigs[tcIdx] = {
-            ...db.taxConfigs[tcIdx],
-            approvedDependentsCount: approvedCount,
-            dependentDeduction: approvedCount * 4400000,
-          };
-        }
-
-        const logItem: ActivityLogItem = {
-          id: uid("act"),
-          projectId: rejectedItem.projectId || "prj-jss",
-          module: "dependents",
-          employeeId: rejectedItem.employeeId,
-          employeeCode: rejectedItem.employeeCode,
-          employeeName: rejectedItem.employeeName,
-          actionType: "reject",
-          actionLabel: "Từ chối hồ sơ NPT",
-          details: `Từ chối hồ sơ NPT ${rejectedItem.fullName}`,
-          changedBy: verifiedBy,
-          reason: payload.reason,
-          createdAt: new Date().toISOString(),
-        };
-        db.activityLogs = [logItem, ...(db.activityLogs ?? [])];
-      }
-    });
-    return rejectedItem ? ok(rejectedItem) : fail(404, "DEPENDENT_NOT_FOUND", "Không tìm thấy người phụ thuộc");
-  }),
-
-  http.put("/api/dependents/:id", async ({ params, request }) => {
-    await delay(250);
-    const id = String(params.id);
-    const payload = (await request.json()) as Partial<Dependent>;
-
-    let updatedItem: Dependent | undefined;
-    mutateMockDatabase((db) => {
-      const idx = (db.dependents ?? []).findIndex((d) => d.id === id);
-      if (idx >= 0) {
-        db.dependents[idx] = {
-          ...db.dependents[idx],
-          ...payload,
-        };
-        updatedItem = db.dependents[idx];
-
-        const empId = db.dependents[idx].employeeId;
-        const approvedCount = db.dependents.filter((d) => d.employeeId === empId && d.status === "approved").length;
-        const tcIdx = (db.taxConfigs ?? []).findIndex((t) => t.employeeId === empId);
-        if (tcIdx >= 0) {
-          db.taxConfigs[tcIdx] = {
-            ...db.taxConfigs[tcIdx],
-            approvedDependentsCount: approvedCount,
-            dependentDeduction: approvedCount * 4400000,
-          };
-        }
-      }
-    });
-    return updatedItem ? ok(updatedItem) : fail(404, "DEPENDENT_NOT_FOUND", "Không tìm thấy người phụ thuộc");
-  }),
-
-  http.patch("/api/dependents/:id/attachment", async ({ params, request }) => {
-    await delay(250);
-    const id = String(params.id);
-    const payload = (await request.json()) as {
-      attachmentType: NonNullable<Dependent["attachmentType"]>;
-      attachmentName: string;
-      attachmentUrl?: string;
-    };
-
-    let updatedItem: Dependent | undefined;
-    mutateMockDatabase((db) => {
-      const idx = (db.dependents ?? []).findIndex((d) => d.id === id);
-      if (idx >= 0) {
-        db.dependents[idx] = {
-          ...db.dependents[idx],
-          attachmentType: payload.attachmentType,
-          attachmentName: payload.attachmentName,
-          attachmentUrl: payload.attachmentUrl ?? db.dependents[idx].attachmentUrl,
-        };
-        updatedItem = db.dependents[idx];
-      }
-    });
-    return updatedItem ? ok(updatedItem) : fail(404, "DEPENDENT_NOT_FOUND", "Không tìm thấy người phụ thuộc");
-  }),
 
   http.get("/api/leave-records", async ({ request }) => {
     await delay(200);
@@ -1560,14 +1302,14 @@ export const handlers = [
           payload.baseSalary ??
           Number(
             (baseSalItem?.isCustom ? baseSalItem.customValue?.amount : baseSalItem?.defaultValue?.amount) ||
-              cur.baseSalary
+            cur.baseSalary
           );
 
         const insuranceSalary =
           payload.insuranceSalary ??
           Number(
             (insSalItem?.isCustom ? insSalItem.customValue?.amount : insSalItem?.defaultValue?.amount) ||
-              cur.insuranceSalary
+            cur.insuranceSalary
           );
 
         const totalAllowance = newPolicies
@@ -1733,7 +1475,7 @@ export const handlers = [
     const pId = projectId(params.projectId);
     const db = readMockDatabase();
     let groups = (db.projectEmployeeGroups ?? []).filter((g) => g.projectId === pId);
-    
+
     // Auto-seed default 3 groups for this project if none exist yet!
     if (groups.length === 0) {
       mutateMockDatabase((database) => {
@@ -2475,616 +2217,7 @@ export const handlers = [
     return okV3(items);
   }),
 
-  // 6. Dependents Summary
-  http.get("/api/web/payroll/dependents/summary", async ({ request }) => {
-    await delay(200);
-    const url = new URL(request.url);
-    const pId = url.searchParams.get("projectId");
-    const database = readMockDatabase();
-    let deps = database.dependentsV3 ?? initialDependentsV3;
-    if (pId && pId !== "all") {
-      deps = deps.filter((d) => String(d.employee.project?.projectId) === pId || d.employee.project?.projectCode === pId);
-    }
-    const counts = [
-      { key: "TOTAL", count: deps.length },
-      { key: "PENDING", count: deps.filter((d) => d.status === "PENDING").length },
-      { key: "CONFIRMED", count: deps.filter((d) => d.status === "CONFIRMED").length },
-      { key: "APPROVED", count: deps.filter((d) => d.status === "APPROVED").length },
-      { key: "REJECTED", count: deps.filter((d) => d.status === "REJECTED").length },
-      { key: "DRAFT", count: deps.filter((d) => d.status === "DRAFT").length },
-    ];
-    return okV3({ total: deps.length, counts });
-  }),
 
-  // 7. List Dependents
-  http.get("/api/web/payroll/dependents", async ({ request }) => {
-    await delay(300);
-    const url = new URL(request.url);
-    const pId = url.searchParams.get("projectId") || url.searchParams.get("ProjectId");
-    const search = (url.searchParams.get("search") || url.searchParams.get("Search") || "").trim().toLowerCase();
-    const relationship = url.searchParams.get("relationship") || url.searchParams.get("Relationship");
-    const status = url.searchParams.get("status") || url.searchParams.get("Status");
-    const page = Math.max(1, parseInt(url.searchParams.get("page") || url.searchParams.get("Page") || "1", 10));
-    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || url.searchParams.get("PageSize") || "10", 10));
-
-    const database = readMockDatabase();
-    let deps = database.dependentsV3 ?? initialDependentsV3;
-
-    if (pId && pId !== "all") {
-      deps = deps.filter((d) => String(d.employee.project?.projectId) === pId || d.employee.project?.projectCode === pId);
-    }
-
-    if (status && status !== "all") {
-      deps = deps.filter((d) => d.status.toUpperCase() === status.toUpperCase());
-    }
-
-    if (relationship && relationship !== "all") {
-      deps = deps.filter((d) => d.relationship.code.toUpperCase() === relationship.toUpperCase());
-    }
-
-    if (search) {
-      deps = deps.filter(
-        (d) =>
-          d.fullName.toLowerCase().includes(search) ||
-          d.identityNumber.toLowerCase().includes(search) ||
-          (d.taxCode && d.taxCode.toLowerCase().includes(search)) ||
-          d.employee.fullName.toLowerCase().includes(search) ||
-          d.employee.employeeCode.toLowerCase().includes(search)
-      );
-    }
-
-    const total = deps.length;
-    const totalPages = Math.ceil(total / pageSize) || 1;
-    const startIndex = (page - 1) * pageSize;
-    const pagedItems = deps.slice(startIndex, startIndex + pageSize);
-
-    return okV3({
-      items: pagedItems,
-      total,
-      page,
-      pageSize,
-      totalPages,
-    });
-  }),
-
-  // 8. Create Dependent
-  http.post("/api/web/payroll/dependents", async ({ request }) => {
-    await delay(350);
-    const payload = (await request.json()) as CreateDependentRequestV3;
-    if (!payload.employeeCode || !payload.fullName || !payload.identityNumber || !payload.relationshipCode) {
-      return errorV3(422, "Vui lòng điền đầy đủ các thông tin bắt buộc.", "VALIDATION_ERROR");
-    }
-
-    const database = readMockDatabase();
-    const relMaster = dependentRelationshipsMaster.find((r) => r.code === payload.relationshipCode) || {
-      code: payload.relationshipCode,
-      name: "Con ruột / Con nuôi hợp pháp",
-    };
-
-    const emp = database.employees.find((e) => e.code === payload.employeeCode) || {
-      code: payload.employeeCode,
-      name: payload.fullName || "Nhân viên",
-      idCard: "079090001122",
-      taxCode: "8090001122",
-    };
-
-    const newId = Date.now();
-    const newDependent: DependentDetailV3 = {
-      id: newId,
-      employee: {
-        employeeCode: payload.employeeCode,
-        fullName: emp.name,
-        project: { projectId: payload.projectId || 1017, projectCode: "JSS-ST", projectName: "Jabil Smart Solutions" },
-        identityNumber: (emp as any).idCard || "079090001122",
-        taxCode: (emp as any).taxCode || "8090001122",
-      },
-      fullName: payload.fullName,
-      dateOfBirth: payload.dateOfBirth || "2020-01-01",
-      identityNumber: payload.identityNumber,
-      taxCode: payload.taxCode || null,
-      relationship: {
-        code: relMaster.code,
-        name: relMaster.name,
-      },
-      effectiveFrom: payload.effectiveFrom || "2026-08",
-      effectiveTo: payload.effectiveTo || null,
-      documentType: payload.documentType,
-      status: "PENDING",
-      canConfirm: true,
-      canReject: true,
-      canEdit: true,
-      documentsCount: 0,
-      documents: [],
-      updatedAt: new Date().toISOString(),
-    };
-
-    const auditLog: AuditLogV3 = {
-      id: Date.now() + 1,
-      eventType: "DECLARED",
-      occurredAt: new Date().toISOString(),
-      actor: { id: 1, fullName: "Quản trị viên", roleName: "Nhân sự" },
-      employee: newDependent.employee,
-      dependent: { id: newId, fullName: newDependent.fullName },
-      description: `Khai báo người phụ thuộc ${newDependent.fullName} cho nhân viên ${newDependent.employee.fullName}.`,
-    };
-
-    mutateMockDatabase((db) => {
-      db.dependentsV3 = [newDependent, ...(db.dependentsV3 ?? initialDependentsV3)];
-      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
-    });
-
-    return okV3(newDependent, "Khai báo người phụ thuộc thành công.", "CREATED");
-  }),
-
-  // 8.1 Audit Logs (Declared before :dependentId)
-  http.get("/api/web/payroll/dependents/audit-logs", async ({ request }) => {
-    await delay(150);
-    const url = new URL(request.url);
-    const depId = url.searchParams.get("dependentId");
-    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
-    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10));
-
-    const database = readMockDatabase();
-    let logs = database.auditLogsV3 ?? initialAuditLogsV3;
-
-    if (depId) {
-      const dIdNum = Number(depId);
-      logs = logs.filter((l) => l.dependent?.id === dIdNum);
-    }
-
-    const total = logs.length;
-    const startIndex = (page - 1) * pageSize;
-    const paged = logs.slice(startIndex, startIndex + pageSize);
-
-    return okV3({
-      items: paged,
-      total,
-      page,
-      pageSize,
-    });
-  }),
-
-  // 9. Get Dependent Detail
-  http.get("/api/web/payroll/dependents/:dependentId", async ({ params }) => {
-    if (params.dependentId === "audit-logs" || params.dependentId === "summary" || params.dependentId === "bulk-confirm") {
-      return;
-    }
-    await delay(200);
-    const id = Number(params.dependentId);
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const found = deps.find((d) => d.id === id);
-    if (!found) {
-      return errorV3(404, "Không tìm thấy thông tin người phụ thuộc.", "NOT_FOUND");
-    }
-    return okV3(found);
-  }),
-
-  // 10. Update Dependent
-  http.put("/api/web/payroll/dependents/:dependentId", async ({ params, request }) => {
-    await delay(300);
-    const id = Number(params.dependentId);
-    const payload = (await request.json()) as UpdateDependentRequestV3;
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const index = deps.findIndex((d) => d.id === id);
-    if (index === -1) {
-      return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
-    }
-
-    const existing = deps[index];
-    let rel = existing.relationship;
-    if (payload.relationshipCode) {
-      const relMaster = dependentRelationshipsMaster.find((r) => r.code === payload.relationshipCode);
-      if (relMaster) {
-        rel = { code: relMaster.code, name: relMaster.name };
-      }
-    }
-
-    const updated: DependentDetailV3 = {
-      ...existing,
-      fullName: payload.fullName ?? existing.fullName,
-      dateOfBirth: payload.dateOfBirth ?? existing.dateOfBirth,
-      identityNumber: payload.identityNumber ?? existing.identityNumber,
-      taxCode: payload.taxCode !== undefined ? payload.taxCode : existing.taxCode,
-      relationship: rel,
-      effectiveFrom: payload.effectiveFrom ?? existing.effectiveFrom,
-      effectiveTo: payload.effectiveTo !== undefined ? payload.effectiveTo : existing.effectiveTo,
-      documentType: payload.documentType ?? existing.documentType,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const auditLog: AuditLogV3 = {
-      id: Date.now(),
-      eventType: "UPDATED",
-      occurredAt: new Date().toISOString(),
-      actor: { id: 1, fullName: "Quản trị viên", roleName: "Nhân sự" },
-      employee: updated.employee,
-      dependent: { id: updated.id, fullName: updated.fullName },
-      description: `Cập nhật thông tin người phụ thuộc ${updated.fullName}.`,
-    };
-
-    mutateMockDatabase((db) => {
-      const currentList = [...(db.dependentsV3 ?? initialDependentsV3)];
-      currentList[index] = updated;
-      db.dependentsV3 = currentList;
-      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
-    });
-
-    return okV3(updated, "Cập nhật thông tin thành công.");
-  }),
-
-  // 11. Delete Dependent
-  http.delete("/api/web/payroll/dependents/:dependentId", async ({ params }) => {
-    await delay(300);
-    const id = Number(params.dependentId);
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const found = deps.find((d) => d.id === id);
-    if (!found) {
-      return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
-    }
-
-    mutateMockDatabase((db) => {
-      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).filter((d) => d.id !== id);
-    });
-
-    return okV3({ id }, "Đã xóa người phụ thuộc.");
-  }),
-
-  // 12. Confirm Dependent
-  http.post("/api/web/payroll/dependents/:dependentId/confirm", async ({ params }) => {
-    await delay(300);
-    const id = Number(params.dependentId);
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const found = deps.find((d) => d.id === id);
-    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
-
-    const updated: DependentDetailV3 = {
-      ...found,
-      status: "CONFIRMED",
-      canConfirm: false,
-      canReject: true,
-      confirmedAt: new Date().toISOString(),
-      confirmedBy: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
-      updatedAt: new Date().toISOString(),
-    };
-
-    const auditLog: AuditLogV3 = {
-      id: Date.now(),
-      eventType: "CONFIRMED",
-      occurredAt: new Date().toISOString(),
-      actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
-      employee: updated.employee,
-      dependent: { id: updated.id, fullName: updated.fullName },
-      description: `Kế toán xác nhận hồ sơ người phụ thuộc ${updated.fullName} hợp lệ.`,
-    };
-
-    mutateMockDatabase((db) => {
-      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === id ? updated : d));
-      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
-    });
-
-    return okV3(updated, "Đã xác nhận hồ sơ người phụ thuộc.");
-  }),
-
-  // 13. Approve Dependent
-  http.post("/api/web/payroll/dependents/:dependentId/approve", async ({ params }) => {
-    await delay(300);
-    const id = Number(params.dependentId);
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const found = deps.find((d) => d.id === id);
-    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
-
-    const updated: DependentDetailV3 = {
-      ...found,
-      status: "APPROVED",
-      canConfirm: false,
-      canReject: false,
-      approvedAt: new Date().toISOString(),
-      approvedBy: { id: 5, fullName: "Lê Hoàng Quân", roleName: "Trưởng phòng C&B" },
-      updatedAt: new Date().toISOString(),
-    };
-
-    const auditLog: AuditLogV3 = {
-      id: Date.now(),
-      eventType: "APPROVED",
-      occurredAt: new Date().toISOString(),
-      actor: { id: 5, fullName: "Lê Hoàng Quân", roleName: "Trưởng phòng C&B" },
-      employee: updated.employee,
-      dependent: { id: updated.id, fullName: updated.fullName },
-      description: `Phê duyệt người phụ thuộc ${updated.fullName}.`,
-    };
-
-    mutateMockDatabase((db) => {
-      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === id ? updated : d));
-      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
-    });
-
-    return okV3(updated, "Đã phê duyệt người phụ thuộc.");
-  }),
-
-  // 14. Reject Dependent
-  http.post("/api/web/payroll/dependents/:dependentId/reject", async ({ params, request }) => {
-    await delay(300);
-    const id = Number(params.dependentId);
-    const payload = (await request.json()) as RejectDependentRequestV3;
-    if (!payload.reason || !payload.reason.trim()) {
-      return errorV3(422, "Vui lòng nhập lý do từ chối.", "REASON_REQUIRED");
-    }
-
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const found = deps.find((d) => d.id === id);
-    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
-
-    const updated: DependentDetailV3 = {
-      ...found,
-      status: "REJECTED",
-      rejectionReason: payload.reason.trim(),
-      canConfirm: false,
-      canReject: false,
-      canEdit: true,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const auditLog: AuditLogV3 = {
-      id: Date.now(),
-      eventType: "REJECTED",
-      occurredAt: new Date().toISOString(),
-      actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
-      employee: updated.employee,
-      dependent: { id: updated.id, fullName: updated.fullName },
-      description: `Từ chối hồ sơ người phụ thuộc ${updated.fullName}. Lý do: ${payload.reason.trim()}`,
-    };
-
-    mutateMockDatabase((db) => {
-      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === id ? updated : d));
-      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
-    });
-
-    return okV3(updated, "Đã từ chối hồ sơ người phụ thuộc.");
-  }),
-
-  // 15. Bulk Confirm
-  http.post("/api/web/payroll/dependents/bulk-confirm", async ({ request }) => {
-    await delay(400);
-    const payload = (await request.json()) as BulkConfirmRequestV3;
-    if (!payload.dependentIds || payload.dependentIds.length === 0) {
-      return errorV3(400, "Vui lòng chọn ít nhất một người phụ thuộc.", "NO_ITEMS");
-    }
-
-    const idsSet = new Set(payload.dependentIds);
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-
-    const updatedList = deps.map((d) => {
-      if (idsSet.has(d.id)) {
-        return {
-          ...d,
-          status: "CONFIRMED" as DependentStatusV3,
-          canConfirm: false,
-          canReject: true,
-          confirmedAt: new Date().toISOString(),
-          confirmedBy: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      return d;
-    });
-
-    const auditLog: AuditLogV3 = {
-      id: Date.now(),
-      eventType: "CONFIRMED",
-      occurredAt: new Date().toISOString(),
-      actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
-      description: `Xác nhận hàng loạt ${payload.dependentIds.length} người phụ thuộc.`,
-    };
-
-    mutateMockDatabase((db) => {
-      db.dependentsV3 = updatedList;
-      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
-    });
-
-    return okV3({ confirmedCount: payload.dependentIds.length }, `Đã xác nhận thành công ${payload.dependentIds.length} người phụ thuộc.`);
-  }),
-
-  // 16. Documents List
-  http.get("/api/web/payroll/dependents/:dependentId/documents", async ({ params }) => {
-    await delay(200);
-    const id = Number(params.dependentId);
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const found = deps.find((d) => d.id === id);
-    return okV3(found?.documents ?? []);
-  }),
-
-  // 17. Upload Document
-  http.post("/api/web/payroll/dependents/:dependentId/documents", async ({ params, request }) => {
-    await delay(450);
-    const id = Number(params.dependentId);
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const found = deps.find((d) => d.id === id);
-    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
-
-    let docType = "GIAY_KHAI_SINH";
-    let fileName = "TaiLieuDinhKem.pdf";
-    let fileSize = 1024000;
-
-    try {
-      const formData = await request.formData();
-      const file = formData.get("file") as File | null;
-      const type = formData.get("documentType") as string | null;
-      if (file) {
-        fileName = file.name;
-        fileSize = file.size;
-      }
-      if (type) docType = type;
-    } catch {
-      // Fallback
-    }
-
-    const docTypeItem = dependentDocumentTypesMaster.find((d) => d.code === docType) || {
-      code: "GIAY_KHAI_SINH" as const,
-      name: "Bản sao Giấy khai sinh",
-    };
-
-    const newDoc: DependentDocument = {
-      id: Date.now(),
-      dependentId: id,
-      documentType: docTypeItem.code,
-      documentTypeName: docTypeItem.name,
-      fileName,
-      fileSize,
-      fileUrl: `https://example.com/docs/${newDocId(id)}_${fileName}`,
-      uploadedAt: new Date().toISOString(),
-      uploadedBy: "Người dùng hệ thống",
-    };
-
-    const updatedDocuments = [...(found.documents ?? []), newDoc];
-    const updatedDep: DependentDetailV3 = {
-      ...found,
-      documentsCount: updatedDocuments.length,
-      documents: updatedDocuments,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const auditLog: AuditLogV3 = {
-      id: Date.now() + 1,
-      eventType: "DOCUMENT_UPLOADED",
-      occurredAt: new Date().toISOString(),
-      actor: { id: 1, fullName: "Người dùng hệ thống", roleName: "Nhân viên" },
-      employee: found.employee,
-      dependent: { id: found.id, fullName: found.fullName },
-      description: `Tải lên tài liệu minh chứng: ${newDoc.documentTypeName} (${newDoc.fileName}).`,
-    };
-
-    mutateMockDatabase((db) => {
-      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === id ? updatedDep : d));
-      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
-    });
-
-    return okV3(newDoc, "Tải lên tài liệu thành công.", "CREATED");
-  }),
-
-  // 18. Delete Document
-  http.delete("/api/web/payroll/dependents/:dependentId/documents/:documentId", async ({ params }) => {
-    await delay(300);
-    const depId = Number(params.dependentId);
-    const docId = Number(params.documentId);
-    const database = readMockDatabase();
-    const deps = database.dependentsV3 ?? initialDependentsV3;
-    const found = deps.find((d) => d.id === depId);
-    if (!found) return errorV3(404, "Không tìm thấy người phụ thuộc.", "NOT_FOUND");
-
-    const updatedDocs = (found.documents ?? []).filter((doc: DependentDocument) => doc.id !== docId);
-    const updatedDep: DependentDetailV3 = {
-      ...found,
-      documentsCount: updatedDocs.length,
-      documents: updatedDocs,
-      updatedAt: new Date().toISOString(),
-    };
-
-    mutateMockDatabase((db) => {
-      db.dependentsV3 = (db.dependentsV3 ?? initialDependentsV3).map((d) => (d.id === depId ? updatedDep : d));
-    });
-
-    return okV3({ documentId: docId }, "Đã xóa tài liệu đính kèm.");
-  }),
-
-  // 19. Download Document File
-  http.get("/api/web/payroll/dependents/:dependentId/documents/:documentId/file", async () => {
-    await delay(250);
-    const dummyContent = "Mock Dependent Document File Content (PDF / Image)";
-    return new HttpResponse(dummyContent, {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Disposition": 'attachment; filename="TaiLieuNguoiPhuThuoc.pdf"',
-      },
-    });
-  }),
-
-  // 20. Download Import Template
-  http.get("/api/web/payroll/dependents/import/template", async () => {
-    await delay(300);
-    const dummyCsv = "Mã nhân viên,Họ và tên NPT,Ngày sinh (YYYY-MM-DD),Số CCCD/Định danh,Mã số thuế,Mối quan hệ,Hiệu lực từ (YYYY-MM),Hiệu lực đến (YYYY-MM)\nNV-00124,Nguyễn Văn Mẫu,2020-01-01,079220001234,8092200012,CON_RUOT_NUOI,2026-08,";
-    return new HttpResponse(dummyCsv, {
-      headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": 'attachment; filename="Template_Import_NguoiPhuThuoc_V3.xlsx"',
-      },
-    });
-  }),
-
-  // 21. Import Dependents Excel
-  http.post("/api/web/payroll/dependents/import", async ({ request }) => {
-    await delay(600);
-    const database = readMockDatabase();
-    
-    // Simulate smart parsing and validation errors
-    const errors: ImportErrorDetailV3[] = [];
-    const simulatedTotal = 8;
-    const simulatedSuccess = 7;
-    const simulatedError = 1;
-
-    errors.push({
-      row: 4,
-      column: "Số CCCD/Định danh",
-      value: "079022",
-      message: "Số CCCD không hợp lệ (phải đủ 12 chữ số hợp lệ).",
-    });
-
-    const auditLog: AuditLogV3 = {
-      id: Date.now(),
-      eventType: "IMPORTED",
-      occurredAt: new Date().toISOString(),
-      actor: { id: 12, fullName: "Trần Thu Trang", roleName: "Kế toán tiền lương" },
-      description: `Import danh sách người phụ thuộc từ Excel: ${simulatedSuccess} thành công, ${simulatedError} lỗi.`,
-    };
-
-    mutateMockDatabase((db) => {
-      db.auditLogsV3 = [auditLog, ...(db.auditLogsV3 ?? initialAuditLogsV3)];
-    });
-
-    return okV3({
-      success: true,
-      totalRows: simulatedTotal,
-      successRows: simulatedSuccess,
-      errorRows: simulatedError,
-      errors,
-    }, "Xử lý tệp import hoàn tất.");
-  }),
-
-  // 22. Audit Logs
-  http.get("/api/web/payroll/dependents/audit-logs", async ({ request }) => {
-    await delay(200);
-    const url = new URL(request.url);
-    const depId = url.searchParams.get("dependentId");
-    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
-    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10));
-
-    const database = readMockDatabase();
-    let logs = database.auditLogsV3 ?? initialAuditLogsV3;
-
-    if (depId) {
-      const dIdNum = Number(depId);
-      logs = logs.filter((l) => l.dependent?.id === dIdNum);
-    }
-
-    const total = logs.length;
-    const startIndex = (page - 1) * pageSize;
-    const paged = logs.slice(startIndex, startIndex + pageSize);
-
-    return okV3({
-      items: paged,
-      total,
-      page,
-      pageSize,
-    });
-  }),
   // ================= 02. Phép năm (Annual Leave) OpenAPI 3.0 Handlers =================
   // 1. Annual Leave Summary
   http.get("/api/web/payroll/annual-leave/summary", async ({ request }) => {
@@ -3898,7 +3031,7 @@ export const handlers = [
         (m) =>
           m.employee.fullName.toLowerCase().includes(search) ||
           m.employee.employeeCode.toLowerCase().includes(search) ||
-          m.socialInsuranceNumber.includes(search) ||
+          (m.insuranceBookNumber || m.socialInsuranceNumber || "").includes(search) ||
           m.employee.department?.toLowerCase().includes(search)
       );
     }
@@ -3977,7 +3110,7 @@ export const handlers = [
         (c) =>
           c.employee.fullName.toLowerCase().includes(search) ||
           c.employee.employeeCode.toLowerCase().includes(search) ||
-          c.reason.toLowerCase().includes(search) ||
+          (c.reason || "").toLowerCase().includes(search) ||
           c.reconciliationCode?.toLowerCase().includes(search)
       );
     }
@@ -4141,15 +3274,16 @@ export const handlers = [
       const mIdx = members.findIndex((m) => m.employee.employeeCode.toUpperCase() === current.employee.employeeCode.toUpperCase());
       if (mIdx !== -1) {
         const m = members[mIdx];
-        const newSal = current.newSalary || m.contributionSalary;
+        const newSal = current.newSalary || current.newBaseSalary || m.contributionSalary || m.insuranceSalary || 0;
         members[mIdx] = {
           ...m,
           contributionSalary: newSal,
+          insuranceSalary: newSal,
           employeeContribution: Math.round(newSal * 0.105),
           employerContribution: Math.round(newSal * 0.215),
           totalContribution: Math.round(newSal * 0.32),
-          status: current.changeType === "DECREASE" ? "STOPPED" : "ACTIVE",
-          effectiveMonth: current.effectiveMonth,
+          status: current.changeType === "DECREASE" || current.changeType === "GIAM_HAN" ? "STOPPED" : "ACTIVE",
+          effectiveMonth: current.effectiveMonth || (current.effectiveFrom ? String(current.effectiveFrom).slice(0, 7) : ""),
         };
         db.socialInsuranceMembersV3 = members;
       }
@@ -4575,7 +3709,7 @@ export const handlers = [
         (i) =>
           i.employee.fullName.toLowerCase().includes(search) ||
           i.employee.employeeCode.toLowerCase().includes(search) ||
-          i.reason.toLowerCase().includes(search) ||
+          (i.reason?.toLowerCase().includes(search) ?? false) ||
           i.decisionNumber?.toLowerCase().includes(search)
       );
     }
@@ -4633,7 +3767,7 @@ export const handlers = [
       employee: empSummary,
       month: payload.month || "2026-08",
       type: payload.type || "OTHER",
-      typeName: typeNames[payload.type] || "Khoản giảm trừ khác",
+      typeName: (payload.type ? typeNames[payload.type] : undefined) || "Khoản giảm trừ khác",
       amount: Number(payload.amount),
       decisionNumber: payload.decisionNumber || null,
       decisionDate: payload.decisionDate || null,
@@ -4777,14 +3911,25 @@ export const handlers = [
     return okV3(summary, "Lấy tổng quan thu nhập khác thành công.");
   }),
 
+  http.get("/api/web/payroll/other-income-types", async () => {
+    await delay(100);
+    return okV3([
+      { id: 1, incomeCode: "HOT_BONUS", incomeName: "Thưởng nóng sáng kiến cải tiến" },
+      { id: 2, incomeCode: "PERFORMANCE_BONUS", incomeName: "Thưởng năng suất hiệu quả công việc" },
+      { id: 3, incomeCode: "HOLIDAY_BONUS", incomeName: "Thưởng lễ tết sự kiện" },
+      { id: 4, incomeCode: "PROJECT_SUPPORT", incomeName: "Hỗ trợ công tác dự án đặc thù" },
+      { id: 5, incomeCode: "OTHER", incomeName: "Khoản thu nhập khác" },
+    ], "Lấy danh mục loại thu nhập thành công.");
+  }),
+
   http.get("/api/web/payroll/master-data/other-income-types", async () => {
     await delay(100);
     return okV3([
-      { code: "HOT_BONUS", name: "Thưởng nóng sáng kiến cải tiến" },
-      { code: "PERFORMANCE_BONUS", name: "Thưởng năng suất hiệu quả công việc" },
-      { code: "HOLIDAY_BONUS", name: "Thưởng lễ tết sự kiện" },
-      { code: "PROJECT_SUPPORT", name: "Hỗ trợ công tác dự án đặc thù" },
-      { code: "OTHER", name: "Khoản thu nhập khác" },
+      { id: 1, code: "HOT_BONUS", name: "Thưởng nóng sáng kiến cải tiến" },
+      { id: 2, code: "PERFORMANCE_BONUS", name: "Thưởng năng suất hiệu quả công việc" },
+      { id: 3, code: "HOLIDAY_BONUS", name: "Thưởng lễ tết sự kiện" },
+      { id: 4, code: "PROJECT_SUPPORT", name: "Hỗ trợ công tác dự án đặc thù" },
+      { id: 5, code: "OTHER", name: "Khoản thu nhập khác" },
     ], "Lấy danh mục loại thu nhập thành công.");
   }),
 
@@ -4866,7 +4011,7 @@ export const handlers = [
         (i) =>
           i.employee.fullName.toLowerCase().includes(search) ||
           i.employee.employeeCode.toLowerCase().includes(search) ||
-          i.reason.toLowerCase().includes(search) ||
+          (i.reason?.toLowerCase().includes(search) ?? false) ||
           i.decisionNumber?.toLowerCase().includes(search)
       );
     }
@@ -4925,7 +4070,7 @@ export const handlers = [
       employee: empSummary,
       month: payload.month || "2026-08",
       type: payload.type || "OTHER",
-      typeName: typeNames[payload.type] || "Khoản thu nhập khác",
+      typeName: (payload.type ? typeNames[payload.type] : undefined) || "Khoản thu nhập khác",
       amount: Number(payload.amount),
       decisionNumber: payload.decisionNumber || null,
       decisionDate: payload.decisionDate || null,

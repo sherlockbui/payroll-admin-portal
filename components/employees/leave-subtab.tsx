@@ -27,6 +27,7 @@ import {
   ErrorState,
   LoadingBlock,
   Modal,
+  SearchInput,
   TablePaginationFooter,
 } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -53,43 +54,25 @@ export function LeaveSubtab({
   // Filters & State
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "all");
   const [viewFilter, setViewFilter] = useState<AnnualLeaveViewFilter>("ALL");
+  const [selectedYear, setSelectedYear] = useState<string>("2026");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [isExporting, setIsExporting] = useState(false);
 
   // History & Detail Modal State
   const [selectedEmployee, setSelectedEmployee] = useState<AnnualLeaveEmployee | null>(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const [selectedYear, setSelectedYear] = useState<string>("2026");
+  const [historyYear, setHistoryYear] = useState<string>("2026");
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize] = useState(10);
 
   // Sync prop changes for projectId
   useEffect(() => {
-    if (projectId && projectId !== "all") {
-      setSelectedProjectId(projectId);
-    }
+    setSelectedProjectId(projectId || "all");
+    setCurrentPage(1);
   }, [projectId]);
 
-  // Query: Projects lookup list
-  const { data: projectList = [] } = useQuery({
-    queryKey: ["web-payroll-projects"],
-    queryFn: () => api.getProjectsV3(),
-    staleTime: 1000 * 60 * 10,
-  });
-
-  // Query: Annual Leave Summary KPIs
-  const {
-    data: summaryData,
-    isLoading: isSummaryLoading,
-    refetch: refetchSummary,
-  } = useQuery({
-    queryKey: ["annual-leave-summary-v3", selectedProjectId],
-    queryFn: () => api.getAnnualLeaveSummaryV3(selectedProjectId),
-  });
-
-  // Query: Annual Leave Employees List
+  // Query: Annual Leave Employees List (via Swagger: GET /api/web/payroll/leaves)
   const {
     data: listResponse,
     isLoading: isListLoading,
@@ -97,39 +80,78 @@ export function LeaveSubtab({
     refetch: refetchList,
   } = useQuery({
     queryKey: [
-      "annual-leave-employees-v3",
+      "leaves-list-v3",
       selectedProjectId,
+      selectedYear,
       viewFilter,
       searchTerm,
       currentPage,
       pageSize,
     ],
     queryFn: () =>
-      api.getAnnualLeaveEmployeesV3({
+      api.getLeavesV3({
         projectId: selectedProjectId,
-        view: viewFilter,
+        year: selectedYear === "all" ? undefined : selectedYear,
+        filter: viewFilter,
         search: searchTerm,
         page: currentPage,
         pageSize,
       }),
   });
 
-  // Query: History for selected employee modal
+  // KPI Summary: Computed directly from list data
+  const summaryData = useMemo(() => {
+    const items = listResponse?.items ?? [];
+    const total = listResponse?.total ?? items.length;
+    let officialEligible = 0;
+    let probationOrNoContract = 0;
+    let terminated = 0;
+    let hasAvailableLeave = 0;
+    let exhausted = 0;
+
+    for (const item of items) {
+      const isTerminated = Boolean(item.terminationDate);
+      const isOfficial = item.employmentType === "OFFICIAL_CONTRACT" && !isTerminated;
+      const avail = item.availableDays ?? 0;
+
+      if (isTerminated) {
+        terminated++;
+      } else if (isOfficial) {
+        officialEligible++;
+        if (avail > 0) hasAvailableLeave++;
+        else exhausted++;
+      } else {
+        probationOrNoContract++;
+      }
+    }
+
+    return {
+      total,
+      officialEligible,
+      probationOrNoContract,
+      terminated,
+      hasAvailableLeave,
+      exhausted,
+    };
+  }, [listResponse]);
+
+  // Query: History for selected employee modal (via Swagger: GET /api/web/payroll/leaves/history)
   const {
     data: historyResponse,
     isLoading: isHistoryLoading,
     refetch: refetchHistory,
   } = useQuery({
     queryKey: [
-      "annual-leave-history-v3",
+      "leaves-history-v3",
       selectedEmployee?.employee.employeeCode,
-      selectedYear,
+      historyYear,
       historyPage,
       historyPageSize,
     ],
     queryFn: () =>
-      api.getAnnualLeaveHistoryV3(selectedEmployee!.employee.employeeCode, {
-        year: selectedYear === "all" ? undefined : selectedYear,
+      api.getLeaveHistoryV3({
+        employeeCode: selectedEmployee!.employee.employeeCode,
+        year: historyYear === "all" ? undefined : historyYear,
         page: historyPage,
         pageSize: historyPageSize,
       }),
@@ -140,24 +162,6 @@ export function LeaveSubtab({
   const totalEmployees = listResponse?.total ?? 0;
   const totalPages = listResponse?.totalPages ?? 1;
 
-  // Handle Export Excel
-  const handleExportExcel = async () => {
-    try {
-      setIsExporting(true);
-      const res = await api.exportAnnualLeaveExcelV3({
-        projectId: selectedProjectId,
-        view: viewFilter,
-        search: searchTerm,
-        year: 2026,
-      });
-      notify(`Đã xuất báo cáo phép năm (${res.totalRecords} nhân sự)! Tải file: ${res.fileName}`);
-    } catch (err: any) {
-      notify(err?.message || "Không thể xuất báo cáo phép năm lúc này.", "error");
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   // Sync Header Action
   useEffect(() => {
     if (setHeaderAction) {
@@ -166,22 +170,10 @@ export function LeaveSubtab({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-              refetchSummary();
-              refetchList();
-            }}
+            onClick={() => refetchList()}
             className="gap-1.5 font-medium shrink-0"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Làm mới
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleExportExcel}
-            loading={isExporting}
-            className="gap-1.5 font-semibold shrink-0"
-          >
-            <Download className="w-3.5 h-3.5" /> Xuất Excel
           </Button>
         </div>
       );
@@ -189,7 +181,7 @@ export function LeaveSubtab({
     return () => {
       if (setHeaderAction) setHeaderAction(null);
     };
-  }, [setHeaderAction, isExporting, selectedProjectId, viewFilter, searchTerm]);
+  }, [setHeaderAction, refetchList]);
 
   // Helper formatting employment type badge
   const renderEmploymentType = (type: EmploymentType, isTerminated: boolean) => {
@@ -242,7 +234,7 @@ export function LeaveSubtab({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-foreground">
-              {isSummaryLoading ? "—" : summaryData?.total ?? 0}
+              {isListLoading ? "—" : summaryData?.total ?? 0}
             </span>
             <span className="text-xs text-muted-foreground">người</span>
           </div>
@@ -271,7 +263,7 @@ export function LeaveSubtab({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-              {isSummaryLoading ? "—" : summaryData?.officialEligible ?? 0}
+              {isListLoading ? "—" : summaryData?.officialEligible ?? 0}
             </span>
             <span className="text-xs text-muted-foreground">HĐ chính thức</span>
           </div>
@@ -300,7 +292,7 @@ export function LeaveSubtab({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-              {isSummaryLoading ? "—" : summaryData?.probationOrNoContract ?? 0}
+              {isListLoading ? "—" : summaryData?.probationOrNoContract ?? 0}
             </span>
             <span className="text-xs text-muted-foreground">người</span>
           </div>
@@ -329,7 +321,7 @@ export function LeaveSubtab({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400">
-              {isSummaryLoading ? "—" : summaryData?.hasAvailableLeave ?? 0}
+              {isListLoading ? "—" : summaryData?.hasAvailableLeave ?? 0}
             </span>
             <span className="text-xs text-muted-foreground">nhân sự</span>
           </div>
@@ -358,7 +350,7 @@ export function LeaveSubtab({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-              {isSummaryLoading ? "—" : summaryData?.exhausted ?? 0}
+              {isListLoading ? "—" : summaryData?.exhausted ?? 0}
             </span>
             <span className="text-xs text-muted-foreground">nhân sự</span>
           </div>
@@ -370,116 +362,21 @@ export function LeaveSubtab({
       <div className="integrated-table-card">
         {/* Toolbar & Filters */}
         <div className="table-card-toolbar">
-          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-            {/* Left: View Filter Segmentation Pills */}
-            <div className="filter-status-pills flex items-center gap-1.5 flex-wrap">
-              <button
-                type="button"
-                className={`pill-btn ${viewFilter === "ALL" ? "active" : ""}`}
-                onClick={() => {
-                  setViewFilter("ALL");
-                  setCurrentPage(1);
-                }}
-              >
-                Tất cả ({summaryData?.total ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn success ${viewFilter === "OFFICIAL_ELIGIBLE" ? "active" : ""}`}
-                onClick={() => {
-                  setViewFilter("OFFICIAL_ELIGIBLE");
-                  setCurrentPage(1);
-                }}
-              >
-                Chính thức ({summaryData?.officialEligible ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn warning ${viewFilter === "PROBATION_OR_NO_CONTRACT" ? "active" : ""}`}
-                onClick={() => {
-                  setViewFilter("PROBATION_OR_NO_CONTRACT");
-                  setCurrentPage(1);
-                }}
-              >
-                Thử việc / Chưa HĐ ({summaryData?.probationOrNoContract ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn danger ${viewFilter === "TERMINATED" ? "active" : ""}`}
-                onClick={() => {
-                  setViewFilter("TERMINATED");
-                  setCurrentPage(1);
-                }}
-              >
-                Đã thôi việc ({summaryData?.terminated ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn ${viewFilter === "HAS_AVAILABLE_LEAVE" ? "active" : ""}`}
-                onClick={() => {
-                  setViewFilter("HAS_AVAILABLE_LEAVE");
-                  setCurrentPage(1);
-                }}
-              >
-                Còn phép ({summaryData?.hasAvailableLeave ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn ${viewFilter === "EXHAUSTED" ? "active" : ""}`}
-                onClick={() => {
-                  setViewFilter("EXHAUSTED");
-                  setCurrentPage(1);
-                }}
-              >
-                Hết phép ({summaryData?.exhausted ?? 0})
-              </button>
+          <div className="flex items-center justify-between gap-3 w-full">
+            <div className="text-xs font-semibold text-foreground">
+              Danh sách nhân sự ({totalEmployees})
             </div>
 
-            {/* Right: Project Selector & Search */}
-            <div className="flex items-center gap-2.5 ml-auto flex-wrap">
-              {projectList.length > 0 && (
-                <div className="form-field-wrap">
-                  <select
-                    value={selectedProjectId}
-                    onChange={(e) => {
-                      setSelectedProjectId(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="select-input text-xs py-1.5 px-2.5 h-9 rounded-md border border-input bg-background"
-                  >
-                    <option value="all">Tất cả dự án</option>
-                    {projectList.map((p) => (
-                      <option key={p.projectId} value={String(p.projectId)}>
-                        {p.projectCode} - {p.projectName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="relative min-w-[240px] max-w-[320px]">
-                <Search className="search-icon-fixed text-muted-foreground" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  placeholder="Tìm mã NV, tên, phòng ban..."
-                  className="search-box-input w-full pl-10 pr-8 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
-                />
-                {searchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm("")}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
+            {/* Right: Search Box */}
+            <SearchInput
+              value={searchTerm}
+              onChange={(val) => {
+                setSearchTerm(val);
+                setCurrentPage(1);
+              }}
+              placeholder="Tìm mã NV, tên, phòng ban..."
+              containerClassName="min-w-[260px] max-w-[340px]"
+            />
           </div>
         </div>
 
@@ -624,7 +521,7 @@ export function LeaveSubtab({
                             size="sm"
                             onClick={() => {
                               setSelectedEmployee(item);
-                              setSelectedYear("2026");
+                              setHistoryYear(selectedYear !== "all" ? selectedYear : "2026");
                               setHistoryPage(1);
                               setHistoryModalOpen(true);
                             }}
@@ -722,9 +619,9 @@ export function LeaveSubtab({
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground font-medium">Năm:</span>
               <select
-                value={selectedYear}
+                value={historyYear}
                 onChange={(e) => {
-                  setSelectedYear(e.target.value);
+                  setHistoryYear(e.target.value);
                   setHistoryPage(1);
                 }}
                 className="select-input text-xs py-1 px-2.5 h-8 rounded-md border border-input bg-background"
@@ -772,10 +669,10 @@ export function LeaveSubtab({
                         <td className="text-xs text-muted-foreground">{h.reason}</td>
                         <td>
                           <span className="text-xs text-foreground font-medium block">
-                            {h.approvedBy.fullName}
+                            {h.approvedBy?.fullName || "Quản lý"}
                           </span>
                           <div className="text-[11px] text-muted-foreground">
-                            {h.approvedBy.roleName} · {formatDate(h.approvedAt)}
+                            {h.approvedBy?.roleName || "Phê duyệt"} · {formatDate(h.approvedAt)}
                           </div>
                         </td>
                       </tr>

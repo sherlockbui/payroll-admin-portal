@@ -126,35 +126,60 @@ export function SaveBar({
   saving,
   onSave,
   onCancel,
+  title = "Có thay đổi chưa lưu",
+  description = "Lưu lại để áp dụng các thiết lập mới vào hệ thống",
+  saveLabel = "Lưu thay đổi",
+  cancelLabel = "Hủy bỏ",
+  icon,
+  iconTone = "amber",
 }: {
   visible: boolean;
   saving?: boolean;
   onSave: () => void;
   onCancel: () => void;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+  saveLabel?: React.ReactNode;
+  cancelLabel?: React.ReactNode;
+  icon?: React.ReactNode;
+  iconTone?: "amber" | "primary" | "emerald" | "blue" | "danger";
 }) {
   if (!visible) return null;
+
+  const toneClasses = {
+    amber: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25",
+    primary: "bg-primary/15 text-primary border-primary/25",
+    emerald: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
+    blue: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25",
+    danger: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/25",
+  };
+
+  const defaultIcon = <AlertCircle className="w-4 h-4" />;
+
   return (
     <div className="save-bar">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/25">
-          <AlertCircle className="w-4 h-4" />
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${toneClasses[iconTone] || toneClasses.amber}`}>
+          {icon || defaultIcon}
         </div>
         <div className="flex flex-col min-w-0">
-          <strong className="text-xs font-bold text-foreground truncate block">
-            Có thay đổi chưa lưu
-          </strong>
-          <span className="text-[11px] text-muted-foreground truncate hidden sm:block">
-            Lưu lại để áp dụng các thiết lập mới vào hệ thống
-          </span>
+          <div className="text-xs font-bold text-foreground truncate block">
+            {title}
+          </div>
+          {description && (
+            <span className="text-[11px] text-muted-foreground truncate hidden sm:block">
+              {description}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>
-          Hủy bỏ
+          {cancelLabel}
         </Button>
         <Button variant="primary" size="sm" onClick={onSave} disabled={saving} className="shadow-xs gap-1.5 font-semibold">
-          {saving ? <LoaderCircle className="w-3.5 h-3.5 spin" /> : <Save className="w-3.5 h-3.5" />}
-          {saving ? "Đang lưu..." : "Lưu thay đổi"}
+          {saving ? <LoaderCircle className="w-3.5 h-3.5 spin" /> : (saveLabel === "Lưu thay đổi" ? <Save className="w-3.5 h-3.5" /> : null)}
+          {saving && typeof saveLabel === "string" ? "Đang lưu..." : saveLabel}
         </Button>
       </div>
     </div>
@@ -720,21 +745,35 @@ export function MonthPicker({
     setViewYear(parsedYear);
   }, [parsedYear]);
 
-  // Click outside to close
+  // Click outside to close (with Web Component / Shadow DOM composedPath support)
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
+    if (!isOpen) return;
+
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (!containerRef.current) return;
+      const path = (event as any).composedPath ? (event as any).composedPath() : [];
+      const isInside =
+        containerRef.current.contains(event.target as Node) ||
+        (path.length > 0 && path.includes(containerRef.current));
+      if (!isInside) {
         setIsOpen(false);
       }
     }
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
     }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
@@ -776,9 +815,11 @@ export function MonthPicker({
   return (
     <div
       ref={containerRef}
+      style={{ zIndex: isOpen ? 100 : undefined }}
       className={cn(
         "month-picker-container",
         `month-picker-${variant}`,
+        isOpen && "z-[100]",
         disabled && "disabled",
         className
       )}
@@ -788,7 +829,10 @@ export function MonthPicker({
       <button
         type="button"
         className={cn("month-picker-trigger", isOpen && "open")}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!disabled) setIsOpen(!isOpen);
+        }}
         disabled={disabled}
       >
         <Calendar className="month-picker-icon" />
@@ -799,12 +843,25 @@ export function MonthPicker({
       </button>
 
       {isOpen && (
-        <div className="month-picker-popover">
+        <div
+          className="month-picker-popover"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="month-picker-header">
             <button
               type="button"
               className="month-picker-nav-btn"
-              onClick={() => setViewYear(viewYear - 1)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setViewYear((prev) => prev - 1);
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setViewYear((prev) => prev - 1);
+              }}
               title="Năm trước"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -813,7 +870,16 @@ export function MonthPicker({
             <button
               type="button"
               className="month-picker-nav-btn"
-              onClick={() => setViewYear(viewYear + 1)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setViewYear((prev) => prev + 1);
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setViewYear((prev) => prev + 1);
+              }}
               title="Năm sau"
             >
               <ChevronRight className="w-4 h-4" />
@@ -833,7 +899,16 @@ export function MonthPicker({
                     "month-picker-month-btn",
                     isSelected && "selected"
                   )}
-                  onClick={() => handleSelectMonth(monthNum)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSelectMonth(monthNum);
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSelectMonth(monthNum);
+                  }}
                 >
                   {mName}
                 </button>
@@ -846,7 +921,16 @@ export function MonthPicker({
               <button
                 type="button"
                 className="month-picker-today-btn text-muted hover:text-foreground font-normal"
-                onClick={handleClear}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleClear();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleClear();
+                }}
               >
                 {clearLabel}
               </button>
@@ -854,13 +938,73 @@ export function MonthPicker({
             <button
               type="button"
               className="month-picker-today-btn"
-              onClick={handleCurrentMonth}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleCurrentMonth();
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleCurrentMonth();
+              }}
             >
               Tháng hiện tại
             </button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+export interface SearchInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> {
+  value: string;
+  onChange: (value: string) => void;
+  onClear?: () => void;
+  placeholder?: string;
+  className?: string;
+  containerClassName?: string;
+}
+
+export function SearchInput({
+  value,
+  onChange,
+  onClear,
+  placeholder = "Tìm kiếm...",
+  className,
+  containerClassName,
+  ...props
+}: SearchInputProps) {
+  return (
+    <div className={cn("relative min-w-[180px] max-w-[300px]", containerClassName)}>
+      <Search className="search-icon-fixed text-muted-foreground" />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ paddingLeft: "38px", paddingRight: "30px", height: "36px" }}
+        className={cn(
+          "search-box-input w-full text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground placeholder:text-muted-foreground transition-colors",
+          className
+        )}
+        {...props}
+      />
+      {value ? (
+        <button
+          type="button"
+          onClick={() => {
+            onChange("");
+            onClear?.();
+          }}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+          title="Xóa tìm kiếm"
+          aria-label="Xóa tìm kiếm"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1027,236 +1171,14 @@ export function TableRowActions({
   );
 }
 
-export interface SearchableSelectOption {
-  value: string;
-  label: string;
-  subLabel?: string;
-  disabled?: boolean;
-}
+export {
+  SearchableSelect,
+  GsEmployeeSelect,
+  type SearchableSelectOption,
+  type SearchableSelectProps,
+  type GsEmployeeOption,
+} from "@/components/ui/searchable-select";
 
-export function SearchableSelect({
-  options,
-  value,
-  onChange,
-  placeholder = "Chọn...",
-  searchPlaceholder = "Tìm kiếm...",
-  className,
-  disabled,
-  icon,
-}: {
-  options: SearchableSelectOption[];
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  searchPlaceholder?: string;
-  className?: string;
-  disabled?: boolean;
-  icon?: ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const selectedOption = useMemo(
-    () => options.find((opt) => opt.value === value),
-    [options, value]
-  );
-
-  const filteredOptions = useMemo(() => {
-    if (!query.trim()) return options;
-    const lower = query.toLowerCase().trim();
-    return options.filter(
-      (opt) =>
-        opt.label.toLowerCase().includes(lower) ||
-        (opt.subLabel && opt.subLabel.toLowerCase().includes(lower))
-    );
-  }, [options, query]);
-
-  const updatePosition = () => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const dropdownWidth = Math.max(rect.width, 240);
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const showAbove = spaceBelow < 240 && rect.top > 240;
-
-    setCoords({
-      top: showAbove ? rect.top - 6 : rect.bottom + 6,
-      left: Math.min(rect.left, Math.max(10, window.innerWidth - dropdownWidth - 16)),
-      width: dropdownWidth,
-    });
-  };
-
-  const handleToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (disabled) return;
-    if (!open) {
-      updatePosition();
-      setQuery("");
-      setOpen(true);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    } else {
-      setOpen(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!open) return;
-
-    function handleOutside(e: MouseEvent | TouchEvent) {
-      const path = e.composedPath ? e.composedPath() : [];
-      const target = e.target as Node;
-      if (
-        popoverRef.current &&
-        (path.includes(popoverRef.current) || popoverRef.current.contains(target))
-      ) {
-        return;
-      }
-      if (
-        triggerRef.current &&
-        (path.includes(triggerRef.current) || triggerRef.current.contains(target))
-      ) {
-        return;
-      }
-      setOpen(false);
-    }
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-
-    function handleScroll(e: Event) {
-      const path = e.composedPath ? e.composedPath() : [];
-      const target = e.target as Node;
-      // If user is scrolling inside the popover itself, DO NOT close or reposition!
-      if (
-        popoverRef.current &&
-        (path.includes(popoverRef.current) || popoverRef.current.contains(target))
-      ) {
-        return;
-      }
-      updatePosition();
-    }
-
-    function handleResize() {
-      updatePosition();
-    }
-
-    document.addEventListener("mousedown", handleOutside, true);
-    document.addEventListener("touchstart", handleOutside, true);
-    document.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("scroll", handleScroll, true);
-    window.addEventListener("resize", handleResize, true);
-
-    return () => {
-      document.removeEventListener("mousedown", handleOutside, true);
-      document.removeEventListener("touchstart", handleOutside, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("scroll", handleScroll, true);
-      window.removeEventListener("resize", handleResize, true);
-    };
-  }, [open]);
-
-  const portalContainer = usePortalContainer();
-
-  return (
-    <div className={cn("searchable-select-wrap", className)}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={cn("searchable-select-trigger", open && "open", disabled && "disabled")}
-        onClick={handleToggle}
-        disabled={disabled}
-        aria-expanded={open}
-      >
-        {icon && <span className="searchable-select-icon">{icon}</span>}
-        <span className="searchable-select-value">
-          {selectedOption ? selectedOption.label : placeholder}
-        </span>
-        <ChevronDown className="searchable-select-chevron" />
-      </button>
-
-      {open &&
-        coords &&
-        typeof document !== "undefined" &&
-        portalContainer &&
-        createPortal(
-          <div
-            ref={popoverRef}
-            className="searchable-select-popover"
-            style={{
-              position: "fixed",
-              top: `${coords.top}px`,
-              left: `${coords.left}px`,
-              width: `${coords.width}px`,
-              zIndex: 99999,
-            }}
-          >
-            <div className="searchable-select-search-box">
-              <Search className="search-icon" />
-              <input
-                ref={inputRef}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={searchPlaceholder}
-                className="searchable-select-input"
-                onClick={(e) => e.stopPropagation()}
-              />
-              {query && (
-                <button
-                  type="button"
-                  className="search-clear-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setQuery("");
-                  }}
-                >
-                  <X />
-                </button>
-              )}
-            </div>
-
-            <div className="searchable-select-options-list">
-              {filteredOptions.length === 0 ? (
-                <div className="searchable-select-empty">Không tìm thấy kết quả</div>
-              ) : (
-                filteredOptions.map((opt) => {
-                  const isSelected = opt.value === value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      className={cn(
-                        "searchable-select-item",
-                        isSelected && "selected",
-                        opt.disabled && "disabled"
-                      )}
-                      disabled={opt.disabled}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onChange(opt.value);
-                        setOpen(false);
-                      }}
-                    >
-                      <div className="item-text-group">
-                        <span className="item-label">{opt.label}</span>
-                        {opt.subLabel && <span className="item-sub">{opt.subLabel}</span>}
-                      </div>
-                      {isSelected && <Check className="item-check" />}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>,
-          portalContainer || document.body
-        )}
-    </div>
-  );
-}
 
 export interface GsProjectOption {
   id: string;
@@ -1291,17 +1213,18 @@ export function GsProjectCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const selectedItem = useMemo(() => {
-    if (!value || value === "all") return null;
+    if (!value || value === "all" || !Array.isArray(items)) return null;
     return items.find((p) => String(p.id) === String(value) || String(p.code) === String(value)) ?? null;
   }, [items, value]);
 
   const filteredItems = useMemo(() => {
+    if (!Array.isArray(items)) return [];
     if (!query.trim()) return items;
     const q = query.toLowerCase().trim();
     return items.filter(
       (p) =>
         (p.code && p.code.toLowerCase().includes(q)) ||
-        p.name.toLowerCase().includes(q) ||
+        (p.name && p.name.toLowerCase().includes(q)) ||
         (p.client && p.client.toLowerCase().includes(q)) ||
         (p.location && p.location.toLowerCase().includes(q))
     );

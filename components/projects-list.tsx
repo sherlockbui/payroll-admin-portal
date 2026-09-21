@@ -31,7 +31,7 @@ export function ProjectsList() {
 
   const projectsQuery = useQuery({
     queryKey: ["projects", debouncedQuery, "all", page],
-    queryFn: () => api.getProjects({ q: debouncedQuery, status: "all", page, pageSize: 8 }),
+    queryFn: () => api.getProjects({ q: debouncedQuery, status: "all", page, pageSize: 12 }),
     placeholderData: (previousData) => previousData,
   });
 
@@ -62,7 +62,14 @@ export function ProjectsList() {
 
       <section className="content-card project-card">
         <div className="table-toolbar">
-          <label className="search-field">
+          <div className="table-toolbar-meta">
+            <span className="total-projects-pill">
+              <span className="status-dot-pulse" />
+              <span>{projectsQuery.data?.meta?.total ?? 0} dự án</span>
+            </span>
+          </div>
+
+          <label className="search-field ml-auto !w-full !max-w-[420px]">
             <Search size={15} className="!w-3.5 !h-3.5" />
             <input
               value={query}
@@ -71,12 +78,6 @@ export function ProjectsList() {
               aria-label="Tìm dự án"
             />
           </label>
-          <div className="table-toolbar-meta">
-            <span className="total-projects-pill">
-              <span className="status-dot-pulse" />
-              <span>{projectsQuery.data?.meta?.total ?? 0} dự án</span>
-            </span>
-          </div>
         </div>
 
         {projectsQuery.isLoading && !projectsQuery.data ? (
@@ -120,15 +121,6 @@ export function ProjectsList() {
                       </span>
                     </div>
 
-                    {project.managerPhone && (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-muted text-[11.5px]">Số điện thoại</span>
-                        <span className="font-medium text-foreground/80 font-mono text-[11.5px]">
-                          {project.managerPhone}
-                        </span>
-                      </div>
-                    )}
-
                     {project.managerEmail && (
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-muted text-[11.5px]">Email</span>
@@ -170,7 +162,7 @@ export function ProjectsList() {
         <TablePaginationFooter
           totalItems={projectsQuery.data?.meta?.total ?? 0}
           currentPage={page}
-          pageSize={8}
+          pageSize={12}
           onPageChange={(newPage) => setPage(newPage)}
         />
       </section>

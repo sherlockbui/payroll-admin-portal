@@ -20,6 +20,7 @@ import {
   Sparkles,
   ToggleLeft,
   ToggleRight,
+  Trash2,
   X,
 } from "lucide-react";
 import React, { useMemo, useState } from "react";
@@ -71,7 +72,7 @@ export function SalaryStructuresModal({
       }
       return res;
     },
-    enabled: isOpen,
+    enabled: isOpen && Boolean(projectId && projectId !== "all"),
   });
 
   // Filtered list by search
@@ -115,6 +116,20 @@ export function SalaryStructuresModal({
     onError: (err: Error) => {
       notify(err.message || "Không thể cập nhật quy chế lương", "error");
       setFormError(err.message || "Lỗi khi cập nhật quy chế lương");
+    },
+  });
+
+  // Delete Mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteSalaryStructure(projectId, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["salary-structures", projectId] });
+      notify("Đã xóa quy chế lương thành công!");
+      resetForm();
+      setViewMode("list");
+    },
+    onError: (err: Error) => {
+      notify(err.message || "Không thể xóa quy chế lương", "error");
     },
   });
 
@@ -394,6 +409,22 @@ export function SalaryStructuresModal({
                         title="Chỉnh sửa quy chế"
                       >
                         <Pencil className="w-3.5 h-3.5 text-primary" /> Sửa
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (window.confirm(`Bạn có chắc chắn muốn xóa quy chế "${item.name}" (${item.code}) không?`)) {
+                            deleteMutation.mutate(item.id);
+                          }
+                        }}
+                        className="h-8 w-8 p-0 text-muted hover:text-destructive hover:bg-destructive/10"
+                        title="Xóa quy chế"
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   </div>

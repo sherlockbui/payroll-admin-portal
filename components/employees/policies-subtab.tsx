@@ -114,6 +114,14 @@ export function EmployeePoliciesSubtab({
   };
 
   // Register Header Actions
+  const ensureSpecificProject = (actionName: string = "thao tác này") => {
+    if (!projectId || projectId === "all") {
+      notify(`Vui lòng chọn một dự án cụ thể ở thanh công cụ phía trên trước khi ${actionName}!`, "warning");
+      return false;
+    }
+    return true;
+  };
+
   useEffect(() => {
     if (!setHeaderAction) return;
     setHeaderAction(
@@ -127,7 +135,10 @@ export function EmployeePoliciesSubtab({
         </Button>
         <Button
           variant="secondary"
-          onClick={() => setImportModalOpen(true)}
+          onClick={() => {
+            if (!ensureSpecificProject("import phụ cấp")) return;
+            setImportModalOpen(true);
+          }}
           className="gap-1.5 font-semibold text-xs h-8 px-3"
         >
           <UploadCloud className="w-3.5 h-3.5" /> Import phụ cấp

@@ -39,9 +39,9 @@ const SUBTABS: { id: EmployeeSubtab; label: string; icon: React.ComponentType<{ 
   { id: "dependents", label: "Người phụ thuộc", icon: Users },
   { id: "leave", label: "Phép năm", icon: Palmtree },
   { id: "union", label: "Công đoàn phí", icon: Coins },
-  { id: "workdays", label: "Ngày công chuẩn", icon: CalendarDays },
+  // { id: "workdays", label: "Ngày công chuẩn", icon: CalendarDays },
   { id: "insurance", label: "Bảo hiểm xã hội", icon: ShieldCheck },
-  { id: "policies", label: "Chế độ & Phụ cấp", icon: ScrollText },
+  // { id: "policies", label: "Chế độ & Phụ cấp", icon: ScrollText },
   { id: "deductions", label: "Khoản trừ khác", icon: ReceiptText },
   { id: "incomes", label: "Thu nhập khác", icon: WalletCards },
 ];
@@ -85,23 +85,6 @@ export function EmployeesTab({
       setSelectedProjectId(projects[0].id);
     }
   }, [projectId, projects, selectedProjectId]);
-
-  const employeesQuery = useQuery({
-    queryKey: ["employees", effectiveProjectId],
-    queryFn: () => api.getEmployees({ projectId: (!effectiveProjectId || effectiveProjectId === "all") ? undefined : effectiveProjectId }),
-    enabled: Boolean(effectiveProjectId || embedded),
-  });
-
-  const employees = employeesQuery.data ?? [];
-
-  useEffect(() => {
-    if (employeesQuery.isFetching && Boolean(employeesQuery.data)) {
-      showGsLoading("Đang tải dữ liệu người lao động...");
-    } else {
-      hideGsLoading();
-    }
-    return () => hideGsLoading();
-  }, [employeesQuery.isFetching, Boolean(employeesQuery.data)]);
 
   return (
     <div className="employees-main-tab">
@@ -154,72 +137,61 @@ export function EmployeesTab({
 
       {/* Subtab Content Area */}
       <section className="subtab-content-area mt-4">
-        {employeesQuery.isLoading ? (
-          <LoadingBlock rows={7} />
-        ) : employeesQuery.isError ? (
-          <ErrorState
-            message="Không thể tải danh sách nhân viên"
-            retry={() => employeesQuery.refetch()}
+        {activeSubtab === "dependents" && (
+          <DependentsSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
           />
-        ) : (
-          <>
-            {activeSubtab === "dependents" && (
-              <DependentsSubtab
-                projectId={effectiveProjectId}
-                employees={employees}
-                setHeaderAction={setHeaderAction}
-              />
-            )}
-            {activeSubtab === "leave" && (
-              <LeaveSubtab
-                projectId={effectiveProjectId}
-                employees={employees}
-                setHeaderAction={setHeaderAction}
-              />
-            )}
-            {activeSubtab === "union" && (
-              <UnionFeesSubtab
-                projectId={effectiveProjectId}
-                employees={employees}
-                setHeaderAction={setHeaderAction}
-              />
-            )}
-            {activeSubtab === "workdays" && (
-              <StandardWorkdaysSubtab
-                projectId={effectiveProjectId}
-                employees={employees}
-                setHeaderAction={setHeaderAction}
-              />
-            )}
-            {activeSubtab === "insurance" && (
-              <InsuranceSubtab
-                projectId={effectiveProjectId}
-                employees={employees}
-                setHeaderAction={setHeaderAction}
-              />
-            )}
-            {activeSubtab === "policies" && (
-              <EmployeePoliciesSubtab
-                projectId={effectiveProjectId}
-                employees={employees}
-                setHeaderAction={setHeaderAction}
-              />
-            )}
-            {activeSubtab === "deductions" && (
-              <OtherDeductionsSubtab
-                projectId={effectiveProjectId}
-                employees={employees}
-                setHeaderAction={setHeaderAction}
-              />
-            )}
-            {activeSubtab === "incomes" && (
-              <OtherIncomesSubtab
-                projectId={effectiveProjectId}
-                employees={employees}
-                setHeaderAction={setHeaderAction}
-              />
-            )}
-          </>
+        )}
+        {activeSubtab === "leave" && (
+          <LeaveSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
+        )}
+        {activeSubtab === "union" && (
+          <UnionFeesSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
+        )}
+        {/* {activeSubtab === "workdays" && (
+          <StandardWorkdaysSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
+        )} */}
+        {activeSubtab === "insurance" && (
+          <InsuranceSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
+        )}
+        {/* {activeSubtab === "policies" && (
+          <EmployeePoliciesSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
+        )} */}
+        {activeSubtab === "deductions" && (
+          <OtherDeductionsSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
+        )}
+        {activeSubtab === "incomes" && (
+          <OtherIncomesSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
         )}
       </section>
     </div>

@@ -361,8 +361,8 @@ export interface TokenRange {
 export function findVariableRanges(text: string, customNames?: string[]): TokenRange[] {
   const ranges: TokenRange[] = [];
 
-  // 1. Bracketed variables like [Lương cơ bản]
-  const bracketRegex = /\[\s*([^\]]+?)\s*\]/g;
+  // 1. Bracketed variables like [Lương cơ bản] or {HOURLY_NORMAL_RATE}
+  const bracketRegex = /[\[\{]\s*([^\]\}]+?)\s*[\]\}]/g;
   let match: RegExpExecArray | null;
   while ((match = bracketRegex.exec(text)) !== null) {
     ranges.push({
@@ -377,6 +377,7 @@ export function findVariableRanges(text: string, customNames?: string[]): TokenR
     ...knownVariableNames,
     ...(customNames || []),
     ...Object.values(variableCodeToName),
+    ...Object.keys(variableCodeToName),
   ]);
   const sortedNames = Array.from(nameSet)
     .filter(Boolean)
@@ -439,11 +440,11 @@ export function tokenizeFriendlyText(text: string, customNames?: string[]): Visu
     for (const raw of rawTokens) {
       if (!raw || /^\s+$/.test(raw)) continue;
       const upper = raw.toUpperCase();
-      if (upper === "IF") {
+      if (upper === "IF" || upper === "IIF") {
         tokens.push({
           id: `tok-${idCounter++}`,
           type: "function",
-          text: "IF",
+          text: upper === "IIF" ? "IF" : "IF",
         });
       } else if (["+", "-", "*", "/", "×", "÷", "(", ")", ",", ";", ">=", "<=", "==", "!=", "<>", ">", "<", "="].includes(raw)) {
         tokens.push({
@@ -623,8 +624,8 @@ export function parseExpressionTextResult(
   aliases?: ReadonlyMap<string, string>,
 ): ExpressionParseResult {
   let cleaned = text.replace(/^=\s*/, "").replace(/×/g, "*").replace(/÷/g, "/").trim();
-  // Strip bracketed variable names [Tên biến] -> Tên biến and @mention prefix
-  cleaned = cleaned.replace(/\[\s*([^\]]+?)\s*\]/g, " $1 ");
+  // Strip bracketed / curly variable names [Tên biến] or {VAR_CODE} -> VAR_CODE and @mention prefix
+  cleaned = cleaned.replace(/[\{\[]\s*([^\{\}\]\[]+?)\s*[\}\]]/g, " $1 ");
   cleaned = cleaned.replace(/@([a-zA-Z0-9_À-ỹ]+)/g, " $1 ");
   const errors: string[] = [];
 
@@ -657,7 +658,7 @@ export function parseExpressionTextResult(
 
   while (i < cleaned.length) {
     const c = cleaned[i];
-    if (/\s/.test(c)) {
+    if (/\s/.test(c) || c === "{" || c === "}" || c === "[" || c === "]") {
       i++;
       continue;
     }
@@ -717,7 +718,8 @@ export function parseExpressionTextResult(
       let j = i;
       while (j < cleaned.length && /[a-zA-Z0-9_À-ỹ]/.test(cleaned[j])) j++;
       const word = cleaned.slice(i, j);
-      if (word.toUpperCase() === "IF") {
+      const upperWord = word.toUpperCase();
+      if (upperWord === "IF" || upperWord === "IIF") {
         tokens.push({ type: "function", name: "IF" });
       } else {
         tokens.push({ type: "variable", code: word });

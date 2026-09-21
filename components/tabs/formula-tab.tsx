@@ -38,7 +38,7 @@ import {
   salaryComponentLibrary,
   type SalaryComponentDefinition,
 } from "@/lib/payroll-component-library";
-import type { ExpressionNode, ProjectCustomVariable, SalaryFormula } from "@/lib/types";
+import type { ExpressionNode, ProjectCustomVariable, SalaryFormula, SalaryStructureLineItemRequest } from "@/lib/types";
 import { hideGsLoading, showGsLoading, uid } from "@/lib/utils";
 
 const categoryLabels: Record<SalaryFormula["category"], string> = {
@@ -340,26 +340,108 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
-  const formulasQuery = useQuery({ queryKey: ["formulas", projectId], queryFn: () => api.getFormulas(projectId) });
+  const isSpecificProject = Boolean(projectId && projectId !== "all");
+
+  const ensureSpecificProject = (actionName: string = "thao tác này") => {
+    if (!isSpecificProject) {
+      notify(`Vui lòng chọn một dự án cụ thể để ${actionName}.`, "warning");
+      return false;
+    }
+    return true;
+  };
+
+  // 1. Query Salary Structures from BE
+  const salaryStructuresQuery = useQuery({
+    queryKey: ["salary-structures", projectId],
+    queryFn: () => (isSpecificProject ? api.getSalaryStructures(projectId) : Promise.resolve([])),
+    enabled: isSpecificProject,
+  });
+
+  const salaryStructures = useMemo(
+    () => salaryStructuresQuery.data ?? [],
+    [salaryStructuresQuery.data]
+  );
+
+  const salaryStructuresCount = salaryStructures.length;
+  const [selectedStructureId, setSelectedStructureId] = useState<number | null>(null);
+
+  // Auto-select first active or first available salary structure
+  useEffect(() => {
+    if (salaryStructures.length > 0) {
+      if (!selectedStructureId || !salaryStructures.some((s) => s.id === selectedStructureId)) {
+        const activeOne = salaryStructures.find((s) => s.isActive) ?? salaryStructures[0];
+        setSelectedStructureId(activeOne.id);
+      }
+    } else {
+      setSelectedStructureId(null);
+    }
+  }, [salaryStructures, selectedStructureId]);
+
+  const selectedStructure = useMemo(
+    () => salaryStructures.find((s) => s.id === selectedStructureId) ?? null,
+    [salaryStructures, selectedStructureId]
+  );
+
+  // 2. Query Master Salary Components from BE (with graceful fallback to catalog)
+  const salaryComponentsQuery = useQuery({
+    queryKey: ["salary-components", selectedStructureId],
+    queryFn: async () => {
+      try {
+        const comps = await api.getSalaryComponents({
+          salaryStructureId: selectedStructureId ?? undefined,
+        });
+        return comps ?? [];
+      } catch (e) {
+        console.warn("getSalaryComponents failed, using catalog", e);
+        return [];
+      }
+    },
+  });
+
+  const componentsLibrary = useMemo<SalaryComponentDefinition[]>(() => {
+    const beComps = salaryComponentsQuery.data ?? [];
+    if (beComps.length > 0) {
+      return beComps.map((comp) => ({
+        id: String(comp.id),
+        code: comp.code,
+        name: comp.name,
+        category: comp.category === "deduction" ? "deduction" : "income",
+        description: comp.description || "",
+        defaultFormulaText: comp.defaultFormulaText || `[${comp.code}]`,
+        outputVariable: comp.outputVariable || comp.code,
+        rounding: { mode: "nearest", precision: 1 },
+        enabled: Boolean(comp.isActive),
+      }));
+    }
+    return salaryComponentLibrary;
+  }, [salaryComponentsQuery.data]);
+
+  // 3. Query Lines of Selected Salary Structure from BE
+  const linesQuery = useQuery({
+    queryKey: ["salary-structure-lines", projectId, selectedStructureId],
+    queryFn: async () => {
+      if (!selectedStructureId) return [];
+      try {
+        const beLines = await api.getSalaryStructureLines(projectId, selectedStructureId);
+        return beLines ?? [];
+      } catch (e) {
+        console.warn("Could not get lines for structure", selectedStructureId, e);
+        return [];
+      }
+    },
+    enabled: Boolean(isSpecificProject && selectedStructureId),
+  });
+
   const variablesQuery = useQuery({ queryKey: ["formula-variables"], queryFn: api.getFormulaVariables });
   const customVariablesQuery = useQuery({
     queryKey: ["project-custom-variables", projectId],
-    queryFn: () => api.getProjectCustomVariables(projectId),
-  });
-
-  const salaryStructuresQuery = useQuery({
-    queryKey: ["salary-structures", projectId],
-    queryFn: () => api.getSalaryStructures(projectId),
+    queryFn: () => (isSpecificProject ? api.getProjectCustomVariables(projectId) : Promise.resolve([])),
+    enabled: isSpecificProject,
   });
 
   const customVariables = useMemo(() => customVariablesQuery.data ?? [], [customVariablesQuery.data]);
   const [isParamsModalOpen, setIsParamsModalOpen] = useState(false);
   const [isStructuresModalOpen, setIsStructuresModalOpen] = useState(false);
-
-  const salaryStructuresCount = useMemo(
-    () => salaryStructuresQuery.data?.length ?? 0,
-    [salaryStructuresQuery.data]
-  );
 
   const missingParamsCount = useMemo(() => {
     return customVariables.filter((v) => v.value === null || v.value === undefined).length;
@@ -497,16 +579,61 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
     return missing;
   };
 
+  const [deletedLineIds, setDeletedLineIds] = useState<number[]>([]);
+
+  // Convert lines from BE to local state
   useEffect(() => {
-    if (formulasQuery.data) {
-      setFormulas(structuredClone(formulasQuery.data));
+    if (linesQuery.data && linesQuery.data.length > 0) {
+      const isDeductionCode = (code: string, name: string) => {
+        const upper = (code + " " + name).toUpperCase();
+        return (
+          upper.includes("DEDUCTION") ||
+          upper.includes("INSURANCE_EMP") ||
+          upper.includes("UNION_FEE") ||
+          upper.includes("KHẤU TRỪ") ||
+          upper.includes("KHAU_TRU") ||
+          upper.includes("ĐOÀN PHÍ") ||
+          upper.includes("DOAN_PHI") ||
+          upper.includes("TẠM ỨNG") ||
+          upper.includes("TAM_UNG") ||
+          upper.includes("ADVANCE") ||
+          upper.includes("BH BẮT BUỘC") ||
+          upper.includes("BH BAT BUOC")
+        );
+      };
+
+      const convertedFormulas: SalaryFormula[] = linesQuery.data.map((line, idx) => {
+        const isDed =
+          line.aggregationTarget?.toLowerCase() === "deduction" ||
+          isDeductionCode(line.componentCode || "", line.componentName || "");
+
+        const parsedExpr = parseExpressionText(line.expression || "");
+        return {
+          id: String(line.id || `line-${line.componentId || idx}`),
+          projectId,
+          code: line.componentCode || `COMP_${line.componentId}`,
+          name: line.componentName || line.componentCode || `Mục ${idx + 1}`,
+          outputVariable: line.componentCode || `COMP_${line.componentId}`,
+          category: (isDed ? "deduction" : "income") as SalaryFormula["category"],
+          order: line.executionOrder || line.displayOrder || idx + 1,
+          expression: parsedExpr,
+          rounding: { mode: "nearest", precision: 1 },
+          enabled: Boolean(line.isEnabled),
+        };
+      });
+
+      setFormulas(convertedFormulas);
       const initialRaw: Record<string, string> = {};
-      formulasQuery.data.forEach((f) => {
-        initialRaw[f.id] = expressionToFriendlyText(f.expression, variableNameMap);
+      linesQuery.data.forEach((line) => {
+        const id = String(line.id || `line-${line.componentId}`);
+        initialRaw[id] = line.expression || "";
       });
       setRawTexts(initialRaw);
+    } else {
+      setFormulas([]);
+      setRawTexts({});
     }
-  }, [formulasQuery.data, variableNameMap]);
+  }, [linesQuery.data, projectId]);
 
   // Derived sections
   const grossComponents = useMemo(() => formulas.filter((f) => f.category === "income"), [formulas]);
@@ -517,15 +644,15 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
 
   const filteredLibrary = useMemo(() => {
     const q = filterSearch.toLowerCase().trim();
-    if (!q) return salaryComponentLibrary;
-    return salaryComponentLibrary.filter(
+    if (!q) return componentsLibrary;
+    return componentsLibrary.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
         item.description.toLowerCase().includes(q) ||
         item.code.toLowerCase().includes(q) ||
         item.outputVariable.toLowerCase().includes(q)
     );
-  }, [filterSearch]);
+  }, [filterSearch, componentsLibrary]);
 
   const earningsLibrary = useMemo(
     () => filteredLibrary.filter((item) => item.category === "income"),
@@ -543,21 +670,21 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
 
   // Track which formula items have unsaved changes compared to server data
   const modifiedFormulaIds = useMemo(() => {
-    const originalList = formulasQuery.data ?? [];
+    const originalList = linesQuery.data ?? [];
     const originalMap = new Map(
-      originalList.map((f) => [f.id, expressionToFriendlyText(f.expression, variableNameMap)])
+      originalList.map((l) => [String(l.id), (l.expression || "").trim()])
     );
     const modified = new Set<string>();
 
     for (const f of formulas) {
-      const currentText = (rawTexts[f.id] ?? expressionToFriendlyText(f.expression, variableNameMap)).trim();
+      const currentText = (rawTexts[f.id] ?? (f.expression ? expressionToFriendlyText(f.expression, variableNameMap) : "")).trim();
       const originalText = (originalMap.get(f.id) ?? "").trim();
       if (!originalMap.has(f.id) || currentText !== originalText) {
         modified.add(f.id);
       }
     }
     return modified;
-  }, [formulas, rawTexts, formulasQuery.data, variableNameMap]);
+  }, [formulas, rawTexts, linesQuery.data, variableNameMap]);
 
   // Add component to structure
   const addComponentToStructure = (item: SalaryComponentDefinition) => {
@@ -565,10 +692,11 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       notify(`Mục "${item.name}" đã có trong cấu trúc.`, "warning");
       return;
     }
-    const newOrder = formulas.length + 1;
-    const formulaId = uid("formula");
-    const parsedExpr = parseExpressionText(item.defaultFormulaText);
-    const defaultText = expressionToFriendlyText(parsedExpr, variableNameMap);
+    const maxOrder = formulas.reduce((max, f) => Math.max(max, f.order || 0), 0);
+    const newOrder = maxOrder + 10;
+    const formulaId = `new-line-${item.id}-${Date.now()}`;
+    const defaultText = item.defaultFormulaText || `{${item.code}}`;
+    const parsedExpr = parseExpressionText(defaultText);
     const newFormula: SalaryFormula = {
       id: formulaId,
       projectId,
@@ -585,10 +713,14 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
     setRawTexts((prev) => ({ ...prev, [formulaId]: defaultText }));
     setEditingFormulaIds((prev) => new Set(prev).add(formulaId));
     setDirty(true);
-    notify(`Đã đưa "${item.name}" vào cấu trúc lương`);
+    notify(`Đã đưa "${item.name}" vào cấu trúc lương (Chưa lưu)`);
   };
 
   const removeComponentFromStructure = (id: string) => {
+    const numId = Number(id);
+    if (!isNaN(numId) && !id.startsWith("new-line-") && !id.startsWith("def-")) {
+      setDeletedLineIds((prev) => [...prev, numId]);
+    }
     setFormulas((prev) => prev.filter((item) => item.id !== id));
     setRawTexts((prev) => {
       const next = { ...prev };
@@ -600,7 +732,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
   };
 
   const getFormulaRawText = (formula: SalaryFormula) => {
-    return rawTexts[formula.id] ?? expressionToFriendlyText(formula.expression, variableNameMap);
+    return rawTexts[formula.id] ?? (formula.expression ? expressionToFriendlyText(formula.expression, variableNameMap) : "");
   };
 
   const updateFormulaText = (id: string, text: string) => {
@@ -611,24 +743,90 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
   };
 
   const cancel = () => {
-    const data = formulasQuery.data ?? [];
-    setFormulas(structuredClone(data));
-    const initialRaw: Record<string, string> = {};
-    data.forEach((f) => {
-      initialRaw[f.id] = expressionToFriendlyText(f.expression, variableNameMap);
-    });
-    setRawTexts(initialRaw);
+    if (linesQuery.data && linesQuery.data.length > 0) {
+      const initialRaw: Record<string, string> = {};
+      linesQuery.data.forEach((line) => {
+        const id = String(line.id || `line-${line.componentId}`);
+        initialRaw[id] = line.expression || "";
+      });
+      setRawTexts(initialRaw);
+    } else {
+      setFormulas([]);
+      setRawTexts({});
+    }
+    setDeletedLineIds([]);
     setDirty(false);
     setValidation(null);
   };
 
   const saveMutation = useMutation({
-    mutationFn: () => api.saveFormulas(projectId, formulas),
-    onSuccess: (saved) => {
-      queryClient.setQueryData(["formulas", projectId], saved);
-      setFormulas(structuredClone(saved));
+    mutationFn: async () => {
+      if (!selectedStructureId) return true;
+
+      // 1. Delete removed lines via batch DELETE endpoint
+      if (deletedLineIds.length > 0) {
+        try {
+          const numIds = deletedLineIds.map((id) => Number(id)).filter((id) => !isNaN(id) && id > 0);
+          if (numIds.length > 0) {
+            await api.batchDeleteSalaryStructureLines(projectId, selectedStructureId, numIds);
+          }
+        } catch (delErr) {
+          console.warn("Could not delete lines", deletedLineIds, delErr);
+        }
+      }
+
+      const beLinesMap = new Map((linesQuery.data ?? []).map((l) => [String(l.id), l]));
+      const existingLinesToUpdate: SalaryStructureLineItemRequest[] = [];
+      const newLinesToAdd: SalaryStructureLineItemRequest[] = [];
+
+      // 2. Loop through current formulas
+      for (let idx = 0; idx < formulas.length; idx++) {
+        const f = formulas[idx];
+        const rawText = getFormulaRawText(f);
+        const existingLine = beLinesMap.get(f.id);
+        const comp = componentsLibrary.find(
+          (c) => c.code === f.code || c.outputVariable === f.outputVariable
+        );
+        const compId = existingLine?.componentId ?? (comp?.id && !isNaN(Number(comp.id)) ? Number(comp.id) : idx + 1);
+
+        const payload: SalaryStructureLineItemRequest = {
+          LineId: existingLine?.id ? Number(existingLine.id) : undefined,
+          ComponentId: compId,
+          TargetGroupId: existingLine?.targetGroupId ?? null,
+          FormulaDefinitionId: existingLine?.formulaDefinitionId ?? null,
+          FormulaType: existingLine?.formulaType || "single_expression",
+          Expression: rawText,
+          ExecutionOrder: existingLine?.executionOrder ?? (idx + 1) * 10,
+          DisplayOrder: existingLine?.displayOrder ?? idx + 1,
+          IsVisibleOnPayslip: true,
+          IsVisibleOnReport: true,
+          AggregationTarget: f.category === "deduction" ? "DEDUCTION" : "INCOME",
+          IsEnabled: f.enabled !== false,
+          Note: f.name || existingLine?.componentName || null,
+        };
+
+        if (existingLine?.id) {
+          existingLinesToUpdate.push(payload);
+        } else {
+          newLinesToAdd.push(payload);
+        }
+      }
+
+      // 3. Batch update existing lines via PUT
+      if (existingLinesToUpdate.length > 0) {
+        await api.batchUpdateSalaryStructureLines(projectId, selectedStructureId, existingLinesToUpdate);
+      }
+
+      // 4. Save new lines via POST
+      if (newLinesToAdd.length > 0) {
+        await api.saveSalaryStructureLines(projectId, selectedStructureId, newLinesToAdd);
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["salary-structure-lines", projectId, selectedStructureId] });
+      setDeletedLineIds([]);
       setDirty(false);
       notify("Đã lưu cấu hình công thức lương thành công!");
+      return true;
     },
     onError: (error: Error) => notify(error.message, "error"),
   });
@@ -636,21 +834,21 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
   useEffect(() => {
     if (saveMutation.isPending) {
       showGsLoading("Đang lưu cấu hình công thức lương...");
-    } else if (formulasQuery.isFetching && Boolean(formulasQuery.data)) {
+    } else if (linesQuery.isFetching && Boolean(linesQuery.data)) {
       showGsLoading("Đang tải danh mục công thức...");
     } else {
       hideGsLoading();
     }
     return () => hideGsLoading();
-  }, [saveMutation.isPending, formulasQuery.isFetching, Boolean(formulasQuery.data)]);
+  }, [saveMutation.isPending, linesQuery.isFetching, Boolean(linesQuery.data)]);
 
-  if (formulasQuery.isLoading || variablesQuery.isLoading) return <LoadingBlock rows={8} />;
-  if (formulasQuery.isError || variablesQuery.isError) {
+  if (salaryStructuresQuery.isLoading || variablesQuery.isLoading) return <LoadingBlock rows={8} />;
+  if (salaryStructuresQuery.isError || variablesQuery.isError) {
     return (
       <ErrorState
         message="Không thể tải cấu hình công thức."
         retry={() => {
-          formulasQuery.refetch();
+          salaryStructuresQuery.refetch();
           variablesQuery.refetch();
         }}
       />
@@ -672,7 +870,10 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
           <Button
             type="button"
             variant="secondary"
-            onClick={() => setIsStructuresModalOpen(true)}
+            onClick={() => {
+              if (!ensureSpecificProject("quản lý quy chế lương")) return;
+              setIsStructuresModalOpen(true);
+            }}
             className="h-9 gap-1.5 shadow-2xs text-xs font-semibold"
           >
             <ScrollText className="w-4 h-4 text-primary" />
@@ -687,7 +888,10 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
           <Button
             type="button"
             variant="secondary"
-            onClick={() => setIsParamsModalOpen(true)}
+            onClick={() => {
+              if (!ensureSpecificProject("cấu hình tham số dự án")) return;
+              setIsParamsModalOpen(true);
+            }}
             className="h-9 gap-1.5 shadow-2xs text-xs font-semibold"
           >
             <SlidersHorizontal className="w-4 h-4 text-primary" />
@@ -708,7 +912,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
           <Button
             variant="primary"
             onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
+            disabled={!dirty || !selectedStructureId || saveMutation.isPending || salaryStructures.length === 0}
             className="gap-1.5 font-semibold"
           >
             <Save className="w-4 h-4" /> Lưu cấu hình
@@ -741,8 +945,107 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
         </div>
       )}
 
-      {/* Main Workspace Layout Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {/* Workspace Content */}
+      {!isSpecificProject ? (
+        <div className="content-card p-12 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 mx-auto flex items-center justify-center">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-foreground">Vui lòng chọn một dự án cụ thể</h3>
+            <p className="text-xs text-muted max-w-md mx-auto">
+              Quy chế và công thức tính lương được quản lý theo từng dự án riêng biệt. Vui lòng chọn một dự án trên thanh chọn dự án để tiếp tục.
+            </p>
+          </div>
+        </div>
+      ) : salaryStructuresQuery.isLoading ? (
+        <LoadingBlock rows={6} />
+      ) : salaryStructures.length === 0 ? (
+        <div className="content-card p-12 text-center space-y-4 max-w-2xl mx-auto border-dashed">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary mx-auto flex items-center justify-center shadow-xs">
+            <ScrollText className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-base font-bold text-foreground">Dự án chưa có quy chế lương</h3>
+            <p className="text-xs text-muted leading-relaxed max-w-lg mx-auto">
+              Quy chế lương là nền tảng để định nghĩa các thành phần thu nhập, giảm trừ và công thức tính lương cho nhân viên trong dự án. Vui lòng thiết lập quy chế lương để bắt đầu cấu hình.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => setIsStructuresModalOpen(true)}
+              className="gap-2 font-semibold h-9 px-4"
+            >
+              <Plus className="w-4 h-4" /> Thiết lập quy chế lương
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Salary Structure Selector Bar */}
+          <div className="p-3 rounded-xl border border-border/80 bg-card/70 backdrop-blur-xs flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <ScrollText className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[10.5px] font-bold text-muted-foreground uppercase tracking-wider block">
+                  Quy chế lương đang áp dụng:
+                </span>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <select
+                    value={selectedStructureId ?? ""}
+                    onChange={(e) => {
+                      const nextId = Number(e.target.value);
+                      if (dirty) {
+                        if (window.confirm("Bạn có thay đổi chưa lưu trên quy chế hiện tại. Chuyển quy chế sẽ hủy các thay đổi nháp. Tiếp tục?")) {
+                          setSelectedStructureId(nextId);
+                          setDirty(false);
+                        }
+                      } else {
+                        setSelectedStructureId(nextId);
+                      }
+                    }}
+                    className="h-8 px-2.5 rounded-lg border border-border bg-card text-xs font-bold text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none cursor-pointer"
+                  >
+                    {salaryStructures.map((struct) => (
+                      <option key={struct.id} value={struct.id}>
+                        {struct.code} - {struct.name} {struct.isActive ? " (Đang áp dụng)" : " (Tạm dừng)"}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedStructure && (
+                    <Badge tone={selectedStructure.isActive ? "success" : "neutral"}>
+                      {selectedStructure.isActive ? "Đang áp dụng" : "Tạm dừng"}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              {selectedStructure?.description && (
+                <span className="text-muted-foreground text-xs hidden md:inline-block max-w-xs truncate" title={selectedStructure.description}>
+                  {selectedStructure.description}
+                </span>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsStructuresModalOpen(true)}
+                className="text-primary hover:bg-primary-soft text-xs h-8 gap-1 font-semibold"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Quản lý quy chế
+              </Button>
+            </div>
+          </div>
+
+          {/* Main Workspace Layout Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Left Column: Components Library Sidebar (Compact Width, Sticky & Matching Chip Size) */}
         <aside className="lg:col-span-4 content-card p-3.5 space-y-3.5 lg:sticky lg:top-4 lg:max-h-[calc(100vh-32px)] lg:overflow-y-auto">
           <div className="flex items-center justify-between pb-2.5 border-b border-border">
@@ -1187,6 +1490,8 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
           </div>
         </section>
       </div>
+        </>
+      )}
 
       {/* Project Parameters Dedicated Modal */}
       <ProjectParametersModal
@@ -1202,7 +1507,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
         onClose={() => setIsStructuresModalOpen(false)}
       />
 
-      <SaveBar visible={dirty} saving={saveMutation.isPending} onSave={() => saveMutation.mutate()} onCancel={cancel} />
+      <SaveBar visible={dirty && salaryStructures.length > 0 && Boolean(selectedStructureId)} saving={saveMutation.isPending} onSave={() => saveMutation.mutate()} onCancel={cancel} />
     </div>
   );
 }

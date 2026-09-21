@@ -32,32 +32,65 @@ import type {
   OtherIncomeRecord,
   SalaryStructure,
   SalaryStructurePayload,
+  SalaryComponentMaster,
+  SalaryStructureLine,
+  SalaryStructureLineItemRequest,
+  ProjectVariableItemRequest,
+  BackendVariable,
+  ProjectVariableResponse,
   AuditLogListResponseV3,
+  AuditLogV3,
   CreateDependentRequestV3,
   DependentDetailV3,
   DependentDocument,
   DependentListResponseV3,
   DependentSummaryResponseV3,
+  DocumentTypeCode,
   DocumentTypeItem,
   ImportDependentResponseV3,
   RelationshipItem,
+  RelationshipCode,
+  DependentStatusV3,
   UpdateDependentRequestV3,
   AnnualLeaveEmployee,
+  AnnualLeaveHistoryItemV3,
   AnnualLeaveHistoryResponse,
   AnnualLeaveListResponse,
   AnnualLeaveSummaryResponse,
   AnnualLeaveViewFilter,
+  EmploymentType,
+  UnionMemberItemV3,
   UnionDuesMemberV3,
+  UnionHistoryItemV3,
+  UnionAuditLogItemV3,
+  UnionListResponseV3,
+  UnionHistoryResponseV3,
   UnionDuesHistoryResponse,
   UnionDuesListResponse,
   UnionDuesSummaryResponse,
+  UnionParticipationStatus,
   UnionDuesParticipationStatus,
+  RegisterUnionRequest,
+  UpdateUnionContributionRequest,
+  DeactivateUnionRequest,
   UpdateUnionDuesRequestV3,
   StandardWorkdayEmployeeV3,
   StandardWorkdayMode,
   UpdateStandardWorkdayRequestV3,
   StandardWorkdaySummaryResponse,
   StandardWorkdayListResponse,
+  InsuranceParticipantItemV3,
+  InsuranceChangeItemV3,
+  CreateInsuranceChangeRequest,
+  ConfirmInsuranceChangeRequest,
+  MedicalFacilityItemV3,
+  InsuranceContributionPreview,
+  InsuranceParticipantListResponseV3,
+  InsuranceChangeListResponseV3,
+  InsuranceSummaryResponseV3,
+  InsuranceParticipationStatus,
+  InsuranceChangeType,
+  InsuranceChangeStatus,
   SocialInsuranceMemberV3,
   SocialInsuranceChangeV3,
   SocialInsuranceChangeType,
@@ -72,15 +105,25 @@ import type {
   BenefitsAllowanceSummaryResponse,
   BenefitsAllowanceListResponse,
   EmployeeAllowanceItemV3,
+  OtherDeductionTypeItem,
+  OtherDeductionItemV3,
   OtherDeductionV3,
   OtherDeductionType,
+  CreateOtherDeductionRequest,
   CreateOtherDeductionRequestV3,
+  UpdateOtherDeductionRequest,
+  SaveOtherDeductionDocumentRequest,
   OtherDeductionsSummaryResponse,
-  OtherDeductionsListResponse,
+  OtherIncomeTypeItem,
+  OtherIncomeItemV3,
   OtherIncomeV3,
   OtherIncomeType,
+  CreateOtherIncomeRequest,
   CreateOtherIncomeRequestV3,
+  UpdateOtherIncomeRequest,
+  SaveOtherIncomeDocumentRequest,
   OtherIncomesSummaryResponse,
+  OtherIncomesListResponseV3,
   OtherIncomesListResponse,
 } from "@/lib/types";
 
@@ -97,51 +140,6 @@ export class ApiRequestError extends Error {
   ) {
     super(message);
   }
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<{ data: T; meta?: PaginationMeta }> {
-  // 1. Chạy trực tiếp qua MSW handlers in-memory nếu đang ở môi trường nhúng / không có API server
-  try {
-    const baseOrigin =
-      typeof window !== "undefined" && window.location && window.location.origin && window.location.origin !== "null"
-        ? window.location.origin
-        : "http://localhost";
-    const fullUrl = url.startsWith("http") ? url : new URL(url, baseOrigin).href;
-    const req = new Request(fullUrl, init);
-    for (const handler of handlers) {
-      const result = await (handler as any).run({ request: req });
-      if (result && result.response) {
-        const payload = (await result.response.json()) as ApiResponse<T>;
-        if (!result.response.ok || payload.error) {
-          throw new ApiRequestError(
-            payload.error?.message ?? "Yêu cầu thất bại",
-            payload.error?.code ?? "UNKNOWN_ERROR",
-            result.response.status,
-            payload.error?.fields
-          );
-        }
-        return { data: payload.data, meta: payload.meta };
-      }
-    }
-  } catch (err) {
-    if (err instanceof ApiRequestError) throw err;
-    // Nếu có lỗi parse trong in-memory handler, fallback tiếp tục thử fetch
-  }
-
-  // 2. Fallback fetch thông thường
-  const response = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    throw new ApiRequestError(`API endpoint không tồn tại (Status: ${response.status})`, "NOT_FOUND", response.status);
-  }
-  const payload = (await response.json()) as ApiResponse<T>;
-  if (!response.ok || payload.error) {
-    throw new ApiRequestError(payload.error?.message ?? "Yêu cầu thất bại", payload.error?.code ?? "UNKNOWN_ERROR", response.status, payload.error?.fields);
-  }
-  return { data: payload.data, meta: payload.meta };
 }
 
 export function getApiBaseUrl(): string {
@@ -164,7 +162,96 @@ export function getAuthToken(): string {
   return "";
 }
 
+async function runInMemoryMock<T>(url: string, init?: RequestInit): Promise<{ data: T; meta?: PaginationMeta }> {
+  const baseOrigin =
+    typeof window !== "undefined" && window.location && window.location.origin && window.location.origin !== "null"
+      ? window.location.origin
+      : "http://localhost";
+  const fullUrl = url.startsWith("http") ? url : new URL(url, baseOrigin).href;
+  const req = new Request(fullUrl, init);
+  for (const handler of handlers) {
+    const result = await (handler as any).run({ request: req });
+    if (result && result.response) {
+      const payload = (await result.response.json()) as ApiResponse<T>;
+      if (!result.response.ok || payload.error) {
+        throw new ApiRequestError(
+          payload.error?.message ?? "Yêu cầu thất bại",
+          payload.error?.code ?? "UNKNOWN_ERROR",
+          result.response.status,
+          payload.error?.fields
+        );
+      }
+      return { data: payload.data, meta: payload.meta };
+    }
+  }
+  throw new ApiRequestError("Không tìm thấy handler mock phù hợp", "NOT_FOUND", 404);
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<{ data: T; meta?: PaginationMeta }> {
+  const isVitest = typeof process !== "undefined" && (process.env.VITEST === "true" || process.env.NODE_ENV === "test");
+  const isExplicitMock = typeof window !== "undefined" && ((window as any).__USE_MOCK__ === true || (window as any).USE_MOCK === true);
+
+  // 1. Chạy in-memory MSW khi ở môi trường test tự động (Vitest) hoặc khi chủ động bật mock
+  if (isVitest || isExplicitMock) {
+    return runInMemoryMock<T>(url, init);
+  }
+
+  // 2. Môi trường Browser: Luôn gửi HTTP fetch thật ra ngoài network để DevTools ghi nhận
+  try {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+
+    let targetUrl = url;
+    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+      const cleanPath = targetUrl.startsWith("/api") ? targetUrl.substring(4) : targetUrl;
+      targetUrl = `${baseUrl}${cleanPath.startsWith("/") ? cleanPath : "/" + cleanPath}`;
+    }
+
+    const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
+      ...(init?.headers as Record<string, string> || {}),
+    };
+    if (token && !headers["Authorization"]) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(targetUrl, {
+      ...init,
+      headers,
+    });
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new ApiRequestError(
+        `Máy chủ phản hồi không đúng định dạng (${response.status} ${response.statusText})`,
+        "INVALID_RESPONSE",
+        response.status
+      );
+    }
+    const payload = (await response.json()) as any;
+    if (!response.ok || payload.error || payload.success === false) {
+      throw new ApiRequestError(
+        payload.error?.message || payload.message || "Yêu cầu thất bại",
+        payload.error?.code || payload.errorCode || "API_ERROR",
+        response.status,
+        payload.error?.fields
+      );
+    }
+    return { data: payload.data !== undefined ? payload.data : payload, meta: payload.meta };
+  } catch (err) {
+    if (err instanceof ApiRequestError) throw err;
+    throw new ApiRequestError(
+      err instanceof Error ? err.message : "Lỗi kết nối máy chủ",
+      "NETWORK_ERROR",
+      500
+    );
+  }
+}
+
 const cachedProjectsMap = new Map<string, Project>();
+
 
 export const api = {
   getLookupProjects: async (): Promise<Array<{ id: string; code: string; name: string }>> => {
@@ -180,15 +267,35 @@ export const api = {
       }
     }
 
-    // 2. Mock Data danh sách dự án cho Demo UI/UX
-    await new Promise((res) => setTimeout(res, 100));
+    // 2. Tải trực tiếp từ WebPayroll Projects API
+    try {
+      const rawBaseUrl = getApiBaseUrl();
+      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+      const token = getAuthToken();
+      const headers: Record<string, string> = { Accept: "*/*" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${baseUrl}/web/payroll/projects?pageSize=100`, { headers });
+      if (res.ok) {
+        const json: any = await res.json();
+        const dataObj = json.data || {};
+        const rawItems: any[] = Array.isArray(dataObj.items) ? dataObj.items : Array.isArray(dataObj) ? dataObj : [];
+        if (rawItems.length > 0) {
+          return rawItems.map((p) => ({
+            id: String(p.projectId ?? p.id ?? ""),
+            code: String(p.projectCode ?? "").trim(),
+            name: String(p.projectName ?? p.projectCode ?? `Dự án #${p.projectId}`).trim(),
+          }));
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
     return [
-      { id: "prj-jss", code: "JSS-ST", name: "Jabil Smart Solutions" },
-      { id: "prj-swm", code: "SWM-DN", name: "SWM Đồng Nai" },
-      { id: "prj-fxt", code: "FXT-HN", name: "Foxconn Tràng Duệ" },
-      { id: "prj-lum", code: "LUM-HP", name: "Luxshare ICT" },
-      { id: "prj-vtm", code: "VTM-VT", name: "Vietsovpetro Logistics" },
-      { id: "prj-cpc", code: "CPC-DN", name: "CP Campuchia Food" },
+      { id: "1049", code: "PRJ-1049", name: "Dự án #1049" },
+      { id: "1115", code: "ABB-MT", name: "Khu vực Abbott" },
+      { id: "1104", code: "AJN-LT", name: "Khu vực Ajinomoto Long Thành" },
+      { id: "1038", code: "BCS-BH", name: "Khu vực BCS Biên Hòa" },
     ];
   },
   getProjects: async (params: { q?: string; status?: string; page?: number; pageSize?: number }) => {
@@ -197,7 +304,7 @@ export const api = {
     const token = getAuthToken();
     const search = params.q ?? "";
     const pageIndex = params.page ?? 1;
-    const pageSize = params.pageSize ?? 8;
+    const pageSize = params.pageSize ?? 12;
 
     const query = new URLSearchParams();
     if (search) query.set("search", search);
@@ -642,8 +749,42 @@ export const api = {
   getOvertimeTypes: () => request<OvertimeType[]>("/api/overtime-types").then((item) => item.data),
   getOvertimeConfigs: (id: string) => request<ProjectOvertimeConfig[]>(`/api/projects/${id}/overtime-configs`).then((item) => item.data),
   saveOvertimeConfigs: (id: string, payload: ProjectOvertimeConfig[]) => request<ProjectOvertimeConfig[]>(`/api/projects/${id}/overtime-configs`, { method: "PUT", body: JSON.stringify(payload) }).then((item) => item.data),
-   getFormulaVariables: () => request<FormulaVariable[]>("/api/formula-variables").then((item) => item.data),
-  getProjectCustomVariables: (id: string) => request<ProjectCustomVariable[]>(`/api/projects/${id}/custom-variables`).then((item) => item.data),
+  getFormulaVariables: async () => {
+    try {
+      const all = await api.getAllVariables();
+      return all.map((v) => ({
+        code: v.code,
+        name: v.name,
+        group: (v.group as FormulaVariable["group"]) || "employee",
+        unit: v.unit || "đ",
+        description: v.description || undefined,
+        defaultValue: v.defaultValue !== null && v.defaultValue !== undefined ? Number(v.defaultValue) : undefined,
+        sampleValue: v.defaultValue !== null && v.defaultValue !== undefined ? Number(v.defaultValue) : 0,
+        isCustom: !v.isSystem,
+      }));
+    } catch {
+      return [];
+    }
+  },
+  getProjectCustomVariables: async (id: string) => {
+    try {
+      const prj = await api.getProjectVariables(id);
+      return prj.map((pv) => ({
+        id: String(pv.id || pv.variableId),
+        projectId: id,
+        variableId: pv.variableId,
+        code: pv.code || `VAR_${pv.variableId}`,
+        name: pv.name || pv.code,
+        description: pv.description || undefined,
+        unit: pv.unit || "đ",
+        value: pv.value !== null && pv.value !== undefined && pv.value !== "" ? Number(pv.value) : null,
+        defaultValue: pv.defaultValue !== null && pv.defaultValue !== undefined ? Number(pv.defaultValue) : undefined,
+        updatedAt: pv.effectiveFrom || undefined,
+      }));
+    } catch {
+      return [];
+    }
+  },
   saveProjectCustomVariables: (id: string, payload: Array<{ code: string; value: number | null }>) => request<ProjectCustomVariable[]>(`/api/projects/${id}/custom-variables`, { method: "PUT", body: JSON.stringify(payload) }).then((item) => item.data),
   getFormulas: (id: string) => request<SalaryFormula[]>(`/api/projects/${id}/formulas`).then((item) => item.data),
   saveFormulas: (id: string, payload: SalaryFormula[]) => request<SalaryFormula[]>(`/api/projects/${id}/formulas`, { method: "PUT", body: JSON.stringify(payload) }).then((item) => item.data),
@@ -654,135 +795,417 @@ export const api = {
   getTestEmployees: () => request<TestEmployee[]>("/api/test-employees").then((item) => item.data),
   runTest: (id: string, payload: { employeeId: string; period: string }) => request<TestRunResult>(`/api/projects/${id}/test-runs`, { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
 
-  // Employee Management APIs (Mocked for Demo UI/UX)
   getProjectEmployees: async (
     projectId: string,
-    params?: { pageIndex?: number; pageSize?: number; search?: string; isAssigned?: boolean }
+    params?: {
+      pageIndex?: number;
+      pageSize?: number;
+      search?: string;
+      isAssigned?: boolean;
+      groupId?: number | string;
+    }
   ): Promise<{ items: Employee[]; totalRow: number; pageIndex: number; pageSize: number }> => {
-    await new Promise((res) => setTimeout(res, 120));
-    const all = seedDatabase.employees.filter(
-      (e) => !projectId || projectId === "all" || e.projectId === projectId || projectId.startsWith("prj-")
-    );
-    const search = (params?.search || "").toLowerCase().trim();
-    const filtered = all.filter((e) => {
-      if (
-        search &&
-        !e.name.toLowerCase().includes(search) &&
-        !e.code.toLowerCase().includes(search) &&
-        !e.idCard.includes(search)
-      )
-        return false;
-      if (params?.isAssigned === true && !e.groupId) return false;
-      if (params?.isAssigned === false && e.groupId) return false;
-      return true;
-    });
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
     const pageIndex = params?.pageIndex ?? 1;
     const pageSize = params?.pageSize ?? 20;
-    const start = (pageIndex - 1) * pageSize;
-    const items = filtered.slice(start, start + pageSize);
+    const search = (params?.search || "").trim();
+
+    const query = new URLSearchParams();
+    query.set("pageIndex", String(pageIndex));
+    query.set("pageSize", String(pageSize));
+    if (search) query.set("search", search);
+    if (params?.isAssigned !== undefined) query.set("isAssigned", String(params.isAssigned));
+    if (
+      params?.groupId !== undefined &&
+      params?.groupId !== null &&
+      String(params.groupId) !== "" &&
+      String(params.groupId) !== "all" &&
+      String(params.groupId) !== "unassigned"
+    ) {
+      query.set("groupId", String(params.groupId));
+    }
+
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/employees?${query.toString()}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể tải danh sách nhân viên dự án (Status: ${response.status})`,
+        "FETCH_PROJECT_EMPLOYEES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lấy danh sách nhân sự",
+        "API_ERROR",
+        response.status
+      );
+    }
+
+    const dataObj = resJson.data || {};
+    const rawItems: any[] = Array.isArray(dataObj.items)
+      ? dataObj.items
+      : Array.isArray(dataObj.rows)
+      ? dataObj.rows
+      : Array.isArray(dataObj)
+      ? dataObj
+      : Array.isArray(resJson.data)
+      ? resJson.data
+      : [];
+    const totalRow: number = typeof dataObj.totalRow === "number" ? dataObj.totalRow : rawItems.length;
+    const currentPageIndex: number = typeof dataObj.pageIndex === "number" ? dataObj.pageIndex : pageIndex;
+    const currentPageSize: number = typeof dataObj.pageSize === "number" ? dataObj.pageSize : pageSize;
+
+    const items: Employee[] = rawItems.map((item: any) => {
+      const code = item.employeeCode || item.code || "";
+      const rawGroupId = item.currentGroupId ?? item.groupId ?? item.targetGroupId ?? item.employeeGroupId;
+      const rawGroupName = item.currentGroupName ?? item.groupName ?? item.targetGroupName ?? item.employeeGroupName;
+      const parsedGroupId = (rawGroupId !== null && rawGroupId !== undefined && String(rawGroupId).trim() !== "" && String(rawGroupId) !== "0")
+        ? String(rawGroupId)
+        : undefined;
+
+      return {
+        id: String(code || item.id || item.employeeId || ""),
+        code: code,
+        name: item.fullName || item.name || "",
+        gender: item.gender || "",
+        idCard: item.idNumber || item.idCard || "",
+        phone: item.phoneNumber || item.phone || "",
+        email: item.email || "",
+        projectId: String(item.projectId ?? projectId),
+        projectCode: item.projectCode || "",
+        department: item.departmentName || item.department || "",
+        position: item.positionName || item.position || "",
+        joinDate: item.joinDate || "",
+        resignationDate: item.resignationDate || undefined,
+        status: (item.status === "ACTIVE" || item.status === "active") ? "active" : (item.status === "TERMINATED" || item.status === "resigned") ? "resigned" : "probation",
+        groupId: parsedGroupId,
+        groupName: rawGroupName ? String(rawGroupName) : undefined,
+      };
+    });
+
     return {
       items,
-      totalRow: filtered.length,
-      pageIndex,
-      pageSize,
+      totalRow,
+      pageIndex: currentPageIndex,
+      pageSize: currentPageSize,
     };
-  },
-  getEmployees: (params?: { projectId?: string; q?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<Employee[]>(`/api/employees?${query}`).then((item) => item.data);
-  },
-  getDependents: (params?: { projectId?: string; employeeId?: string; status?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<Dependent[]>(`/api/dependents?${query}`).then((item) => item.data);
-  },
-  createDependent: (payload: Partial<Dependent>) =>
-    request<Dependent>("/api/dependents", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  importDependents: (payload: { projectId: string; items: Partial<Dependent>[] }) =>
-    request<Dependent[]>("/api/dependents/import", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  importDependentsFile: async (file: File): Promise<{ success: boolean; message?: string; data?: any }> => {
-    await new Promise((res) => setTimeout(res, 500));
-    return {
-      success: true,
-      message: `Đã nhập dữ liệu người phụ thuộc từ tệp ${file.name} thành công (Demo)`,
-      data: { importedCount: 5 },
-    };
-  },
-  confirmDependents: (ids: string[], verifiedBy?: string) =>
-    request<Dependent[]>("/api/dependents/confirm", { method: "POST", body: JSON.stringify({ ids, verifiedBy }) }).then((item) => item.data),
-  rejectDependent: (id: string, reason: string) =>
-    request<Dependent>(`/api/dependents/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }).then((item) => item.data),
-  updateDependent: (id: string, payload: Partial<Dependent>) =>
-    request<Dependent>(`/api/dependents/${id}`, { method: "PUT", body: JSON.stringify(payload) }).then((item) => item.data),
-  updateDependentAttachment: (id: string, payload: { attachmentType: string; attachmentName: string; attachmentUrl?: string }) =>
-    request<Dependent>(`/api/dependents/${id}/attachment`, { method: "PATCH", body: JSON.stringify(payload) }).then((item) => item.data),
-  downloadDependentImportTemplate: async (projectId?: string | number): Promise<void> => {
-    await new Promise((res) => setTimeout(res, 200));
-    const dummyContent = "Mã NV,Tên NV,Họ tên NPT,Mối quan hệ,Ngày sinh,MST,Số CCCD,Thời gian từ,Thời gian đến\n";
-    const blob = new Blob([dummyContent], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.download = "Mau_Nguoi_Phu_Thuoc_Demo.xlsx";
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(downloadUrl);
-    document.body.removeChild(a);
   },
 
   // ================= OpenAPI 3.0 (01-nguoi-phu-thuoc.yaml) Methods =================
-  getDependentRelationshipsV3: () =>
-    request<RelationshipItem[]>("/api/web/payroll/master-data/dependent-relationships").then((res) => res.data),
-
-  getDependentDocumentTypesV3: () =>
-    request<DocumentTypeItem[]>("/api/web/payroll/master-data/dependent-document-types").then((res) => res.data),
-
   getPayrollCyclesV3: () =>
     request<Array<{ id: number; code: string; name: string; isCurrent: boolean; startDate?: string; endDate?: string }>>("/api/web/payroll/payroll-cycles").then((res) => res.data),
 
-  getProjectsV3: () =>
-    request<Array<{ projectId: number; projectCode: string; projectName: string; active?: boolean }>>("/api/web/payroll/projects").then((res) => res.data),
-
-  getProjectEmployeesV3: (projectId: number | string) =>
-    request<Array<{ employeeCode: string; fullName: string; gender?: string; projectId?: number; projectCode?: string; projectName?: string; positionName?: string; taxCode?: string; idNumber?: string }>>(`/api/web/payroll/projects/${projectId}/employees`).then((res) => res.data),
-
-  getDependentsSummaryV3: (projectId?: string | number) => {
-    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
-    return request<DependentSummaryResponseV3>(`/api/web/payroll/dependents/summary${query}`).then((res) => res.data);
+  getProjectsV3: async (): Promise<Array<{ projectId: number; projectCode: string; projectName: string; active?: boolean }>> => {
+    try {
+      const rawBaseUrl = getApiBaseUrl();
+      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+      const token = getAuthToken();
+      const headers: Record<string, string> = { Accept: "*/*" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${baseUrl}/web/payroll/projects?pageSize=100`, { headers });
+      if (res.ok) {
+        const json: any = await res.json();
+        const dataObj = json.data || {};
+        const rawItems: any[] = Array.isArray(dataObj.items) ? dataObj.items : Array.isArray(dataObj) ? dataObj : [];
+        return rawItems.map((item: any) => ({
+          projectId: Number(item.projectId ?? item.id ?? 0),
+          projectCode: item.projectCode || "",
+          projectName: item.projectName || "",
+          active: true,
+        }));
+      }
+      return [];
+    } catch {
+      return [];
+    }
   },
 
-  getDependentsV3: (params?: { projectId?: string | number; search?: string; relationship?: string; status?: string; page?: number; pageSize?: number }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && v !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<DependentListResponseV3>(`/api/web/payroll/dependents?${query}`).then((res) => res.data);
+  getProjectEmployeesV3: async (projectId?: number | string) => {
+    try {
+      const rawBaseUrl = getApiBaseUrl();
+      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+      const token = getAuthToken();
+      const headers: Record<string, string> = { Accept: "*/*" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      let targetProjectId = projectId;
+      if (!targetProjectId || targetProjectId === "all") {
+        const projects = await api.getProjectsV3();
+        if (projects && projects.length > 0) {
+          targetProjectId = (projects[0] as any).projectId ?? (projects[0] as any).id;
+        }
+      }
+      if (!targetProjectId || targetProjectId === "all") return [];
+
+      const res = await fetch(`${baseUrl}/web/payroll/projects/${targetProjectId}/employees`, { headers });
+      if (res.ok) {
+        const json: any = await res.json();
+        const dataObj = json.data || {};
+        const rawItems: any[] = Array.isArray(dataObj.items) ? dataObj.items : Array.isArray(dataObj) ? dataObj : [];
+        return rawItems.map((item: any) => ({
+          employeeCode: item.employeeCode || item.code || "",
+          fullName: item.fullName || item.name || "",
+          gender: item.gender,
+          projectId: Number(item.projectId ?? targetProjectId),
+          projectCode: item.projectCode || "",
+          projectName: item.projectName || "",
+          positionName: item.positionName || item.position || "",
+          taxCode: item.taxCode || "",
+          idNumber: item.idNumber || "",
+        }));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  },
+
+  getDependentRelationshipsV3: async (): Promise<RelationshipItem[]> => [
+    { code: "CON_RUOT_NUOI", name: "Con ruột / Con nuôi", requiresDocument: true },
+    { code: "VO_CHONG", name: "Vợ / Chồng", requiresDocument: true },
+    { code: "CHA_ME_DE", name: "Cha mẹ đẻ", requiresDocument: true },
+    { code: "CHA_ME_VO_CHONG", name: "Cha mẹ vợ / Cha mẹ chồng", requiresDocument: true },
+    { code: "NGUOI_NUOI_DUONG_HOP_PHAP", name: "Người nuôi dưỡng hợp pháp", requiresDocument: true },
+    { code: "KHAC", name: "Khác", requiresDocument: false },
+  ],
+
+  getDependentDocumentTypesV3: (): Promise<DocumentTypeItem[]> =>
+    request<any[]>("/api/web/payroll/dependent-document-types")
+      .then((res) => {
+        const raw = Array.isArray(res.data) ? res.data : [];
+        return raw.map((item: any) => ({
+          code: (item.documentTypeCode || item.code) as DocumentTypeCode,
+          name: (item.documentTypeName || item.name) as string,
+          id: item.id,
+          isRequired: item.isRequired,
+        }));
+      })
+      .catch(() => [
+        { code: "GKS", name: "Giấy khai sinh" },
+        { code: "CCCD", name: "Căn cước công dân" },
+        { code: "GDKKH", name: "Giấy chứng nhận kết hôn" },
+        { code: "SHK", name: "Sổ hộ khẩu" },
+        { code: "GXN_KHUYETTAT", name: "Giấy xác nhận khuyết tật" },
+        { code: "GXN_SINHVIEN", name: "Giấy xác nhận sinh viên" },
+        { code: "BAN_CAM_KET", name: "Bản cam kết" },
+      ] as DocumentTypeItem[]),
+
+  getDependentsSummaryV3: async (projectId?: string | number): Promise<DependentSummaryResponseV3> => {
+    try {
+      const res = await api.getDependentsV3({
+        projectId: projectId && projectId !== "all" ? String(projectId) : undefined,
+        pageSize: 100,
+      });
+      const items = res.items || [];
+      const total = res.total || items.length;
+      const pendingCount = items.filter((d) => d.status === "PENDING").length;
+      const approvedCount = items.filter((d) => d.status === "APPROVED").length;
+      const rejectedCount = items.filter((d) => d.status === "REJECTED").length;
+      const draftCount = items.filter((d) => d.status === "DRAFT").length;
+      return {
+        total,
+        counts: [
+          { status: "PENDING", count: pendingCount, label: "Chờ phê duyệt" },
+          { status: "APPROVED", count: approvedCount, label: "Đã phê duyệt" },
+          { status: "REJECTED", count: rejectedCount, label: "Bị từ chối" },
+          { status: "DRAFT", count: draftCount, label: "Bản nháp" },
+        ],
+      };
+    } catch {
+      return {
+        total: 0,
+        counts: [
+          { status: "PENDING", count: 0, label: "Chờ phê duyệt" },
+          { status: "APPROVED", count: 0, label: "Đã phê duyệt" },
+          { status: "REJECTED", count: 0, label: "Bị từ chối" },
+          { status: "DRAFT", count: 0, label: "Bản nháp" },
+        ],
+      };
+    }
+  },
+
+  getDependentsV3: (params?: { projectId?: string | number; search?: string; keyword?: string; relationship?: string; status?: string; employeeCode?: string; page?: number; pageIndex?: number; pageSize?: number }) => {
+    const queryParams: Record<string, string> = {};
+    if (params?.projectId && params.projectId !== "all") queryParams.projectId = String(params.projectId);
+    if (params?.keyword || params?.search) queryParams.keyword = String(params.keyword || params.search);
+    if (params?.relationship && params.relationship !== "all") queryParams.relationship = String(params.relationship);
+    if (params?.status && params.status !== "all") queryParams.status = String(params.status);
+    if (params?.employeeCode) queryParams.employeeCode = String(params.employeeCode);
+    queryParams.pageIndex = String(params?.pageIndex || params?.page || 1);
+    queryParams.pageSize = String(params?.pageSize || 10);
+    const query = new URLSearchParams(queryParams);
+    return request<any>(`/api/web/payroll/dependents?${query}`).then((res) => {
+      const d = res.data || {};
+      const total = Number(d.totalRow ?? d.total ?? d.totalCount ?? (Array.isArray(d.items) ? d.items.length : 0));
+      const pageSize = Number(d.pageSize || params?.pageSize || 10);
+      const page = Number(d.pageIndex || d.page || params?.pageIndex || params?.page || 1);
+      const totalPages = Math.max(1, Math.ceil(total / (pageSize || 10)));
+      const rawList = Array.isArray(d.items) ? d.items : Array.isArray(d) ? d : [];
+      const items: DependentDetailV3[] = rawList.map((item: any) => {
+        const emp = item.employee || {};
+        const rawStatus = String(item.status || item.Status || "PENDING").trim().toUpperCase();
+        const validStatus: DependentStatusV3 = (["PENDING", "APPROVED", "REJECTED", "DRAFT"].includes(rawStatus)
+          ? rawStatus
+          : "PENDING") as DependentStatusV3;
+
+        return {
+          id: Number(item.id ?? item.dependentId ?? item.DependentId ?? item.Id ?? 0),
+          employee: {
+            employeeCode: emp.employeeCode || item.employeeCode || item.EmployeeCode || "",
+            fullName: emp.fullName || item.employeeName || item.EmployeeName || emp.name || "",
+            project: emp.project || {
+              projectId: Number(item.projectId ?? 0),
+              projectCode: item.projectCode || "",
+              projectName: item.projectName || "",
+            },
+          },
+          fullName: item.fullName || item.dependentName || item.DependentName || "",
+          dateOfBirth: item.dateOfBirth || item.DateOfBirth || "",
+          identityNumber:
+            item.dependentIdNumber ||
+            item.DependentIdNumber ||
+            item.identityNumber ||
+            item.IdentityNumber ||
+            item.idNumber ||
+            item.IdNumber ||
+            "",
+          taxCode:
+            item.dependentTaxCode ||
+            item.DependentTaxCode ||
+            item.taxCode ||
+            item.TaxCode ||
+            "",
+          relationship: typeof item.relationship === "object" && item.relationship !== null
+            ? item.relationship
+            : {
+                code: (item.relationship || item.Relationship || "CON_RUOT_NUOI") as RelationshipCode,
+                name: (item.relationshipName || item.relationship || item.Relationship || "Người phụ thuộc") as string,
+              },
+          effectiveFrom: item.effectiveFrom || item.EffectiveFrom || "",
+          effectiveTo: item.effectiveTo || item.EffectiveTo || "",
+          status: validStatus,
+          canApprove: validStatus === "PENDING",
+          canReject: validStatus === "PENDING",
+          canEdit: true,
+          documentsCount: Number(item.documentsCount ?? item.DocumentsCount ?? (Array.isArray(item.documents) ? item.documents.length : 0)),
+          documents: Array.isArray(item.documents) ? item.documents : [],
+          approvedBy: item.approvedBy,
+          approvedAt: item.approvedAt,
+          rejectionReason: item.rejectionReason,
+        };
+      });
+
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages,
+        totalRow: total,
+      } as DependentListResponseV3;
+    });
   },
 
   getDependentDetailV3: (dependentId: number | string) =>
-    request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}`).then((res) => res.data),
+    request<any>(`/api/web/payroll/dependents/${dependentId}`).then((res) => {
+      const item = res.data || {};
+      const emp = item.employee || {};
+      const rawStatus = String(item.status || item.Status || "PENDING").trim().toUpperCase();
+      const validStatus: DependentStatusV3 = (["PENDING", "APPROVED", "REJECTED", "DRAFT"].includes(rawStatus)
+        ? rawStatus
+        : "PENDING") as DependentStatusV3;
 
-  createDependentV3: (payload: CreateDependentRequestV3) =>
-    request<DependentDetailV3>("/api/web/payroll/dependents", {
+      return {
+        id: Number(item.id ?? item.dependentId ?? item.DependentId ?? item.Id ?? dependentId),
+        employee: {
+          employeeCode: emp.employeeCode || item.employeeCode || item.EmployeeCode || "",
+          fullName: emp.fullName || item.employeeName || item.EmployeeName || emp.name || "",
+          project: emp.project || {
+            projectId: Number(item.projectId ?? 0),
+            projectCode: item.projectCode || "",
+            projectName: item.projectName || "",
+          },
+        },
+        fullName: item.fullName || item.dependentName || item.DependentName || "",
+        dateOfBirth: item.dateOfBirth || item.DateOfBirth || "",
+        identityNumber:
+          item.dependentIdNumber ||
+          item.DependentIdNumber ||
+          item.identityNumber ||
+          item.IdentityNumber ||
+          item.idNumber ||
+          item.IdNumber ||
+          "",
+        taxCode:
+          item.dependentTaxCode ||
+          item.DependentTaxCode ||
+          item.taxCode ||
+          item.TaxCode ||
+          "",
+        relationship: typeof item.relationship === "object" && item.relationship !== null
+          ? item.relationship
+          : {
+              code: (item.relationship || item.Relationship || "CON_RUOT_NUOI") as RelationshipCode,
+              name: (item.relationshipName || item.relationship || item.Relationship || "Người phụ thuộc") as string,
+            },
+        effectiveFrom: item.effectiveFrom || item.EffectiveFrom || "",
+        effectiveTo: item.effectiveTo || item.EffectiveTo || "",
+        status: validStatus,
+        canApprove: validStatus === "PENDING",
+        canReject: validStatus === "PENDING",
+        canEdit: true,
+        documentsCount: Number(item.documentsCount ?? item.DocumentsCount ?? (Array.isArray(item.documents) ? item.documents.length : 0)),
+        documents: Array.isArray(item.documents) ? item.documents : [],
+        approvedBy: item.approvedBy,
+        approvedAt: item.approvedAt,
+        rejectionReason: item.rejectionReason,
+      } as DependentDetailV3;
+    }),
+
+  createDependentV3: (payload: CreateDependentRequestV3 | any) => {
+    const body = {
+      EmployeeCode: (payload as any).EmployeeCode || (payload as any).employeeCode,
+      DependentName: (payload as any).DependentName || (payload as any).fullName,
+      Relationship: (payload as any).Relationship || (payload as any).relationshipCode || (payload as any).relationship,
+      DateOfBirth: (payload as any).DateOfBirth || (payload as any).dateOfBirth,
+      IdNumber: (payload as any).IdNumber || (payload as any).identityNumber,
+      TaxCode: (payload as any).TaxCode || (payload as any).taxCode,
+      EffectiveFrom: (payload as any).EffectiveFrom || (payload as any).effectiveFrom,
+      EffectiveTo: (payload as any).EffectiveTo || (payload as any).effectiveTo,
+    };
+    return request<DependentDetailV3>("/api/web/payroll/dependents", {
       method: "POST",
-      body: JSON.stringify(payload),
-    }).then((res) => res.data),
+      body: JSON.stringify(body),
+    }).then((res) => res.data);
+  },
 
-  updateDependentV3: (dependentId: number | string, payload: UpdateDependentRequestV3) =>
-    request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}`, {
+  updateDependentV3: (dependentId: number | string, payload: UpdateDependentRequestV3 | any) => {
+    const body = {
+      DependentName: (payload as any).DependentName || (payload as any).fullName,
+      Relationship: (payload as any).Relationship || (payload as any).relationshipCode || (payload as any).relationship,
+      DateOfBirth: (payload as any).DateOfBirth || (payload as any).dateOfBirth,
+      IdNumber: (payload as any).IdNumber || (payload as any).identityNumber,
+      TaxCode: (payload as any).TaxCode || (payload as any).taxCode,
+      EffectiveFrom: (payload as any).EffectiveFrom || (payload as any).effectiveFrom,
+      EffectiveTo: (payload as any).EffectiveTo || (payload as any).effectiveTo,
+    };
+    return request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
-    }).then((res) => res.data),
-
-  deleteDependentV3: (dependentId: number | string) =>
-    request<{ id: number }>(`/api/web/payroll/dependents/${dependentId}`, {
-      method: "DELETE",
-    }).then((res) => res.data),
-
-  confirmDependentV3: (dependentId: number | string) =>
-    request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}/confirm`, {
-      method: "POST",
-    }).then((res) => res.data),
+      body: JSON.stringify(body),
+    }).then((res) => res.data);
+  },
 
   approveDependentV3: (dependentId: number | string) =>
     request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}/approve`, {
@@ -792,17 +1215,23 @@ export const api = {
   rejectDependentV3: (dependentId: number | string, reason: string) =>
     request<DependentDetailV3>(`/api/web/payroll/dependents/${dependentId}/reject`, {
       method: "POST",
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ RejectionReason: reason }),
     }).then((res) => res.data),
 
-  bulkConfirmDependentsV3: (dependentIds: number[]) =>
-    request<{ confirmedCount: number }>("/api/web/payroll/dependents/bulk-confirm", {
+  approveBulkDependentsV3: (dependentIds: number[]) =>
+    request<{ approvedCount?: number }>("/api/web/payroll/dependents/approve-bulk", {
       method: "POST",
-      body: JSON.stringify({ dependentIds }),
+      body: JSON.stringify({ DependentIds: dependentIds }),
     }).then((res) => res.data),
 
   getDependentDocumentsV3: (dependentId: number | string) =>
     request<DependentDocument[]>(`/api/web/payroll/dependents/${dependentId}/documents`).then((res) => res.data),
+
+  saveDependentDocumentV3: (payload: any) =>
+    request<DependentDocument>("/api/web/payroll/dependents/documents", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
 
   uploadDependentDocumentV3: (dependentId: number | string, formData: FormData) =>
     request<DependentDocument>(`/api/web/payroll/dependents/${dependentId}/documents`, {
@@ -810,18 +1239,24 @@ export const api = {
       body: formData,
     }).then((res) => res.data),
 
-  deleteDependentDocumentV3: (dependentId: number | string, documentId: number | string) =>
-    request<{ documentId: number }>(`/api/web/payroll/dependents/${dependentId}/documents/${documentId}`, {
-      method: "DELETE",
-    }).then((res) => res.data),
-
   downloadDependentImportTemplateV3: async (): Promise<void> => {
-    const res = await fetch("/api/web/payroll/dependents/import/template");
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const headers: Record<string, string> = { Accept: "*/*" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseUrl}/web/payroll/dependents/download-import-template`, {
+      headers,
+    });
+    if (!res.ok) {
+      throw new Error(`Tải template thất bại: ${res.status} ${res.statusText}`);
+    }
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "Template_Import_NguoiPhuThuoc_V3.xlsx";
+    a.download = "Template_Import_NguoiPhuThuoc.xlsx";
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
@@ -837,158 +1272,520 @@ export const api = {
     }).then((res) => res.data);
   },
 
-  getDependentAuditLogsV3: (params?: { dependentId?: number | string; page?: number; pageSize?: number }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && v !== "")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<AuditLogListResponseV3>(`/api/web/payroll/dependents/audit-logs?${query}`).then((res) => res.data);
+  getDependentAuditLogsV3: (params?: { keyword?: string; action?: string; fromDate?: string; toDate?: string; dependentId?: number | string; page?: number; pageIndex?: number; pageSize?: number }) => {
+    const queryParams: Record<string, string> = {};
+    if (params?.keyword) queryParams.keyword = String(params.keyword);
+    if (params?.action && params.action !== "all") queryParams.action = String(params.action);
+    if (params?.fromDate) queryParams.fromDate = String(params.fromDate);
+    if (params?.toDate) queryParams.toDate = String(params.toDate);
+    queryParams.pageIndex = String(params?.pageIndex || params?.page || 1);
+    queryParams.pageSize = String(params?.pageSize || 20);
+    const query = new URLSearchParams(queryParams);
+    return request<any>(`/api/web/payroll/dependents/audit-logs?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : (rawData.items || rawData.Items || rawData.data || rawData.rows || []);
+      const items: AuditLogV3[] = rawList.map((item: any, idx: number) => {
+        const actorObj = item.actor || item.Actor || {};
+        const actorName =
+          (typeof actorObj === "string" ? actorObj : actorObj.fullName || actorObj.FullName || actorObj.name || actorObj.Name) ||
+          item.actorName ||
+          item.ActorName ||
+          item.createdByName ||
+          item.CreatedByName ||
+          item.createdBy ||
+          item.CreatedBy ||
+          item.userName ||
+          item.UserName ||
+          item.user ||
+          "Hệ thống";
+        const actorRole =
+          (typeof actorObj === "object" ? actorObj.roleName || actorObj.RoleName || actorObj.role || actorObj.Role : "") ||
+          item.actorRole ||
+          item.ActorRole ||
+          item.roleName ||
+          item.RoleName ||
+          "Quản trị viên";
+
+        const depObj = item.dependent || item.Dependent;
+        const depName =
+          (typeof depObj === "object" && depObj !== null
+            ? depObj.fullName || depObj.FullName || depObj.dependentName || depObj.DependentName || depObj.name
+            : typeof depObj === "string"
+            ? depObj
+            : "") ||
+          item.dependentName ||
+          item.DependentName ||
+          item.fullName ||
+          item.FullName ||
+          "";
+
+        return {
+          id: Number(item.id ?? item.Id ?? item.logId ?? item.LogId ?? idx + 1),
+          eventType: (item.eventType || item.EventType || item.action || item.Action || "UPDATE") as any,
+          occurredAt: item.occurredAt || item.OccurredAt || item.createdAt || item.CreatedAt || item.time || new Date().toISOString(),
+          actor: {
+            id: actorObj.id || actorObj.Id || item.actorId || item.ActorId,
+            fullName: actorName,
+            roleName: actorRole,
+          },
+          employee: item.employee || item.Employee,
+          dependent: depName
+            ? {
+                id: Number(depObj?.id || depObj?.Id || item.dependentId || item.DependentId || 0),
+                fullName: depName,
+              }
+            : null,
+          description:
+            item.description ||
+            item.Description ||
+            item.message ||
+            item.Message ||
+            item.actionLabel ||
+            item.ActionLabel ||
+            item.details ||
+            item.Details ||
+            "Thao tác hồ sơ người phụ thuộc",
+          metadata: item.metadata || item.Metadata,
+        };
+      });
+
+      return {
+        items,
+        total: Number(rawData.total ?? rawData.Total ?? rawData.totalRow ?? items.length),
+        page: Number(rawData.page ?? rawData.Page ?? rawData.pageIndex ?? 1),
+        pageSize: Number(rawData.pageSize ?? rawData.PageSize ?? 20),
+      } as AuditLogListResponseV3;
+    });
   },
 
-  // ================= 02. Phép năm (Annual Leave) OpenAPI 3.0 Methods =================
-  getAnnualLeaveSummaryV3: (projectId?: string | number) => {
-    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
-    return request<AnnualLeaveSummaryResponse>(`/api/web/payroll/annual-leave/summary${query}`).then((res) => res.data);
-  },
-
-  getAnnualLeaveEmployeesV3: (params?: {
+  // ================= 02. Phép năm (Leaves - OpenAPI: WebPayroll - Leave) =================
+  getLeavesV3: (params?: {
     projectId?: string | number;
-    view?: AnnualLeaveViewFilter | string;
+    year?: number | string;
+    keyword?: string;
     search?: string;
+    filter?: AnnualLeaveViewFilter | string;
+    pageIndex?: number;
     page?: number;
     pageSize?: number;
   }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && v !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<AnnualLeaveListResponse>(`/api/web/payroll/annual-leave/employees?${query}`).then((res) => res.data);
+    const queryParams: Record<string, string> = {};
+    if (params?.projectId && params.projectId !== "all") queryParams.projectId = String(params.projectId);
+    if (params?.year && params.year !== "all") queryParams.year = String(params.year);
+    const searchVal = params?.keyword || params?.search;
+    if (searchVal) queryParams.keyword = String(searchVal);
+
+    // Map frontend filter name to backend valid enum values: all, official, probation, resigned, available, expired
+    const mapFilter = (f?: string): string | undefined => {
+      if (!f) return undefined;
+      const upper = String(f).toUpperCase();
+      if (upper === "ALL") return undefined;
+      if (upper === "OFFICIAL_ELIGIBLE" || upper === "OFFICIAL") return "official";
+      if (upper === "PROBATION_OR_NO_CONTRACT" || upper === "PROBATION") return "probation";
+      if (upper === "TERMINATED" || upper === "RESIGNED") return "resigned";
+      if (upper === "HAS_AVAILABLE_LEAVE" || upper === "AVAILABLE") return "available";
+      if (upper === "EXHAUSTED" || upper === "EXPIRED") return "expired";
+      return f.toLowerCase();
+    };
+
+    const backendFilter = mapFilter(params?.filter);
+    if (backendFilter) queryParams.filter = backendFilter;
+
+    queryParams.pageIndex = String(params?.pageIndex || params?.page || 1);
+    queryParams.pageSize = String(params?.pageSize || 10);
+
+    const query = new URLSearchParams(queryParams);
+    return request<any>(`/api/web/payroll/leaves?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : (rawData.items || rawData.Items || rawData.data || rawData.rows || []);
+
+      const items: AnnualLeaveEmployee[] = rawList.map((item: any) => {
+        const emp = item.employee || item.Employee || {};
+        const rawStatus = String(item.status || item.Status || emp.status || "").toUpperCase();
+        const rawContract = String(item.contractType || item.ContractType || "").toUpperCase();
+        const isTerminated = Boolean(
+          item.offDate ||
+          item.OffDate ||
+          item.terminationDate ||
+          item.TerminationDate ||
+          rawStatus === "RESIGNED" ||
+          rawStatus === "TERMINATED"
+        );
+
+        let employmentType: EmploymentType = "OFFICIAL_CONTRACT";
+        if (rawStatus === "PROBATION" || rawContract === "PROBATION") {
+          employmentType = "PROBATION";
+        } else if (rawStatus === "RESIGNED" || rawStatus === "TERMINATED" || isTerminated) {
+          employmentType = "NONE";
+        } else if (rawStatus === "SEASONAL" || rawContract === "SEASONAL") {
+          employmentType = "SEASONAL";
+        } else if (rawStatus === "INTERN" || rawContract === "INTERN") {
+          employmentType = "INTERN";
+        }
+
+        const standardDays = Number(
+          item.totalAnnualLeave ??
+          item.annualEntitlementDays ??
+          item.AnnualEntitlementDays ??
+          item.standardDays ??
+          (employmentType === "OFFICIAL_CONTRACT" ? 12 : 0)
+        );
+        const used = Number(item.usedDays ?? item.UsedDays ?? item.takenDays ?? 0);
+        const carryOver = Number(item.carryOverDays ?? item.CarryOverDays ?? item.transferredDays ?? 0);
+        const avail = Number(item.availableDays ?? item.AvailableDays ?? (standardDays + carryOver - used));
+
+        return {
+          employee: {
+            employeeCode: emp.employeeCode || item.employeeCode || item.EmployeeCode || "",
+            fullName: emp.fullName || item.employeeName || item.EmployeeName || emp.name || item.fullName || "",
+            project: emp.project || {
+              projectId: Number(item.projectId ?? 0),
+              projectCode: item.projectCode || item.ProjectCode || "",
+              projectName: item.projectName || item.ProjectName || "",
+            },
+            department: emp.department || item.department || item.Department || "",
+            position: emp.position || item.position || item.positionName || item.PositionName || "",
+            status: isTerminated ? "TERMINATED" : (emp.status || item.status || "ACTIVE"),
+          },
+          employmentType,
+          joinDate: item.joiningDate || item.JoiningDate || item.joinDate || item.JoinDate || "",
+          terminationDate: item.offDate || item.OffDate || item.terminationDate || item.TerminationDate || null,
+          entitlementStartDate: item.entitlementFrom || item.EntitlementFrom || item.entitlementStartDate || item.EntitlementStartDate || item.joiningDate || item.joinDate || null,
+          entitlementStatus: item.entitlementStatus || item.EntitlementStatus || (isTerminated ? "Đã thôi việc" : employmentType === "OFFICIAL_CONTRACT" ? "Đang hưởng phép" : "Chờ ký HĐLĐ"),
+          annualEntitlementDays: standardDays,
+          carryOverDays: carryOver,
+          usedDays: used,
+          availableDays: avail,
+        };
+      });
+
+      const total = Number(rawData.totalRow ?? rawData.total ?? rawData.Total ?? items.length);
+      const page = Number(rawData.pageIndex ?? rawData.page ?? rawData.Page ?? Number(queryParams.pageIndex));
+      const pageSize = Number(rawData.pageSize ?? rawData.PageSize ?? Number(queryParams.pageSize));
+      const totalPages = Number(rawData.totalPages ?? (Math.ceil(total / (pageSize || 10)) || 1));
+
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages,
+      } as AnnualLeaveListResponse;
+    });
   },
 
-  getAnnualLeaveDetailV3: (employeeCode: string) =>
-    request<AnnualLeaveEmployee>(`/api/web/payroll/annual-leave/employees/${encodeURIComponent(employeeCode)}`).then((res) => res.data),
+  // Alias for backward compatibility
+  getAnnualLeaveEmployeesV3: (params?: any) => api.getLeavesV3(params),
 
-  getAnnualLeaveHistoryV3: (
-    employeeCode: string,
-    params?: { year?: number | string; page?: number; pageSize?: number }
-  ) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && v !== "")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<AnnualLeaveHistoryResponse>(
-      `/api/web/payroll/annual-leave/employees/${encodeURIComponent(employeeCode)}/history?${query}`
-    ).then((res) => res.data);
-  },
-
-  exportAnnualLeaveExcelV3: async (params?: {
-    projectId?: string | number;
-    view?: AnnualLeaveViewFilter | string;
-    search?: string;
+  getLeaveHistoryV3: (params: {
+    employeeCode: string;
     year?: number | string;
-  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number; exportedAt: string }> => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && v !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ fileName: string; fileUrl: string; totalRecords: number; exportedAt: string }>(
-      `/api/web/payroll/annual-leave/export?${query}`
-    ).then((res) => res.data);
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const queryParams: Record<string, string> = {
+      employeeCode: String(params.employeeCode),
+    };
+    if (params.year && params.year !== "all") queryParams.year = String(params.year);
+
+    const query = new URLSearchParams(queryParams);
+    return request<any>(`/api/web/payroll/leaves/history?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : (rawData.items || rawData.Items || rawData.data || rawData.rows || []);
+
+      const items: AnnualLeaveHistoryItemV3[] = rawList.map((item: any, idx: number) => ({
+        id: Number(item.id ?? item.Id ?? item.leaveId ?? idx + 1),
+        fromDate: item.fromDate || item.FromDate || item.startDate || "",
+        toDate: item.toDate || item.ToDate || item.endDate || "",
+        days: Number(item.days ?? item.Days ?? item.duration ?? 1),
+        leaveType: item.leaveType || item.LeaveType || item.typeName || "Nghỉ phép năm",
+        reason: item.reason || item.Reason || item.note || "Nghỉ phép",
+        approvedBy: {
+          id: item.approvedBy?.id || item.approvedById,
+          fullName: item.approvedBy?.fullName || item.approvedBy?.name || item.approvedByName || item.approverName || "Quản lý",
+          roleName: item.approvedBy?.roleName || item.approverRole || "Phê duyệt",
+        },
+        approvedAt: item.approvedAt || item.ApprovedAt || item.createdAt || new Date().toISOString(),
+      }));
+
+      return {
+        items,
+        total: Number(rawData.total ?? rawData.Total ?? items.length),
+        page: Number(params.page || 1),
+        pageSize: Number(params.pageSize || 20),
+        year: params.year ? Number(params.year) : undefined,
+      } as AnnualLeaveHistoryResponse;
+    });
   },
 
-  // ================= 03. Công đoàn phí (Union Dues) OpenAPI 3.0 Methods =================
-  getUnionDuesSummaryV3: (projectId?: string | number) => {
-    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
-    return request<UnionDuesSummaryResponse>(`/api/web/payroll/union-dues/summary${query}`).then((res) => res.data);
+  getAnnualLeaveHistoryV3: (employeeCode: string, params?: { year?: number | string; page?: number; pageSize?: number }) =>
+    api.getLeaveHistoryV3({ employeeCode, ...params }),
+
+  // ================= 03. Công đoàn phí (WebPayroll - Union) Swagger Methods =================
+  getUnionsV3: (params?: {
+    projectId?: string | number;
+    keyword?: string;
+    status?: UnionParticipationStatus | string;
+    pageIndex?: number;
+    pageSize?: number;
+  }) => {
+    const pageIndex = Number(params?.pageIndex ?? 1);
+    const pageSize = Number(params?.pageSize ?? 20);
+
+    const queryObj: Record<string, string> = {
+      pageIndex: String(pageIndex),
+      pageSize: String(pageSize),
+    };
+
+    if (params?.projectId && String(params.projectId) !== "all") {
+      queryObj.projectId = String(params.projectId);
+    }
+    if (params?.keyword && params.keyword.trim()) {
+      queryObj.keyword = params.keyword.trim();
+    }
+    if (params?.status) {
+      const rawStatus = String(params.status).trim();
+      if (rawStatus === "PARTICIPATING" || rawStatus === "participating") {
+        queryObj.status = "participating";
+      } else if (
+        rawStatus === "NOT_PARTICIPATING" ||
+        rawStatus === "notParticipating" ||
+        rawStatus === "not_participating"
+      ) {
+        queryObj.status = "notParticipating";
+      } else if (rawStatus === "ALL" || rawStatus === "all") {
+        queryObj.status = "all";
+      }
+    }
+
+    const query = new URLSearchParams(queryObj).toString();
+    return request<any>(`/api/web/payroll/unions?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : rawData.items || rawData.Items || rawData.data || rawData.rows || [];
+
+      const items: UnionMemberItemV3[] = rawList.map((item: any) => {
+        const empCode = item.employeeCode || item.EmployeeCode || item.code || "";
+        const empName = item.employeeName || item.EmployeeName || item.fullName || item.name || "";
+        const joinDate = item.unionJoinDate || item.UnionJoinDate || null;
+        const joiningDate = item.joiningDate || item.JoiningDate || null;
+        const offDate = item.offDate || item.OffDate || null;
+        const amount = item.contributionAmount ?? item.ContributionAmount ?? null;
+        const isActive = item.isActive ?? item.IsActive ?? (joinDate !== null || (amount && amount > 0));
+
+        return {
+          employee: {
+            employeeCode: empCode,
+            fullName: empName,
+            department: item.departmentName || item.department || "",
+            position: item.positionName || item.position || "",
+            joinDate: joiningDate,
+            terminationDate: offDate,
+            isTerminated: Boolean(offDate),
+            project: item.projectId
+              ? {
+                  projectId: Number(item.projectId),
+                  projectCode: item.projectCode || String(item.projectId),
+                  projectName: item.projectName || "",
+                }
+              : undefined,
+          },
+          participating: Boolean(isActive),
+          joinDate,
+          leaveDate: offDate,
+          contributionAmount: amount !== null ? Number(amount) : (isActive ? 23400 : 0),
+          contributionFormula: item.contributionFormula || (isActive ? "1% Lương tối thiểu vùng" : "—"),
+          note: item.note || item.Note || "",
+          updatedAt: item.updatedAt || item.UpdatedAt || null,
+        };
+      });
+
+      const total = Number(rawData.totalRow ?? rawData.total ?? rawData.Total ?? items.length);
+
+      return {
+        items,
+        total,
+        pageIndex,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize) || 1,
+      };
+    });
   },
 
+  getUnionHistoryV3: (employeeCode: string) => {
+    const query = new URLSearchParams({ employeeCode }).toString();
+    return request<any>(`/api/web/payroll/unions/history?${query}`).then((res) => {
+      const rawData = res.data || res || [];
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : rawData.items || rawData.Items || rawData.data || [];
+
+      const items: UnionHistoryItemV3[] = rawList.map((item: any, idx: number) => ({
+        id: item.id ?? item.Id ?? idx + 1,
+        employeeCode: item.employeeCode || item.EmployeeCode || employeeCode,
+        occurredAt: item.occurredAt || item.OccurredAt || item.createdAt || new Date().toISOString(),
+        action: item.action || item.Action || item.eventType || "",
+        eventType: item.eventType || item.EventType || (item.action?.includes("Dừng") ? "LEFT" : "JOINED"),
+        contributionAmount: item.contributionAmount ?? item.ContributionAmount ?? null,
+        performedBy: {
+          id: item.performedBy?.id || item.createdById || 0,
+          fullName: item.performedBy?.fullName || item.createdByName || item.actor?.fullName || "Hệ thống",
+          roleName: item.performedBy?.roleName || item.actor?.roleName || "Quản trị viên",
+        },
+        note: item.note || item.Note || item.reason || "",
+      }));
+
+      return {
+        items,
+        total: items.length,
+      };
+    });
+  },
+
+  registerUnionV3: (payload: RegisterUnionRequest) =>
+    request<any>("/api/web/payroll/unions/register", {
+      method: "POST",
+      body: JSON.stringify({
+        EmployeeCode: payload.employeeCode,
+        UnionJoinDate: payload.unionJoinDate,
+        ContributionAmount: payload.contributionAmount,
+        Note: payload.note,
+      }),
+    }).then((res) => res.data),
+
+  updateUnionContributionV3: (payload: UpdateUnionContributionRequest) =>
+    request<any>("/api/web/payroll/unions/contribution", {
+      method: "PUT",
+      body: JSON.stringify({
+        EmployeeCode: payload.employeeCode,
+        ContributionAmount: payload.contributionAmount,
+        Note: payload.note,
+      }),
+    }).then((res) => res.data),
+
+  deactivateUnionV3: (payload: DeactivateUnionRequest) =>
+    request<any>("/api/web/payroll/unions/deactivate", {
+      method: "POST",
+      body: JSON.stringify({
+        EmployeeCode: payload.employeeCode,
+        Note: payload.note,
+      }),
+    }).then((res) => res.data),
+
+  importUnionExcelV3: async (file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<any>("/api/web/payroll/unions/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  downloadUnionImportTemplateV3: async (): Promise<void> => {
+    const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+    const token = getAuthToken();
+    try {
+      const res = await fetch(`${baseUrl}/web/payroll/unions/import-template`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Mau_Import_Cong_Doan_Phi.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        return;
+      }
+    } catch {
+      // fallback
+    }
+  },
+
+  getUnionAuditLogsV3: (params?: {
+    keyword?: string;
+    action?: string;
+    fromDate?: string;
+    toDate?: string;
+    pageIndex?: number;
+    pageSize?: number;
+  }) => {
+    const pageIndex = Number(params?.pageIndex ?? 1);
+    const pageSize = Number(params?.pageSize ?? 20);
+
+    const queryObj: Record<string, string> = {
+      pageIndex: String(pageIndex),
+      pageSize: String(pageSize),
+    };
+    if (params?.keyword && params.keyword.trim()) queryObj.keyword = params.keyword.trim();
+    if (params?.action && params.action.trim()) queryObj.action = params.action.trim();
+    if (params?.fromDate) queryObj.fromDate = params.fromDate;
+    if (params?.toDate) queryObj.toDate = params.toDate;
+
+    const query = new URLSearchParams(queryObj).toString();
+    return request<any>(`/api/web/payroll/unions/audit-logs?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : rawData.items || rawData.Items || rawData.data || [];
+
+      const items: UnionAuditLogItemV3[] = rawList.map((item: any, idx: number) => ({
+        id: item.id ?? item.Id ?? idx + 1,
+        occurredAt: item.occurredAt || item.OccurredAt || item.createdAt || new Date().toISOString(),
+        action: item.action || item.Action || "Thay đổi",
+        description: item.description || item.Description || item.note || "",
+        actor: {
+          id: item.actor?.id || item.createdById || 0,
+          fullName: item.actor?.fullName || item.createdByName || "Hệ thống",
+          roleName: item.actor?.roleName || "Quản trị viên",
+        },
+        employee: {
+          id: item.employee?.id || item.employeeId || 0,
+          employeeCode: item.employeeCode || item.EmployeeCode || item.employee?.employeeCode || "",
+          fullName: item.employeeName || item.EmployeeName || item.employee?.fullName || "",
+        },
+      }));
+
+      const total = Number(rawData.totalRow ?? rawData.total ?? items.length);
+      return {
+        items,
+        total,
+        pageIndex,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize) || 1,
+      };
+    });
+  },
+
+  // Backward-compatible aliases for legacy callers
   getUnionDuesMembersV3: (params?: {
     projectId?: string | number;
     participationStatus?: UnionDuesParticipationStatus | string;
     search?: string;
     page?: number;
     pageSize?: number;
-  }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && v !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<UnionDuesListResponse>(`/api/web/payroll/union-dues/members?${query}`).then((res) => res.data);
-  },
+  }) =>
+    api.getUnionsV3({
+      projectId: params?.projectId,
+      keyword: params?.search,
+      status: params?.participationStatus,
+      pageIndex: params?.page,
+      pageSize: params?.pageSize,
+    }),
 
-  getUnionDuesMemberDetailV3: (employeeCode: string) =>
-    request<{ data: UnionDuesMemberV3 }>(`/api/web/payroll/union-dues/members/${encodeURIComponent(employeeCode)}`).then((res) => res.data.data),
-
-  updateUnionDuesMemberV3: (employeeCode: string, payload: UpdateUnionDuesRequestV3) =>
-    request<{ data: UnionDuesMemberV3 }>(`/api/web/payroll/union-dues/members/${encodeURIComponent(employeeCode)}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }).then((res) => res.data.data),
-
-  getUnionDuesHistoryV3: (employeeCode: string, params?: { page?: number; pageSize?: number }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<UnionDuesHistoryResponse>(
-      `/api/web/payroll/union-dues/members/${encodeURIComponent(employeeCode)}/history?${query}`
-    ).then((res) => res.data);
-  },
-
-  exportUnionDuesExcelV3: async (params?: {
-    projectId?: string | number;
-    participationStatus?: string;
-    search?: string;
-  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number; exportedAt: string }> => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ fileName: string; fileUrl: string; totalRecords: number; exportedAt: string }>(
-      `/api/web/payroll/union-dues/export?${query}`
-    ).then((res) => res.data);
-  },
-
-  downloadUnionDuesImportTemplateV3: async (): Promise<void> => {
-    const res = await fetch("/api/web/payroll/union-dues/import/template");
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "Template_Import_CongDoanPhi_V3.xlsx";
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  },
-
-  importUnionDuesExcelV3: async (file: File, projectId?: number | string): Promise<{ totalRows: number; importedRows: number; errors: any[] }> => {
-    const formData = new FormData();
-    formData.append("file", file);
-    if (projectId) formData.append("projectId", String(projectId));
-    return request<{ totalRows: number; importedRows: number; errors: any[] }>("/api/web/payroll/union-dues/import", {
-      method: "POST",
-      body: formData,
-    }).then((res) => res.data);
-  },
-
-  getUnionDuesAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ items: any[]; total: number; page: number; pageSize: number }>(
-      `/api/web/payroll/union-dues/audit-logs?${query}`
-    ).then((res) => res.data);
-  },
+  getUnionDuesHistoryV3: (employeeCode: string) => api.getUnionHistoryV3(employeeCode),
+  getUnionDuesAuditLogsV3: (params?: { page?: number; pageSize?: number }) =>
+    api.getUnionAuditLogsV3({ pageIndex: params?.page, pageSize: params?.pageSize }),
 
   // ================= 04. Ngày công chuẩn (Standard Workdays) OpenAPI 3.0 Methods =================
   getStandardWorkdaysSummaryV3: (projectId?: string | number) => {
@@ -1085,160 +1882,372 @@ export const api = {
     return request<{ items: any[]; total: number }>(`/api/web/payroll/standard-workdays/audit-logs?${query}`).then((res) => res.data);
   },
 
-  // ================= 05. Bảo hiểm xã hội (Social Insurance D02-LT) OpenAPI 3.0 Methods =================
-  getSocialInsuranceSummaryV3: (projectId?: string | number) => {
-    const query = projectId && projectId !== "all" ? `?projectId=${projectId}` : "";
-    return request<SocialInsuranceSummaryResponse>(`/api/web/payroll/social-insurance/summary${query}`).then((res) => res.data);
-  },
-
-  getSocialInsuranceMembersV3: (params?: {
+  // ================= 05. Bảo hiểm xã hội (WebPayroll - Insurance) Swagger Methods =================
+  getInsuranceParticipantsV3: (params?: {
     projectId?: string | number;
-    status?: SocialInsuranceParticipationStatus | string;
+    status?: InsuranceParticipationStatus | string;
+    keyword?: string;
     search?: string;
+    pageIndex?: number;
     page?: number;
     pageSize?: number;
   }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<SocialInsuranceMemberListResponse>(`/api/web/payroll/social-insurance/members?${query}`).then((res) => res.data);
+    const pageIndex = Number(params?.pageIndex ?? params?.page ?? 1);
+    const pageSize = Number(params?.pageSize ?? 20);
+    const queryObj: Record<string, string> = {
+      pageIndex: String(pageIndex),
+      pageSize: String(pageSize),
+    };
+
+    if (params?.projectId && String(params.projectId) !== "all") {
+      queryObj.projectId = String(params.projectId);
+    }
+    if (params?.status && String(params.status) !== "ALL" && String(params.status) !== "all") {
+      queryObj.status = String(params.status);
+    }
+    const kw = params?.keyword || params?.search;
+    if (kw && kw.trim()) {
+      queryObj.keyword = kw.trim();
+    }
+
+    const query = new URLSearchParams(queryObj).toString();
+    return request<any>(`/api/web/payroll/insurance/participants?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : rawData.items || rawData.Items || rawData.data || rawData.rows || [];
+
+      let totalSalary = 0;
+      let activeCount = 0;
+      let suspendedCount = 0;
+      let stoppedCount = 0;
+
+      const items: InsuranceParticipantItemV3[] = rawList.map((item: any, idx: number) => {
+        const empCode = item.employeeCode || item.EmployeeCode || item.code || "";
+        const empName = item.fullName || item.FullName || item.employeeName || item.EmployeeName || item.name || "";
+        const bookNumber = item.insuranceBookNumber || item.InsuranceBookNumber || item.socialInsuranceNumber || "";
+        const sal = Number(item.insuranceSalary ?? item.InsuranceSalary ?? item.baseSalary ?? item.BaseSalary ?? item.contributionSalary ?? 0);
+        const statusRaw = String(item.participationStatus || item.ParticipationStatus || item.status || "ACTIVE").toUpperCase();
+        const status = (statusRaw === "SUSPENDED" ? "SUSPENDED" : statusRaw === "STOPPED" ? "STOPPED" : "ACTIVE") as InsuranceParticipationStatus;
+
+        totalSalary += sal;
+        if (status === "ACTIVE") activeCount++;
+        else if (status === "SUSPENDED") suspendedCount++;
+        else if (status === "STOPPED") stoppedCount++;
+
+        return {
+          id: Number(item.id ?? item.Id ?? idx + 1),
+          employee: {
+            employeeCode: empCode,
+            fullName: empName,
+            department: item.departmentName || item.department || "",
+            position: item.position || item.title || "",
+            project: item.projectId
+              ? {
+                  projectId: Number(item.projectId),
+                  projectCode: item.projectCode || String(item.projectId),
+                  projectName: item.projectName || "",
+                }
+              : undefined,
+          },
+          insuranceBookNumber: bookNumber,
+          insuranceSalary: sal,
+          baseSalary: sal,
+          contributionSalary: sal,
+          participationStatus: status,
+          status,
+          medicalFacilityId: item.medicalFacilityId ?? item.MedicalFacilityId ?? null,
+          medicalFacilityCode: item.medicalFacilityCode || item.MedicalFacilityCode || null,
+          medicalFacilityName: item.medicalFacilityName || item.MedicalFacilityName || item.medicalRegistrationPlace || null,
+          effectiveFrom: item.effectiveFrom || item.EffectiveFrom || item.effectiveMonth || null,
+          effectiveMonth: item.effectiveMonth || (item.effectiveFrom ? String(item.effectiveFrom).slice(0, 7) : null),
+          employeeContributionRate: Number(item.employeeContributionRate ?? 10.5),
+          employeeContribution: Number(item.employeeContribution ?? Math.round(sal * 0.105)),
+          employerContributionRate: Number(item.employerContributionRate ?? 21.5),
+          employerContribution: Number(item.employerContribution ?? Math.round(sal * 0.215)),
+          totalContributionRate: Number(item.totalContributionRate ?? 32),
+          totalContribution: Number(item.totalContribution ?? Math.round(sal * 0.32)),
+          note: item.note || item.Note || null,
+          confirmedBy: item.confirmedBy || (item.confirmedByName ? { fullName: item.confirmedByName } : undefined),
+          confirmedAt: item.confirmedAt || item.ConfirmedAt || null,
+        };
+      });
+
+      const total = Number(rawData.total ?? rawData.Total ?? rawData.totalRow ?? items.length);
+      const page = Number(rawData.page ?? rawData.Page ?? pageIndex);
+      const pSize = Number(rawData.pageSize ?? rawData.PageSize ?? pageSize);
+
+      return {
+        items,
+        total,
+        page,
+        pageSize: pSize,
+        totalPages: Math.ceil(total / pSize) || 1,
+        summary: {
+          total,
+          activeCount: rawData.activeCount ?? activeCount,
+          suspendedCount: rawData.suspendedCount ?? suspendedCount,
+          stoppedCount: rawData.stoppedCount ?? stoppedCount,
+          totalMonthlyContribution: rawData.totalMonthlyContribution ?? Math.round(totalSalary * 0.32),
+          totalInsuranceSalary: rawData.totalInsuranceSalary ?? totalSalary,
+          pendingChangesCount: rawData.pendingChangesCount ?? 0,
+        },
+      } as InsuranceParticipantListResponseV3;
+    });
   },
 
-  getSocialInsuranceMemberDetailV3: (employeeCode: string) =>
-    request<SocialInsuranceMemberV3>(`/api/web/payroll/social-insurance/members/${encodeURIComponent(employeeCode)}`).then((res) => res.data),
+  searchInsuranceEmployeesV3: (params?: { projectId?: string | number; keyword?: string; limit?: number }) => {
+    const queryObj: Record<string, string> = {};
+    if (params?.projectId && String(params.projectId) !== "all") queryObj.projectId = String(params.projectId);
+    if (params?.keyword) queryObj.keyword = params.keyword.trim();
+    if (params?.limit) queryObj.limit = String(params.limit);
+    const query = new URLSearchParams(queryObj).toString();
+    return request<any>(`/api/web/payroll/insurance/employees/search?${query}`).then((res) => {
+      const raw = res.data || res || [];
+      return Array.isArray(raw) ? raw : raw.items || raw.data || [];
+    });
+  },
 
-  getSocialInsuranceMemberHistoryV3: (employeeCode: string) =>
-    request<{ employeeCode: string; history: any[] }>(
-      `/api/web/payroll/social-insurance/members/${encodeURIComponent(employeeCode)}/history`
-    ).then((res) => res.data),
+  previewInsuranceContributionV3: (params: { baseSalary: number; month?: number; year?: number }) => {
+    const queryObj: Record<string, string> = {
+      baseSalary: String(params.baseSalary || 0),
+    };
+    if (params.month) queryObj.month = String(params.month);
+    if (params.year) queryObj.year = String(params.year);
+    const query = new URLSearchParams(queryObj).toString();
 
-  getSocialInsuranceChangesV3: (params?: {
+    return request<any>(`/api/web/payroll/insurance/contribution-preview?${query}`)
+      .then((res) => {
+        const d = res.data || res || {};
+        const base = Number(d.baseSalary ?? d.BaseSalary ?? params.baseSalary);
+        return {
+          baseSalary: base,
+          socialInsuranceEmployee: Number(d.socialInsuranceEmployee ?? d.SocialInsuranceEmployee ?? Math.round(base * 0.08)),
+          healthInsuranceEmployee: Number(d.healthInsuranceEmployee ?? d.HealthInsuranceEmployee ?? Math.round(base * 0.015)),
+          unemploymentInsuranceEmployee: Number(d.unemploymentInsuranceEmployee ?? d.UnemploymentInsuranceEmployee ?? Math.round(base * 0.01)),
+          totalEmployeeContribution: Number(d.totalEmployeeContribution ?? d.TotalEmployeeContribution ?? Math.round(base * 0.105)),
+          socialInsuranceEmployer: Number(d.socialInsuranceEmployer ?? d.SocialInsuranceEmployer ?? Math.round(base * 0.175)),
+          healthInsuranceEmployer: Number(d.healthInsuranceEmployer ?? d.HealthInsuranceEmployer ?? Math.round(base * 0.03)),
+          unemploymentInsuranceEmployer: Number(d.unemploymentInsuranceEmployer ?? d.UnemploymentInsuranceEmployer ?? Math.round(base * 0.01)),
+          totalEmployerContribution: Number(d.totalEmployerContribution ?? d.TotalEmployerContribution ?? Math.round(base * 0.215)),
+          totalContribution: Number(d.totalContribution ?? d.TotalContribution ?? Math.round(base * 0.32)),
+        } as InsuranceContributionPreview;
+      })
+      .catch(() => {
+        // Safe fallback calculation
+        const base = Number(params.baseSalary || 0);
+        return {
+          baseSalary: base,
+          socialInsuranceEmployee: Math.round(base * 0.08),
+          healthInsuranceEmployee: Math.round(base * 0.015),
+          unemploymentInsuranceEmployee: Math.round(base * 0.01),
+          totalEmployeeContribution: Math.round(base * 0.105),
+          socialInsuranceEmployer: Math.round(base * 0.175),
+          healthInsuranceEmployer: Math.round(base * 0.03),
+          unemploymentInsuranceEmployer: Math.round(base * 0.01),
+          totalEmployerContribution: Math.round(base * 0.215),
+          totalContribution: Math.round(base * 0.32),
+        } as InsuranceContributionPreview;
+      });
+  },
+
+  createInsuranceChangeV3: (payload: CreateInsuranceChangeRequest) =>
+    request<any>("/api/web/payroll/insurance/changes", {
+      method: "POST",
+      body: JSON.stringify({
+        ProjectId: payload.projectId,
+        EmployeeCode: payload.employeeCode,
+        ChangeType: payload.changeType,
+        EffectiveFrom: payload.effectiveFrom,
+        NewBaseSalary: payload.newBaseSalary,
+        NewInsuranceBookNumber: payload.newInsuranceBookNumber,
+        NewParticipationStatus: payload.newParticipationStatus,
+        NewMedicalFacilityId: payload.newMedicalFacilityId,
+        Reason: payload.reason,
+        ReasonCode: payload.reasonCode,
+      }),
+    }).then((res) => res.data || res),
+
+  getInsuranceChangesV3: (params?: {
     projectId?: string | number;
-    changeType?: string;
     status?: string;
+    keyword?: string;
     search?: string;
+    changeType?: string;
+    pageIndex?: number;
     page?: number;
     pageSize?: number;
   }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<SocialInsuranceChangeListResponse>(`/api/web/payroll/social-insurance/changes?${query}`).then((res) => res.data);
+    const pageIndex = Number(params?.pageIndex ?? params?.page ?? 1);
+    const pageSize = Number(params?.pageSize ?? 20);
+    const queryObj: Record<string, string> = {
+      pageIndex: String(pageIndex),
+      pageSize: String(pageSize),
+    };
+
+    if (params?.projectId && String(params.projectId) !== "all") {
+      queryObj.projectId = String(params.projectId);
+    }
+    if (params?.status && String(params.status) !== "ALL" && String(params.status) !== "all") {
+      queryObj.status = String(params.status);
+    }
+    const kw = params?.keyword || params?.search;
+    if (kw && kw.trim()) {
+      queryObj.keyword = kw.trim();
+    }
+
+    const query = new URLSearchParams(queryObj).toString();
+    return request<any>(`/api/web/payroll/insurance/changes?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : rawData.items || rawData.Items || rawData.data || rawData.rows || [];
+
+      const items: InsuranceChangeItemV3[] = rawList.map((item: any, idx: number) => {
+        const empCode = item.employeeCode || item.EmployeeCode || item.code || "";
+        const empName = item.fullName || item.FullName || item.employeeName || item.EmployeeName || item.name || "";
+        const chType = item.changeType || item.ChangeType || "TANG_MOI";
+        const st = String(item.status || item.Status || "PENDING").toUpperCase();
+
+        return {
+          id: Number(item.id ?? item.Id ?? idx + 1),
+          employee: {
+            employeeCode: empCode,
+            fullName: empName,
+            department: item.departmentName || item.department || "",
+            position: item.position || item.title || "",
+          },
+          changeType: chType,
+          changeTypeName: item.changeTypeName || item.ChangeTypeName || chType,
+          effectiveFrom: item.effectiveFrom || item.EffectiveFrom || item.effectiveMonth || "",
+          effectiveMonth: item.effectiveMonth || (item.effectiveFrom ? String(item.effectiveFrom).slice(0, 7) : ""),
+          oldBaseSalary: item.oldBaseSalary ?? item.OldBaseSalary ?? item.oldSalary ?? null,
+          newBaseSalary: item.newBaseSalary ?? item.NewBaseSalary ?? item.newSalary ?? null,
+          oldSalary: item.oldBaseSalary ?? item.oldSalary ?? null,
+          newSalary: item.newBaseSalary ?? item.newSalary ?? null,
+          oldInsuranceBookNumber: item.oldInsuranceBookNumber || item.OldInsuranceBookNumber || null,
+          newInsuranceBookNumber: item.newInsuranceBookNumber || item.NewInsuranceBookNumber || null,
+          oldParticipationStatus: item.oldParticipationStatus || item.OldParticipationStatus || null,
+          newParticipationStatus: item.newParticipationStatus || item.NewParticipationStatus || null,
+          medicalFacilityId: item.medicalFacilityId ?? item.MedicalFacilityId ?? null,
+          medicalFacilityName: item.medicalFacilityName || item.MedicalFacilityName || null,
+          reason: item.reason || item.Reason || "",
+          reasonCode: item.reasonCode || item.ReasonCode || null,
+          status: st,
+          statusName: st === "CONFIRMED" ? "Đã xác nhận" : st === "REJECTED" ? "Từ chối" : "Chờ xác nhận",
+          externalDossierCode: item.externalDossierCode || item.ExternalDossierCode || item.reconciliationCode || null,
+          reconciliationCode: item.externalDossierCode || item.reconciliationCode || null,
+          fileName: item.fileName || item.FileName || null,
+          filePath: item.filePath || item.FilePath || null,
+          documents: item.documents || [],
+          createdAt: item.createdAt || item.CreatedAt || "",
+          confirmedAt: item.confirmedAt || item.ConfirmedAt || null,
+          confirmedByName: item.confirmedByName || item.ConfirmedByName || null,
+          approvedAt: item.approvedAt || item.ApprovedAt || null,
+        };
+      });
+
+      const total = Number(rawData.total ?? rawData.Total ?? rawData.totalRow ?? items.length);
+      const page = Number(rawData.page ?? rawData.Page ?? pageIndex);
+      const pSize = Number(rawData.pageSize ?? rawData.PageSize ?? pageSize);
+
+      return {
+        items,
+        total,
+        page,
+        pageSize: pSize,
+        totalPages: Math.ceil(total / pSize) || 1,
+      } as InsuranceChangeListResponseV3;
+    });
   },
 
-  getSocialInsuranceChangeDetailV3: (changeId: number | string) =>
-    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}`).then((res) => res.data),
+  getInsuranceChangeDetailV3: (id: number | string) =>
+    request<any>(`/api/web/payroll/insurance/changes/${id}`).then((res) => res.data || res),
 
-  createSocialInsuranceChangeV3: (payload: {
-    employeeCode: string;
-    changeType: SocialInsuranceChangeType;
-    effectiveMonth: string;
-    oldSalary?: number;
-    newSalary?: number;
-    reason: string;
-    documents?: any[];
-  }) =>
-    request<SocialInsuranceChangeV3>("/api/web/payroll/social-insurance/changes", {
+  confirmInsuranceChangeV3: (id: number | string, payload: ConfirmInsuranceChangeRequest) =>
+    request<any>(`/api/web/payroll/insurance/changes/${id}/confirm`, {
       method: "POST",
-      body: JSON.stringify(payload),
-    }).then((res) => res.data),
+      body: JSON.stringify({
+        ExternalDossierCode: payload.externalDossierCode,
+      }),
+    }).then((res) => res.data || res),
 
-  updateSocialInsuranceChangeV3: (changeId: number | string, payload: Partial<SocialInsuranceChangeV3>) =>
-    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    }).then((res) => res.data),
-
-  deleteSocialInsuranceChangeV3: (changeId: number | string) =>
-    request<{ id: number }>(`/api/web/payroll/social-insurance/changes/${changeId}`, {
-      method: "DELETE",
-    }).then((res) => res.data),
-
-  confirmSocialInsuranceReconciliationV3: (changeId: number | string, payload: { reconciliationCode: string; note?: string }) =>
-    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}/confirm-reconciliation`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }).then((res) => res.data),
-
-  approveSocialInsuranceChangeV3: (changeId: number | string, payload?: { note?: string }) =>
-    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}/approve`, {
-      method: "POST",
-      body: JSON.stringify(payload ?? {}),
-    }).then((res) => res.data),
-
-  rejectSocialInsuranceChangeV3: (changeId: number | string, payload: { reason: string }) =>
-    request<SocialInsuranceChangeV3>(`/api/web/payroll/social-insurance/changes/${changeId}/reject`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }).then((res) => res.data),
-
-  getSocialInsuranceChangeDocumentsV3: (changeId: number | string) =>
-    request<any[]>(`/api/web/payroll/social-insurance/changes/${changeId}/documents`).then((res) => res.data),
-
-  uploadSocialInsuranceDocumentV3: async (changeId: number | string, file: File): Promise<any> => {
+  uploadInsuranceChangeDocumentV3: async (id: number | string, file: File, documentType?: string): Promise<any> => {
     const formData = new FormData();
     formData.append("file", file);
-    return request<any>(`/api/web/payroll/social-insurance/changes/${changeId}/documents`, {
+    if (documentType) formData.append("documentType", documentType);
+    return request<any>(`/api/web/payroll/insurance/changes/${id}/documents`, {
       method: "POST",
       body: formData,
-    }).then((res) => res.data);
+    }).then((res) => res.data || res);
   },
 
-  deleteSocialInsuranceDocumentV3: (changeId: number | string, documentId: string | number) =>
-    request<{ success: boolean }>(`/api/web/payroll/social-insurance/changes/${changeId}/documents/${documentId}`, {
-      method: "DELETE",
-    }).then((res) => res.data),
-
-  exportSocialInsuranceExcelV3: async (params?: {
-    projectId?: string | number;
-    status?: string;
-    search?: string;
-  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number }> => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ fileName: string; fileUrl: string; totalRecords: number }>(
-      `/api/web/payroll/social-insurance/export?${query}`
-    ).then((res) => res.data);
+  getInsuranceMedicalFacilitiesV3: (keyword?: string) => {
+    const query = keyword && keyword.trim() ? `?keyword=${encodeURIComponent(keyword.trim())}` : "";
+    return request<any>(`/api/web/payroll/insurance/medical-facilities${query}`).then((res) => {
+      const raw = res.data || res || [];
+      const list = Array.isArray(raw) ? raw : raw.items || raw.data || [];
+      return list.map((item: any) => ({
+        id: Number(item.id ?? item.Id ?? 0),
+        facilityCode: item.facilityCode || item.FacilityCode || item.code || "",
+        facilityName: item.facilityName || item.FacilityName || item.name || "",
+        province: item.province || item.Province || "",
+        address: item.address || item.Address || "",
+      })) as MedicalFacilityItemV3[];
+    });
   },
 
-  downloadSocialInsuranceImportTemplateV3: async (): Promise<void> => {
-    const res = await fetch("/api/web/payroll/social-insurance/import/template");
+  downloadInsuranceImportTemplateV3: async (): Promise<void> => {
+    const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+    const token = getAuthToken();
+    const res = await fetch(`${baseUrl}/web/payroll/insurance/import-template`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "Mau_Import_BHXH.xlsx";
+    a.download = "Mau_Khai_Bao_BHXH.xlsx";
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   },
 
-  importSocialInsuranceExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
+  importInsuranceExcelV3: async (file: File): Promise<any> => {
     const formData = new FormData();
     formData.append("file", file);
-    if (projectId) formData.append("projectId", String(projectId));
-    return request<any>("/api/web/payroll/social-insurance/import", {
+    return request<any>("/api/web/payroll/insurance/import", {
       method: "POST",
       body: formData,
-    }).then((res) => res.data);
+    }).then((res) => res.data || res);
   },
 
-  getSocialInsuranceAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ items: any[]; total: number }>(`/api/web/payroll/social-insurance/audit-logs?${query}`).then((res) => res.data);
+  // Backwards-compatible aliases for Insurance
+  getSocialInsuranceMembersV3: (params?: any) => api.getInsuranceParticipantsV3(params),
+  getSocialInsuranceChangesV3: (params?: any) => api.getInsuranceChangesV3(params),
+  getSocialInsuranceSummaryV3: (projectId?: any) =>
+    api.getInsuranceParticipantsV3({ projectId, pageSize: 1 }).then((res) => res.summary),
+  getSocialInsuranceMemberDetailV3: (employeeCode: string) =>
+    api.getInsuranceParticipantsV3({ keyword: employeeCode, pageSize: 1 }).then((res) => res.items[0]),
+  getSocialInsuranceMemberHistoryV3: (employeeCode: string) =>
+    api.getInsuranceChangesV3({ keyword: employeeCode }).then((res) => ({ employeeCode, history: res.items })),
+  getSocialInsuranceChangeDetailV3: (changeId: number | string) => api.getInsuranceChangeDetailV3(changeId),
+  createSocialInsuranceChangeV3: (payload: any) =>
+    api.createInsuranceChangeV3({
+      employeeCode: payload.employeeCode,
+      changeType: payload.changeType,
+      effectiveFrom: payload.effectiveFrom || (payload.effectiveMonth ? `${payload.effectiveMonth}-01` : new Date().toISOString().slice(0, 10)),
+      newBaseSalary: payload.newSalary ?? payload.newBaseSalary,
+      reason: payload.reason,
+    }),
+  confirmSocialInsuranceReconciliationV3: (changeId: number | string, payload: { reconciliationCode: string; note?: string }) =>
+    api.confirmInsuranceChangeV3(changeId, { externalDossierCode: payload.reconciliationCode }),
+  exportSocialInsuranceExcelV3: async (params?: any) => {
+    return { fileName: "Danh_sach_BHXH.xlsx", fileUrl: "", totalRecords: 0 };
   },
+  downloadSocialInsuranceImportTemplateV3: () => api.downloadInsuranceImportTemplateV3(),
+  importSocialInsuranceExcelV3: (file: File) => api.importInsuranceExcelV3(file),
 
   // ================= 06. Chế độ phụ cấp (Benefits & Allowances) OpenAPI 3.0 Methods =================
   getBenefitsAllowanceSummaryV3: (projectId?: string | number) => {
@@ -1336,372 +2345,699 @@ export const api = {
     return request<{ items: any[]; total: number }>(`/api/web/payroll/benefits-allowances/audit-logs?${query}`).then((res) => res.data);
   },
 
-  // ================= 07. Khoản giảm trừ khác (Other Deductions) OpenAPI 3.0 Methods =================
-  getOtherDeductionsSummaryV3: (params?: { projectId?: string | number; month?: string }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<OtherDeductionsSummaryResponse>(`/api/web/payroll/other-deductions/summary?${query}`).then((res) => res.data);
-  },
+  // ================= 07. Khoản giảm trừ khác (WebPayroll - Other Deductions) Swagger Methods =================
+  getOtherDeductionTypesV3: () =>
+    request<any>("/api/web/payroll/other-deduction-types").then((res) => {
+      const raw = res.data || res || [];
+      const list = Array.isArray(raw) ? raw : raw.items || raw.data || [];
+      return list.map((item: any) => ({
+        id: Number(item.id ?? item.Id ?? 0),
+        deductionCode: item.deductionCode || item.DeductionCode || item.code || "",
+        deductionName: item.deductionName || item.DeductionName || item.name || "",
+      })) as OtherDeductionTypeItem[];
+    }),
 
-  getMasterOtherDeductionTypesV3: () =>
-    request<Array<{ code: string; name: string }>>("/api/web/payroll/master-data/other-deduction-types").then((res) => res.data),
+  getMasterOtherDeductionTypesV3: () => api.getOtherDeductionTypesV3(),
+
+  getOtherDeductionsV3: (params?: {
+    projectId?: string | number;
+    month?: number | string;
+    year?: number | string;
+    deductionTypeId?: number | string;
+    keyword?: string;
+    pageIndex?: number;
+    pageSize?: number;
+  }) => {
+    const pageIndex = Number(params?.pageIndex ?? 1);
+    const pageSize = Number(params?.pageSize ?? 20);
+
+    const queryObj: Record<string, string> = {
+      pageIndex: String(pageIndex),
+      pageSize: String(pageSize),
+    };
+
+    if (params?.projectId && String(params.projectId) !== "all") {
+      queryObj.projectId = String(params.projectId);
+    }
+    if (params?.month && String(params.month) !== "all") {
+      queryObj.month = String(params.month);
+    }
+    if (params?.year && String(params.year) !== "all") {
+      queryObj.year = String(params.year);
+    }
+    if (params?.deductionTypeId && String(params.deductionTypeId) !== "all") {
+      queryObj.deductionTypeId = String(params.deductionTypeId);
+    }
+    if (params?.keyword && params.keyword.trim()) {
+      queryObj.keyword = params.keyword.trim();
+    }
+
+    const query = new URLSearchParams(queryObj).toString();
+    return request<any>(`/api/web/payroll/other-deductions?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : rawData.items || rawData.Items || rawData.data || rawData.rows || [];
+
+      const items: OtherDeductionItemV3[] = rawList.map((item: any, idx: number) => {
+        const empCode = item.employeeCode || item.EmployeeCode || item.code || "";
+        const empName = item.employeeName || item.EmployeeName || item.fullName || item.name || "";
+        const dTypeId = item.otherDeductionTypeId ?? item.OtherDeductionTypeId ?? item.deductionTypeId ?? null;
+        const dCode = item.deductionCode || item.DeductionCode || item.type || "";
+        const dName = item.deductionName || item.DeductionName || item.typeName || "Khoản giảm trừ";
+
+        return {
+          id: Number(item.id ?? item.Id ?? item.deductionId ?? idx + 1),
+          employee: {
+            employeeCode: empCode,
+            fullName: empName,
+            department: item.departmentName || item.department || "",
+            project: item.projectId
+              ? {
+                  projectId: Number(item.projectId),
+                  projectCode: item.projectCode || String(item.projectId),
+                  projectName: item.projectName || "",
+                }
+              : undefined,
+          },
+          month: item.month ? String(item.month) : undefined,
+          year: item.year ? Number(item.year) : undefined,
+          payrollPeriodId: item.payrollPeriodId ?? item.PayrollPeriodId ?? null,
+          deductionTypeId: dTypeId ? Number(dTypeId) : null,
+          deductionCode: dCode,
+          deductionName: dName,
+          type: dCode,
+          typeName: dName,
+          amount: Number(item.amount ?? item.Amount ?? 0),
+          decisionNumber: item.decisionNumber || item.DecisionNumber || "",
+          decisionDate: item.decisionDate || item.DecisionDate || "",
+          note: item.note || item.Note || item.reason || "",
+          reason: item.note || item.Note || item.reason || "",
+          fileName: item.fileName || item.FileName || item.documentFileName || "",
+          filePath: item.filePath || item.FilePath || item.documentFilePath || "",
+          attachment: (item.fileName || item.FileName || item.filePath || item.FilePath)
+            ? {
+                fileName: item.fileName || item.FileName || "Chung_tu_dinh_kem.pdf",
+                fileUrl: item.filePath || item.FilePath || "",
+                fileSize: 1024,
+              }
+            : null,
+          updatedBy: {
+            id: item.updatedBy?.id || item.createdById || 0,
+            fullName: item.updatedBy?.fullName || item.createdByName || "Hệ thống",
+            roleName: item.updatedBy?.roleName || "Quản trị viên",
+          },
+          updatedAt: item.updatedAt || item.UpdatedAt || item.createdAt || "",
+        };
+      });
+
+      const total = Number(rawData.totalRow ?? rawData.total ?? rawData.Total ?? items.length);
+
+      return {
+        items,
+        total,
+        pageIndex,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize) || 1,
+      };
+    });
+  },
 
   getOtherDeductionsListV3: (params?: {
     projectId?: string | number;
-    employeeCode?: string;
     month?: string;
     type?: string;
     search?: string;
     page?: number;
     pageSize?: number;
   }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<OtherDeductionsListResponse>(`/api/web/payroll/other-deductions?${query}`).then((res) => res.data);
+    let parsedMonth: number | undefined;
+    let parsedYear: number | undefined;
+    if (params?.month && params.month.includes("-")) {
+      const parts = params.month.split("-");
+      parsedYear = Number(parts[0]);
+      parsedMonth = Number(parts[1]);
+    }
+    return api.getOtherDeductionsV3({
+      projectId: params?.projectId,
+      month: parsedMonth,
+      year: parsedYear,
+      deductionTypeId: params?.type,
+      keyword: params?.search,
+      pageIndex: params?.page,
+      pageSize: params?.pageSize,
+    });
   },
 
-  getOtherDeductionDetailV3: (deductionId: number | string) =>
-    request<OtherDeductionV3>(`/api/web/payroll/other-deductions/${deductionId}`).then((res) => res.data),
+  getOtherDeductionDetailV3: (id: number | string) =>
+    request<any>(`/api/web/payroll/other-deductions/${id}`).then((res) => res.data),
 
-  createOtherDeductionV3: (payload: CreateOtherDeductionRequestV3) =>
-    request<OtherDeductionV3>("/api/web/payroll/other-deductions", {
+  createOtherDeductionV3: (payload: CreateOtherDeductionRequest) =>
+    request<any>("/api/web/payroll/other-deductions", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        EmployeeCode: payload.employeeCode,
+        PayrollPeriodId: payload.payrollPeriodId,
+        OtherDeductionTypeId: payload.otherDeductionTypeId,
+        Amount: payload.amount,
+        DecisionNumber: payload.decisionNumber,
+        DecisionDate: payload.decisionDate,
+        Note: payload.note || payload.reason,
+        FileName: payload.fileName,
+        FilePath: payload.filePath,
+      }),
     }).then((res) => res.data),
 
-  updateOtherDeductionV3: (deductionId: number | string, payload: Partial<OtherDeductionV3>) =>
-    request<OtherDeductionV3>(`/api/web/payroll/other-deductions/${deductionId}`, {
+  updateOtherDeductionV3: (id: number | string, payload: UpdateOtherDeductionRequest) =>
+    request<any>(`/api/web/payroll/other-deductions/${id}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        EmployeeCode: payload.employeeCode,
+        PayrollPeriodId: payload.payrollPeriodId,
+        OtherDeductionTypeId: payload.otherDeductionTypeId,
+        Amount: payload.amount,
+        DecisionNumber: payload.decisionNumber,
+        DecisionDate: payload.decisionDate,
+        Note: payload.note,
+        FileName: payload.fileName,
+        FilePath: payload.filePath,
+      }),
     }).then((res) => res.data),
 
-  deleteOtherDeductionV3: (deductionId: number | string) =>
-    request<{ id: number }>(`/api/web/payroll/other-deductions/${deductionId}`, {
+  deleteOtherDeductionV3: (id: number | string) =>
+    request<any>(`/api/web/payroll/other-deductions/${id}`, {
       method: "DELETE",
     }).then((res) => res.data),
 
-  uploadOtherDeductionAttachmentV3: async (deductionId: number | string, file: File): Promise<any> => {
-    const formData = new FormData();
-    formData.append("file", file);
-    return request<any>(`/api/web/payroll/other-deductions/${deductionId}/attachment`, {
+  getOtherDeductionDocumentV3: (id: number | string) =>
+    request<any>(`/api/web/payroll/other-deductions/${id}/document`).then((res) => res.data),
+
+  saveOtherDeductionDocumentV3: (id: number | string, payload: { fileName?: string; filePath?: string }) =>
+    request<any>(`/api/web/payroll/other-deductions/${id}/document`, {
       method: "POST",
-      body: formData,
-    }).then((res) => res.data);
-  },
-
-  deleteOtherDeductionAttachmentV3: (deductionId: number | string) =>
-    request<{ success: boolean }>(`/api/web/payroll/other-deductions/${deductionId}/attachment`, {
-      method: "DELETE",
+      body: JSON.stringify({
+        DeductionId: Number(id),
+        FileName: payload.fileName,
+        FilePath: payload.filePath,
+      }),
     }).then((res) => res.data),
 
-  exportOtherDeductionsExcelV3: async (params?: {
-    projectId?: string | number;
-    month?: string;
-    type?: string;
-  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number }> => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ fileName: string; fileUrl: string; totalRecords: number }>(
-      `/api/web/payroll/other-deductions/export?${query}`
-    ).then((res) => res.data);
-  },
-
-  downloadOtherDeductionsImportTemplateV3: async (): Promise<void> => {
-    const res = await fetch("/api/web/payroll/other-deductions/import/template");
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "Mau_Import_Giam_Tru.xlsx";
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  },
-
-  importOtherDeductionsExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
+  importOtherDeductionsExcelV3: async (file: File): Promise<any> => {
     const formData = new FormData();
     formData.append("file", file);
-    if (projectId) formData.append("projectId", String(projectId));
     return request<any>("/api/web/payroll/other-deductions/import", {
       method: "POST",
       body: formData,
     }).then((res) => res.data);
   },
 
-  getOtherDeductionsAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ items: any[]; total: number }>(`/api/web/payroll/other-deductions/audit-logs?${query}`).then((res) => res.data);
+  downloadOtherDeductionsImportTemplateV3: async (): Promise<void> => {
+    const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+    const token = getAuthToken();
+    try {
+      const res = await fetch(`${baseUrl}/web/payroll/other-deductions/import-template`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Mau_Import_Giam_Tru_Khac.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        return;
+      }
+    } catch {
+      // fallback
+    }
   },
 
-  // ================= 08. Thu nhập khác (Other Incomes) OpenAPI 3.0 Methods =================
-  getOtherIncomesSummaryV3: (params?: { projectId?: string | number; month?: string }) => {
+  // ================= 08. Thu nhập khác (WebPayroll - Other Income) OpenAPI 3.0 Methods =================
+  getOtherIncomeTypesV3: () =>
+    request<OtherIncomeTypeItem[]>("/api/web/payroll/other-income-types").then((res) => res.data || []),
+
+  getOtherIncomesV3: async (params?: {
+    projectId?: string | number;
+    month?: number | string;
+    year?: number | string;
+    incomeTypeId?: number | string;
+    keyword?: string;
+    pageIndex?: number;
+    pageSize?: number;
+  }): Promise<OtherIncomesListResponseV3> => {
     const query = new URLSearchParams(
       Object.entries(params ?? {})
         .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
         .map(([k, v]) => [k, String(v)])
     );
-    return request<OtherIncomesSummaryResponse>(`/api/web/payroll/other-incomes/summary?${query}`).then((res) => res.data);
-  },
 
-  getMasterOtherIncomeTypesV3: () =>
-    request<Array<{ code: string; name: string }>>("/api/web/payroll/master-data/other-income-types").then((res) => res.data),
+    const pageIndex = Number(params?.pageIndex || 1);
+    const pageSize = Number(params?.pageSize || 20);
+
+    return request<any>(`/api/web/payroll/other-incomes?${query}`).then((res) => {
+      const rawData = res.data;
+      if (!rawData) {
+        return {
+          items: [],
+          total: 0,
+          pageIndex,
+          pageSize,
+          totalPages: 1,
+        };
+      }
+
+      const rawItems = Array.isArray(rawData) ? rawData : (rawData.items || rawData.data || []);
+      const items: OtherIncomeItemV3[] = rawItems.map((item: any) => {
+        const empCode = item.employeeCode || item.EmployeeCode || item.employee?.employeeCode || item.code || "";
+        const empName = item.employeeName || item.EmployeeName || item.employee?.fullName || item.name || "Nhân viên";
+
+        return {
+          id: Number(item.id || item.Id || item.incomeId || Date.now()),
+          employeeCode: empCode,
+          employeeName: empName,
+          employee: {
+            employeeCode: empCode,
+            fullName: empName,
+            department: item.employee?.department || item.department || "",
+            position: item.employee?.position || item.position || "",
+            projectCode: item.employee?.projectCode || item.projectCode || "",
+          },
+          incomeTypeId: item.incomeTypeId || item.IncomeTypeId || item.otherIncomeTypeId || item.OtherIncomeTypeId,
+          incomeCode: item.incomeCode || item.IncomeCode || item.typeCode || "",
+          incomeName: item.incomeName || item.IncomeName || item.typeName || item.TypeName || "Thu nhập khác",
+          otherIncomeTypeId: item.otherIncomeTypeId || item.OtherIncomeTypeId || item.incomeTypeId || item.IncomeTypeId,
+          amount: Number(item.amount ?? item.Amount ?? 0),
+          decisionNumber: item.decisionNumber || item.DecisionNumber || null,
+          decisionDate: item.decisionDate || item.DecisionDate || null,
+          note: item.note || item.Note || item.reason || item.Reason || "",
+          reason: item.reason || item.Reason || item.note || item.Note || "",
+          fileName: item.fileName || item.FileName || item.documentFileName || "",
+          filePath: item.filePath || item.FilePath || item.documentFilePath || "",
+          attachment: (item.fileName || item.FileName || item.filePath || item.FilePath)
+            ? {
+                id: Number(item.attachmentId || item.id || 1),
+                fileName: item.fileName || item.FileName || "Chung_tu_thu_nhap.pdf",
+                fileUrl: item.filePath || item.FilePath || "",
+                fileSize: 1024,
+              }
+            : null,
+          updatedBy: {
+            id: item.updatedBy?.id || item.createdById || 0,
+            fullName: item.updatedBy?.fullName || item.createdByName || "Hệ thống",
+            roleName: item.updatedBy?.roleName || "Quản trị viên",
+          },
+          updatedAt: item.updatedAt || item.UpdatedAt || item.createdAt || "",
+        };
+      });
+
+      const total = Number(rawData.totalRow ?? rawData.total ?? rawData.Total ?? items.length);
+
+      return {
+        items,
+        total,
+        pageIndex,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize) || 1,
+      };
+    });
+  },
 
   getOtherIncomesListV3: (params?: {
     projectId?: string | number;
-    employeeCode?: string;
     month?: string;
     type?: string;
     search?: string;
     page?: number;
     pageSize?: number;
   }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<OtherIncomesListResponse>(`/api/web/payroll/other-incomes?${query}`).then((res) => res.data);
+    let parsedMonth: number | undefined;
+    let parsedYear: number | undefined;
+    if (params?.month && params.month.includes("-")) {
+      const parts = params.month.split("-");
+      parsedYear = Number(parts[0]);
+      parsedMonth = Number(parts[1]);
+    }
+    return api.getOtherIncomesV3({
+      projectId: params?.projectId,
+      month: parsedMonth,
+      year: parsedYear,
+      incomeTypeId: params?.type,
+      keyword: params?.search,
+      pageIndex: params?.page,
+      pageSize: params?.pageSize,
+    });
   },
 
-  getOtherIncomeDetailV3: (incomeId: number | string) =>
-    request<OtherIncomeV3>(`/api/web/payroll/other-incomes/${incomeId}`).then((res) => res.data),
+  getOtherIncomeDetailV3: (id: number | string) =>
+    request<any>(`/api/web/payroll/other-incomes/${id}`).then((res) => res.data),
 
-  createOtherIncomeV3: (payload: CreateOtherIncomeRequestV3) =>
-    request<OtherIncomeV3>("/api/web/payroll/other-incomes", {
+  createOtherIncomeV3: (payload: CreateOtherIncomeRequest) =>
+    request<any>("/api/web/payroll/other-incomes", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        EmployeeCode: payload.employeeCode,
+        PayrollPeriodId: payload.payrollPeriodId,
+        OtherIncomeTypeId: payload.otherIncomeTypeId,
+        Amount: payload.amount,
+        DecisionNumber: payload.decisionNumber,
+        DecisionDate: payload.decisionDate,
+        Note: payload.note || payload.reason,
+        FileName: payload.fileName,
+        FilePath: payload.filePath,
+      }),
     }).then((res) => res.data),
 
-  updateOtherIncomeV3: (incomeId: number | string, payload: Partial<OtherIncomeV3>) =>
-    request<OtherIncomeV3>(`/api/web/payroll/other-incomes/${incomeId}`, {
+  updateOtherIncomeV3: (id: number | string, payload: UpdateOtherIncomeRequest) =>
+    request<any>(`/api/web/payroll/other-incomes/${id}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        EmployeeCode: payload.employeeCode,
+        PayrollPeriodId: payload.payrollPeriodId,
+        OtherIncomeTypeId: payload.otherIncomeTypeId,
+        Amount: payload.amount,
+        DecisionNumber: payload.decisionNumber,
+        DecisionDate: payload.decisionDate,
+        Note: payload.note,
+        FileName: payload.fileName,
+        FilePath: payload.filePath,
+      }),
     }).then((res) => res.data),
 
-  deleteOtherIncomeV3: (incomeId: number | string) =>
-    request<{ id: number }>(`/api/web/payroll/other-incomes/${incomeId}`, {
+  deleteOtherIncomeV3: (id: number | string) =>
+    request<any>(`/api/web/payroll/other-incomes/${id}`, {
       method: "DELETE",
     }).then((res) => res.data),
 
-  uploadOtherIncomeAttachmentV3: async (incomeId: number | string, file: File): Promise<any> => {
-    const formData = new FormData();
-    formData.append("file", file);
-    return request<any>(`/api/web/payroll/other-incomes/${incomeId}/attachment`, {
+  getOtherIncomeDocumentV3: (id: number | string) =>
+    request<any>(`/api/web/payroll/other-incomes/${id}/document`).then((res) => res.data),
+
+  saveOtherIncomeDocumentV3: (id: number | string, payload: { fileName?: string; filePath?: string }) =>
+    request<any>(`/api/web/payroll/other-incomes/${id}/document`, {
       method: "POST",
-      body: formData,
-    }).then((res) => res.data);
-  },
-
-  deleteOtherIncomeAttachmentV3: (incomeId: number | string) =>
-    request<{ success: boolean }>(`/api/web/payroll/other-incomes/${incomeId}/attachment`, {
-      method: "DELETE",
+      body: JSON.stringify({
+        IncomeId: Number(id),
+        FileName: payload.fileName,
+        FilePath: payload.filePath,
+      }),
     }).then((res) => res.data),
 
-  exportOtherIncomesExcelV3: async (params?: {
-    projectId?: string | number;
-    month?: string;
-    type?: string;
-  }): Promise<{ fileName: string; fileUrl: string; totalRecords: number }> => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "" && v !== "all")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ fileName: string; fileUrl: string; totalRecords: number }>(
-      `/api/web/payroll/other-incomes/export?${query}`
-    ).then((res) => res.data);
-  },
-
-  downloadOtherIncomesImportTemplateV3: async (): Promise<void> => {
-    const res = await fetch("/api/web/payroll/other-incomes/import/template");
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "Mau_Import_Thu_Nhap.xlsx";
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  },
-
-  importOtherIncomesExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
+  importOtherIncomesExcelV3: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    if (projectId) formData.append("projectId", String(projectId));
     return request<any>("/api/web/payroll/other-incomes/import", {
       method: "POST",
       body: formData,
     }).then((res) => res.data);
   },
 
-  getOtherIncomesAuditLogsV3: (params?: { page?: number; pageSize?: number }) => {
-    const query = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined && String(v) !== "")
-        .map(([k, v]) => [k, String(v)])
-    );
-    return request<{ items: any[]; total: number }>(`/api/web/payroll/other-incomes/audit-logs?${query}`).then((res) => res.data);
+  downloadOtherIncomesImportTemplateV3: async (): Promise<void> => {
+    const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+    const token = getAuthToken();
+    try {
+      const res = await fetch(`${baseUrl}/web/payroll/other-incomes/import-template`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Mau_Import_Thu_Nhap_Khac.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        return;
+      }
+    } catch {
+      // fallback
+    }
   },
 
 
 
-  getLeaveRecords: (params?: { projectId?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<LeaveRecord[]>(`/api/leave-records?${query}`).then((item) => item.data);
-  },
-  addLeaveHistory: (employeeId: string, item: Omit<LeaveHistoryItem, "id" | "approvedAt">) =>
-    request<LeaveRecord>(`/api/leave-records/${employeeId}/history`, { method: "POST", body: JSON.stringify(item) }).then((item) => item.data),
-  getUnionFees: (params?: { projectId?: string; period?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<UnionFeeRecord[]>(`/api/union-fees?${query}`).then((item) => item.data);
-  },
-  updateUnionFee: (id: string, payload: Partial<UnionFeeRecord> & { note?: string }) =>
-    request<UnionFeeRecord>(`/api/union-fees/${id}`, { method: "PATCH", body: JSON.stringify(payload) }).then((item) => item.data),
-  importUnionFees: (payload: { projectId: string; period: string; items: Partial<UnionFeeRecord>[] }) =>
-    request<UnionFeeRecord[]>("/api/union-fees/import", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  getStandardWorkdays: (params?: { projectId?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<StandardWorkdayRecord[]>(`/api/standard-workdays?${query}`).then((item) => item.data);
-  },
-  batchImportStandardWorkdays: (payload: { projectId: string; items: Array<{ employeeCode: string; overrideDays: number; reason?: string }> }) =>
-    request<StandardWorkdayRecord[]>("/api/standard-workdays/batch-import", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  saveStandardWorkdayOverride: (id: string, payload: { overrideDays?: number; isOverridden: boolean; reason?: string }) =>
-    request<StandardWorkdayRecord>(`/api/standard-workdays/${id}`, { method: "PATCH", body: JSON.stringify(payload) }).then((item) => item.data),
-  getInsuranceRecords: (params?: { projectId?: string; fromDate?: string; toDate?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<InsuranceRecord[]>(`/api/insurance-records?${query}`).then((item) => item.data);
-  },
-  getInsuranceMasterRecords: (params?: { projectId?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<InsuranceRecord[]>(`/api/insurance/master?${query}`).then((item) => item.data);
-  },
-  getInsuranceChanges: (params?: { projectId?: string; period?: string; status?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<InsuranceChangeRecord[]>(`/api/insurance/changes?${query}`).then((item) => item.data);
-  },
-  createInsuranceChange: (payload: Partial<InsuranceChangeRecord>) =>
-    request<InsuranceChangeRecord>("/api/insurance/changes", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  batchImportInsuranceChanges: (items: Partial<InsuranceChangeRecord>[]) =>
-    request<InsuranceChangeRecord[]>("/api/insurance/changes/batch-import", { method: "POST", body: JSON.stringify({ items }) }).then((item) => item.data),
-  verifyInsuranceChange: (id: string, payload?: { verifiedBy?: string; agencyReceiptCode?: string }) =>
-    request<InsuranceChangeRecord>(`/api/insurance/changes/${id}/verify`, { method: "POST", body: JSON.stringify(payload ?? {}) }).then((item) => item.data),
-  batchVerifyInsuranceChanges: (payload: { ids: string[]; verifiedBy?: string; agencyReceiptCode?: string }) =>
-    request<InsuranceChangeRecord[]>("/api/insurance/changes/batch-verify", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  rejectInsuranceChange: (id: string, payload: { rejectionReason: string }) =>
-    request<InsuranceChangeRecord>(`/api/insurance/changes/${id}/reject`, { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  verifyInsuranceRecord: (id: string, verifiedBy?: string) =>
-    request<InsuranceRecord>(`/api/insurance-records/${id}/verify`, { method: "POST", body: JSON.stringify({ verifiedBy }) }).then((item) => item.data),
-  batchVerifyInsurance: (ids: string[], verifiedBy?: string) =>
-    request<InsuranceRecord[]>("/api/insurance-records/batch-verify", { method: "POST", body: JSON.stringify({ ids, verifiedBy }) }).then((item) => item.data),
-  getTaxConfigs: (params?: { projectId?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<TaxConfigRecord[]>(`/api/tax-configs?${query}`).then((item) => item.data);
-  },
-  updateTaxConfig: (id: string, payload: Partial<TaxConfigRecord>) =>
-    request<TaxConfigRecord>(`/api/tax-configs/${id}`, { method: "PATCH", body: JSON.stringify(payload) }).then((item) => item.data),
-  getEmployeePolicies: (params?: { projectId?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<EmployeePolicyRecord[]>(`/api/employee-policies?${query}`).then((item) => item.data);
-  },
-  getEmployeePolicyDetail: (employeeId: string) =>
-    request<EmployeePolicyRecord>(`/api/employee-policies/${employeeId}`).then((item) => item.data),
-  updateEmployeePolicies: (employeeId: string, payload: { policies: EmployeePolicyItem[]; baseSalary?: number; insuranceSalary?: number; effectiveFrom?: string }) =>
-    request<EmployeePolicyRecord>(`/api/employee-policies/${employeeId}`, { method: "PUT", body: JSON.stringify(payload) }).then((item) => item.data),
-  batchImportEmployeePolicies: (payload: { projectId: string; items: Array<{ employeeCode: string; policyCode: string; amount: number; isEnabled?: boolean; reason?: string }> }) =>
-    request<EmployeePolicyRecord[]>("/api/employee-policies/batch-import", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  resetEmployeePoliciesToDefault: (employeeId: string) =>
-    request<EmployeePolicyRecord>(`/api/employee-policies/${employeeId}/reset`, { method: "POST" }).then((item) => item.data),
+
   getProjectEmployeeGroups: async (projectId: string): Promise<ProjectEmployeeGroup[]> => {
-    await new Promise((res) => setTimeout(res, 120));
-    return (seedDatabase.projectEmployeeGroups ?? []).filter(
-      (g) => !projectId || projectId === "all" || g.projectId === projectId || projectId.startsWith("prj-")
-    );
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể tải danh sách nhóm người lao động (Status: ${response.status})`,
+        "FETCH_EMPLOYEE_GROUPS_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lấy danh sách nhóm người lao động",
+        "API_ERROR",
+        response.status
+      );
+    }
+    const rawItems: any[] = Array.isArray(resJson.data)
+      ? resJson.data
+      : Array.isArray(resJson.data?.items)
+      ? resJson.data.items
+      : [];
+    return rawItems.map((item: any, idx: number) => ({
+      id: String(item.id ?? item.groupId ?? item.Id ?? idx + 1),
+      projectId: String(projectId),
+      name: item.groupName ?? item.name ?? item.GroupName ?? `Nhóm ${item.id}`,
+      code: item.groupCode ?? item.code ?? `GRP_${item.id ?? idx + 1}`,
+      description: item.description ?? item.Description ?? null,
+      colorTone: (item.colorTone || "primary") as any,
+      employeeCount: typeof item.employeeCount === "number" ? item.employeeCount : (item.totalEmployees ?? item.EmployeeCount ?? 0),
+    }));
   },
-  createProjectEmployeeGroup: async (projectId: string, payload: Partial<ProjectEmployeeGroup>): Promise<ProjectEmployeeGroup> => {
-    await new Promise((res) => setTimeout(res, 250));
-    const newGroup: ProjectEmployeeGroup = {
-      id: `grp-${Date.now()}`,
-      projectId: String(projectId || "prj-jss"),
-      name: payload.name || "Nhóm mới",
-      code: payload.code || `GRP_${Date.now().toString().slice(-4)}`,
+  createProjectEmployeeGroup: async (
+    projectId: string,
+    payload: Partial<ProjectEmployeeGroup>
+  ): Promise<ProjectEmployeeGroup> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        GroupName: payload.name || "Nhóm mới",
+      }),
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể tạo nhóm người lao động (Status: ${response.status})`,
+        "CREATE_EMPLOYEE_GROUP_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi tạo nhóm người lao động",
+        "API_ERROR",
+        response.status
+      );
+    }
+    const item = resJson.data || {};
+    return {
+      id: String(item.id ?? item.groupId ?? item.Id ?? Date.now()),
+      projectId: String(projectId),
+      name: item.groupName ?? payload.name ?? "Nhóm mới",
+      code: item.groupCode ?? payload.code ?? `GRP_${item.id ?? Date.now().toString().slice(-4)}`,
+      description: item.description ?? payload.description ?? null,
       colorTone: "primary",
       employeeCount: 0,
     };
-    if (!seedDatabase.projectEmployeeGroups) seedDatabase.projectEmployeeGroups = [];
-    seedDatabase.projectEmployeeGroups.push(newGroup);
-    return newGroup;
   },
-  deleteProjectEmployeeGroup: async (projectId: string, groupId: string | number) => {
-    await new Promise((res) => setTimeout(res, 200));
-    seedDatabase.projectEmployeeGroups = (seedDatabase.projectEmployeeGroups ?? []).filter((g) => g.id !== String(groupId));
-    return { success: true };
+  updateProjectEmployeeGroup: async (
+    projectId: string,
+    groupId: string | number,
+    payload: Partial<ProjectEmployeeGroup>
+  ): Promise<boolean> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups/${groupId}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        GroupName: payload.name || "",
+      }),
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể cập nhật nhóm người lao động (Status: ${response.status})`,
+        "UPDATE_EMPLOYEE_GROUP_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi cập nhật nhóm người lao động",
+        "API_ERROR",
+        response.status
+      );
+    }
+    return true;
   },
-  updateProjectEmployeeGroup: (projectId: string, groupId: string, payload: Partial<ProjectEmployeeGroup>) =>
-    request<ProjectEmployeeGroup>(`/api/projects/${projectId}/employee-groups/${groupId}`, { method: "PATCH", body: JSON.stringify(payload) }).then((item) => item.data),
+  deleteProjectEmployeeGroup: async (
+    projectId: string,
+    groupId: string | number
+  ): Promise<boolean> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups/${groupId}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể xóa nhóm người lao động (Status: ${response.status})`,
+        "DELETE_EMPLOYEE_GROUP_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi xóa nhóm người lao động",
+        "API_ERROR",
+        response.status
+      );
+    }
+    return true;
+  },
   assignEmployeesToGroup: async (
     projectId: string,
     groupId: string | number,
     payload: { employeeCodes?: string[]; employeeIds?: string[] }
   ): Promise<{ success: boolean; message?: string; updatedCount?: number }> => {
-    await new Promise((res) => setTimeout(res, 250));
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups/${groupId}/employees`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const codes = payload.employeeCodes || payload.employeeIds || [];
-    const group = (seedDatabase.projectEmployeeGroups ?? []).find((g) => g.id === String(groupId));
-    if (group) {
-      group.employeeCount = (group.employeeCount || 0) + codes.length;
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        EmployeeCodes: codes,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể phân bổ nhân sự vào nhóm (Status: ${response.status})`,
+        "ASSIGN_EMPLOYEES_GROUP_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi phân bổ nhân sự vào nhóm",
+        "API_ERROR",
+        response.status
+      );
     }
     return {
       success: true,
-      message: `Đã phân bổ ${codes.length} nhân viên vào nhóm thành công (Demo)`,
+      message: resJson?.message || `Đã phân bổ ${codes.length} nhân viên vào nhóm thành công`,
       updatedCount: codes.length,
     };
   },
-  getActivityLogs: (params?: { projectId?: string; module?: ActivityLogModule; q?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<ActivityLogItem[]>(`/api/activity-logs?${query}`).then((item) => item.data);
+  getActivityLogs: async (params?: { projectId?: string; module?: ActivityLogModule; q?: string }): Promise<ActivityLogItem[]> => {
+    try {
+      if (params?.module === "dependents") {
+        const res = await api.getDependentAuditLogsV3();
+        return (res?.items || []).map((item: any) => ({
+          id: String(item.id),
+          projectId: params.projectId || "",
+          module: "dependents",
+          actionType: (item.eventType === "APPROVE" ? "approve" : item.eventType === "REJECT" ? "reject" : "update") as any,
+          actionLabel: item.eventType === "APPROVE" ? "Phê duyệt" : item.eventType === "REJECT" ? "Từ chối" : "Cập nhật",
+          details: item.description || "Thao tác người phụ thuộc",
+          changedBy: item.actor?.fullName || item.actorName || "Hệ thống",
+          createdAt: item.occurredAt || new Date().toISOString(),
+          employeeCode: item.employee?.employeeCode,
+          employeeName: item.employee?.fullName,
+        }));
+      }
+      if (params?.module === "union") {
+        const res = await api.getUnionDuesAuditLogsV3();
+        return (res?.items || []).map((item: any) => ({
+          id: String(item.id),
+          projectId: params.projectId || "",
+          module: "union",
+          actionType: (item.eventType === "JOINED" ? "join" : item.eventType === "LEFT" ? "leave" : "update") as any,
+          actionLabel: item.eventType === "JOINED" ? "Gia nhập" : item.eventType === "LEFT" ? "Ngừng tham gia" : "Cập nhật",
+          details: item.description || "Thao tác công đoàn phí",
+          changedBy: item.actor?.fullName || item.actorName || "Hệ thống",
+          createdAt: item.occurredAt || new Date().toISOString(),
+          employeeCode: item.employee?.employeeCode,
+          employeeName: item.employee?.fullName,
+        }));
+      }
+      return [];
+    } catch {
+      return [];
+    }
   },
-  createActivityLog: (payload: Partial<ActivityLogItem>) =>
-    request<ActivityLogItem>("/api/activity-logs", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  // Other Deductions API
-  getOtherDeductions: (params?: { projectId?: string; period?: string; q?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<OtherDeductionRecord[]>(`/api/other-deductions?${query}`).then((item) => item.data);
-  },
-  createOtherDeduction: (payload: Partial<OtherDeductionRecord>) =>
-    request<OtherDeductionRecord>("/api/other-deductions", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  updateOtherDeduction: (id: string, payload: Partial<OtherDeductionRecord>) =>
-    request<OtherDeductionRecord>(`/api/other-deductions/${id}`, { method: "PUT", body: JSON.stringify(payload) }).then((item) => item.data),
-  deleteOtherDeduction: (id: string) =>
-    request<{ success: boolean }>(`/api/other-deductions/${id}`, { method: "DELETE" }).then((item) => item.data),
-  batchImportOtherDeductions: (payload: { projectId: string; period: string; items: Array<Partial<OtherDeductionRecord>> }) =>
-    request<OtherDeductionRecord[]>("/api/other-deductions/batch-import", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  // Other Incomes API
-  getOtherIncomes: (params?: { projectId?: string; period?: string; q?: string }) => {
-    const query = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
-    return request<OtherIncomeRecord[]>(`/api/other-incomes?${query}`).then((item) => item.data);
-  },
-  createOtherIncome: (payload: Partial<OtherIncomeRecord>) =>
-    request<OtherIncomeRecord>("/api/other-incomes", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
-  updateOtherIncome: (id: string, payload: Partial<OtherIncomeRecord>) =>
-    request<OtherIncomeRecord>(`/api/other-incomes/${id}`, { method: "PUT", body: JSON.stringify(payload) }).then((item) => item.data),
-  deleteOtherIncome: (id: string) =>
-    request<{ success: boolean }>(`/api/other-incomes/${id}`, { method: "DELETE" }).then((item) => item.data),
-  batchImportOtherIncomes: (payload: { projectId: string; period: string; items: Array<Partial<OtherIncomeRecord>> }) =>
-    request<OtherIncomeRecord[]>("/api/other-incomes/batch-import", { method: "POST", body: JSON.stringify(payload) }).then((item) => item.data),
 
   // Salary Structures (Quy chế lương) APIs
   getSalaryStructures: async (projectId: string): Promise<SalaryStructure[]> => {
@@ -1824,6 +3160,505 @@ export const api = {
     if (!resJson || resJson.success === false) {
       throw new ApiRequestError(
         resJson?.message || "Lỗi khi cập nhật quy chế lương",
+        "API_ERROR",
+        response.status
+      );
+    }
+    return true;
+  },
+
+  deleteSalaryStructure: async (
+    projectId: string,
+    structureId: number | string
+  ): Promise<boolean> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể xóa quy chế lương (Status: ${response.status})`,
+        "DELETE_SALARY_STRUCTURE_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi xóa quy chế lương",
+        "API_ERROR",
+        response.status
+      );
+    }
+    return true;
+  },
+
+  // Salary Components (Danh mục thành phần lương Master)
+  getSalaryComponents: async (params?: {
+    search?: string;
+    salaryStructureId?: number;
+  }): Promise<SalaryComponentMaster[]> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.salaryStructureId !== undefined) query.set("salaryStructureId", String(params.salaryStructureId));
+
+    const url = `${baseUrl}/web/payroll/salary-components${query.toString() ? `?${query.toString()}` : ""}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể tải danh mục thành phần lương (Status: ${response.status})`,
+        "FETCH_SALARY_COMPONENTS_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lấy danh mục thành phần lương",
+        "API_ERROR",
+        response.status
+      );
+    }
+    const rawGroups: any[] = Array.isArray(resJson.data) ? resJson.data : [];
+    const allComponents: SalaryComponentMaster[] = [];
+
+    for (const group of rawGroups) {
+      const groupCategory: "income" | "deduction" =
+        group.code === "deduction" || group.sign === -1 ? "deduction" : "income";
+
+      if (Array.isArray(group.components) && group.components.length > 0) {
+        for (const comp of group.components) {
+          allComponents.push({
+            id: Number(comp.id),
+            code: comp.code || `COMP_${comp.id}`,
+            name: comp.name || comp.code,
+            category: groupCategory,
+            description: comp.description || null,
+            defaultFormulaText: comp.defaultFormula || comp.expression || `{${comp.code}}`,
+            outputVariable: comp.code || `COMP_${comp.id}`,
+            isActive: !comp.isDisabled,
+          });
+        }
+      } else if (group.code && !group.components) {
+        // Flat item fallback
+        allComponents.push({
+          id: Number(group.id ?? group.ComponentId),
+          code: group.code ?? group.ComponentCode ?? "",
+          name: group.name ?? group.ComponentName ?? "",
+          category: (group.category ?? group.Category ?? "income").toLowerCase(),
+          description: group.description ?? group.Description ?? null,
+          defaultFormulaText: group.defaultFormulaText ?? group.DefaultFormulaText ?? null,
+          outputVariable: group.outputVariable ?? group.OutputVariable ?? null,
+          isActive: Boolean(group.isActive ?? group.IsActive ?? true),
+        });
+      }
+    }
+
+    return allComponents;
+  },
+
+  // Salary Structure Lines (Dòng công thức trong quy chế)
+  getSalaryStructureLines: async (
+    projectId: string,
+    structureId: number | string
+  ): Promise<SalaryStructureLine[]> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể tải dòng công thức quy chế (Status: ${response.status})`,
+        "FETCH_SALARY_STRUCTURE_LINES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lấy danh sách dòng công thức quy chế",
+        "API_ERROR",
+        response.status
+      );
+    }
+    const rawItems: any[] = Array.isArray(resJson.data) ? resJson.data : [];
+    return rawItems.map((item: any) => ({
+      id: item.id ?? item.LineId,
+      structureId: Number(item.salaryStructureId ?? item.StructureId ?? structureId),
+      componentId: Number(item.componentId ?? item.ComponentId),
+      componentCode: item.componentCode ?? item.ComponentCode ?? "",
+      componentName: item.componentName ?? item.ComponentName ?? "",
+      targetGroupId: item.targetGroupId ?? item.TargetGroupId ?? null,
+      targetGroupName: item.targetGroupName ?? item.TargetGroupName ?? null,
+      formulaDefinitionId: item.formulaDefinitionId ?? item.FormulaDefinitionId ?? null,
+      formulaType: item.formulaType ?? item.FormulaType ?? "EXPRESSION",
+      expression: item.expression ?? item.Expression ?? "",
+      executionOrder: Number(item.executionOrder ?? item.ExecutionOrder ?? 0),
+      displayOrder: Number(item.displayOrder ?? item.DisplayOrder ?? 0),
+      isVisibleOnPayslip: Boolean(item.isVisibleOnPayslip ?? item.IsVisibleOnPayslip ?? true),
+      isVisibleOnReport: Boolean(item.isVisibleOnReport ?? item.IsVisibleOnReport ?? true),
+      aggregationTarget: item.aggregationTarget ?? item.AggregationTarget ?? "INCOME",
+      isEnabled: Boolean(item.isEnabled ?? item.IsEnabled ?? true),
+      note: item.note ?? item.Note ?? null,
+    }));
+  },
+
+  saveSalaryStructureLines: async (
+    projectId: string,
+    structureId: number | string,
+    lines: SalaryStructureLineItemRequest[]
+  ): Promise<boolean> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(lines),
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể lưu các dòng công thức quy chế (Status: ${response.status})`,
+        "SAVE_SALARY_STRUCTURE_LINES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lưu các dòng công thức quy chế",
+        "API_ERROR",
+        response.status
+      );
+    }
+    return true;
+  },
+
+  batchUpdateSalaryStructureLines: async (
+    projectId: string,
+    structureId: number | string,
+    lines: SalaryStructureLineItemRequest[]
+  ): Promise<boolean> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(lines),
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể cập nhật các dòng công thức quy chế (Status: ${response.status})`,
+        "UPDATE_SALARY_STRUCTURE_LINES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi cập nhật các dòng công thức quy chế",
+        "API_ERROR",
+        response.status
+      );
+    }
+    return true;
+  },
+
+  updateSalaryStructureLine: async (
+    projectId: string,
+    structureId: number | string,
+    lineId: number | string,
+    payload: SalaryStructureLineItemRequest
+  ): Promise<boolean> => {
+    return api.batchUpdateSalaryStructureLines(projectId, structureId, [
+      { ...payload, LineId: Number(lineId) },
+    ]);
+  },
+
+  batchDeleteSalaryStructureLines: async (
+    projectId: string,
+    structureId: number | string,
+    lineIds: number[]
+  ): Promise<boolean> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify(lineIds),
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể xóa các dòng công thức quy chế (Status: ${response.status})`,
+        "DELETE_SALARY_STRUCTURE_LINES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi xóa các dòng công thức quy chế",
+        "API_ERROR",
+        response.status
+      );
+    }
+    return true;
+  },
+
+  deleteSalaryStructureLine: async (
+    projectId: string,
+    structureId: number | string,
+    lineId: number | string
+  ): Promise<boolean> => {
+    return api.batchDeleteSalaryStructureLines(projectId, structureId, [Number(lineId)]);
+  },
+
+  // Variables (Biến & Tham số tính toán)
+  getAllVariables: async (search?: string): Promise<BackendVariable[]> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const query = new URLSearchParams();
+    if (search) query.set("search", search);
+
+    const url = `${baseUrl}/web/payroll/variables/all${query.toString() ? `?${query.toString()}` : ""}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể tải danh sách biến hệ thống (Status: ${response.status})`,
+        "FETCH_VARIABLES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lấy danh sách biến",
+        "API_ERROR",
+        response.status
+      );
+    }
+    const rawItems: any[] = Array.isArray(resJson.data) ? resJson.data : [];
+    return rawItems.map((item: any) => {
+      const srcType = String(item.sourceType || item.SourceType || "").toLowerCase();
+      let groupName = item.group ?? item.Group ?? "custom";
+      if (!item.group && !item.Group) {
+        if (srcType === "contract") groupName = "employee";
+        else if (srcType === "timesheet") groupName = "attendance";
+        else if (srcType === "policy") groupName = "policy";
+      }
+
+      return {
+        id: Number(item.id ?? item.VariableId),
+        code: item.code ?? item.VariableCode ?? "",
+        name: item.name ?? item.VariableName ?? "",
+        group: groupName,
+        unit: item.unit ?? item.Unit ?? "",
+        dataType: item.dataType ?? item.DataType ?? "decimal",
+        defaultValue: item.defaultValue ?? item.DefaultValue ?? null,
+        description: item.description ?? item.Description ?? null,
+        isSystem: Boolean(item.isSystem ?? item.IsSystem ?? (srcType !== "custom" && srcType !== "")),
+      };
+    });
+  },
+
+  getProjectVariables: async (projectId: string): Promise<ProjectVariableResponse[]> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/variables`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể tải biến dự án (Status: ${response.status})`,
+        "FETCH_PROJECT_VARIABLES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lấy danh sách biến dự án",
+        "API_ERROR",
+        response.status
+      );
+    }
+    const rawItems: any[] = Array.isArray(resJson.data) ? resJson.data : [];
+    return rawItems.map((item: any) => ({
+      id: Number(item.id ?? item.Id ?? 0),
+      projectId: Number(item.projectId ?? item.ProjectId ?? projectId),
+      variableId: Number(item.variableId ?? item.VariableId ?? 0),
+      code: item.code ?? item.VariableCode ?? "",
+      name: item.name ?? item.VariableName ?? "",
+      group: item.group ?? item.Group ?? "custom",
+      unit: item.unit ?? item.Unit ?? "",
+      value: item.value ?? item.Value ?? null,
+      defaultValue: item.defaultValue ?? item.DefaultValue ?? null,
+      description: item.description ?? item.Description ?? null,
+      effectiveFrom: item.effectiveFrom ?? item.EffectiveFrom ?? null,
+      effectiveTo: item.effectiveTo ?? item.EffectiveTo ?? null,
+    }));
+  },
+
+  saveProjectVariables: async (
+    projectId: string,
+    payload: ProjectVariableItemRequest[]
+  ): Promise<boolean> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/variables`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    // Đảm bảo mặc định Value của tham số đầu vào là "0" nếu null/undefined/empty
+    const sanitizedPayload = payload.map((item) => ({
+      ...item,
+      Value: item.Value !== null && item.Value !== undefined && item.Value !== "" ? String(item.Value) : "0",
+    }));
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(sanitizedPayload),
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể lưu biến tham số dự án (Status: ${response.status})`,
+        "SAVE_PROJECT_VARIABLES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lưu biến tham số dự án",
+        "API_ERROR",
+        response.status
+      );
+    }
+    return true;
+  },
+
+  deleteProjectVariable: async (
+    projectId: string,
+    variableId: number | string
+  ): Promise<boolean> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/web/payroll/projects/${projectId}/variables/${variableId}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể xóa biến dự án (Status: ${response.status})`,
+        "DELETE_PROJECT_VARIABLE_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi xóa biến dự án",
         "API_ERROR",
         response.status
       );

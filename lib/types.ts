@@ -231,6 +231,7 @@ export interface FormulaVariable {
 export interface ProjectCustomVariable {
   id: string;
   projectId: string;
+  variableId?: number;
   code: string;
   name: string;
   description?: string;
@@ -253,6 +254,107 @@ export interface SalaryStructurePayload {
   StructureName: string;
   Description: string;
   IsActive: boolean;
+}
+
+export interface SalaryComponentItem {
+  id: number;
+  code: string;
+  name: string;
+  order?: number;
+  isDisabled?: boolean;
+  isSelected?: boolean;
+  defaultFormula?: string;
+  expression?: string;
+}
+
+export interface SalaryComponentGroup {
+  id: number;
+  code: "earning" | "deduction" | "employer_cost" | string;
+  name: string;
+  sign: number;
+  order: number;
+  components: SalaryComponentItem[];
+}
+
+export interface SalaryComponentMaster {
+  id: number;
+  code: string;
+  name: string;
+  category: "income" | "deduction" | "net" | "attendance" | "aggregate";
+  description?: string | null;
+  defaultFormulaText?: string | null;
+  outputVariable?: string | null;
+  isActive?: boolean;
+}
+
+export interface SalaryStructureLine {
+  id?: number | string;
+  structureId?: number;
+  componentId: number;
+  componentCode?: string;
+  componentName?: string;
+  targetGroupId?: number | null;
+  targetGroupName?: string | null;
+  formulaDefinitionId?: number | null;
+  formulaType?: string | null;
+  expression: string;
+  executionOrder: number;
+  displayOrder: number;
+  isVisibleOnPayslip: boolean;
+  isVisibleOnReport: boolean;
+  aggregationTarget?: string | null;
+  isEnabled: boolean;
+  note?: string | null;
+}
+
+export interface SalaryStructureLineItemRequest {
+  LineId?: number | null;
+  ComponentId: number;
+  TargetGroupId?: number | null;
+  FormulaDefinitionId?: number | null;
+  FormulaType?: string | null;
+  Expression?: string | null;
+  ExecutionOrder: number;
+  DisplayOrder: number;
+  IsVisibleOnPayslip: boolean;
+  IsVisibleOnReport: boolean;
+  AggregationTarget?: string | null;
+  IsEnabled: boolean;
+  Note?: string | null;
+}
+
+export interface ProjectVariableItemRequest {
+  VariableId: number;
+  Value?: string | null;
+  EffectiveFrom?: string | null;
+  EffectiveTo?: string | null;
+}
+
+export interface BackendVariable {
+  id: number;
+  code: string;
+  name: string;
+  group?: string;
+  unit?: string;
+  dataType?: string;
+  defaultValue?: string | number | null;
+  description?: string | null;
+  isSystem?: boolean;
+}
+
+export interface ProjectVariableResponse {
+  id: number;
+  projectId: number;
+  variableId: number;
+  code: string;
+  name: string;
+  group?: string;
+  unit?: string;
+  value?: string | number | null;
+  defaultValue?: string | number | null;
+  description?: string | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
 }
 
 export interface DataMapping {
@@ -344,7 +446,7 @@ export interface Dependent {
 }
 
 // ================= OpenAPI 3.0 (01-nguoi-phu-thuoc.yaml) Types =================
-export type DependentStatusV3 = "DRAFT" | "PENDING" | "CONFIRMED" | "APPROVED" | "REJECTED";
+export type DependentStatusV3 = "PENDING" | "APPROVED" | "REJECTED" | "DRAFT";
 
 export type RelationshipCode = 
   | "CON_RUOT_NUOI" 
@@ -362,15 +464,24 @@ export interface RelationshipItem {
 }
 
 export type DocumentTypeCode = 
+  | "GKS"
+  | "CCCD"
+  | "SHK"
+  | "GDKKH"
+  | "GXN_KHUYETTAT"
+  | "GXN_SINHVIEN"
+  | "BAN_CAM_KET"
   | "GIAY_KHAI_SINH" 
-  | "CCCD" 
   | "DANG_KY_KET_HON" 
   | "XAC_NHAN_KHUYET_TAT" 
-  | "GIAY_TO_CHUNG_MINH_NUOI_DUONG";
+  | "GIAY_TO_CHUNG_MINH_NUOI_DUONG"
+  | string;
 
 export interface DocumentTypeItem {
+  id?: number;
   code: DocumentTypeCode;
   name: string;
+  isRequired?: boolean;
   allowedExtensions?: string[];
   maxSizeMb?: number;
 }
@@ -415,10 +526,10 @@ export interface DependentSummaryV3 {
     code: RelationshipCode;
     name: string;
   };
-  effectiveFrom: string; // YYYY-MM
-  effectiveTo?: string | null; // YYYY-MM
+  effectiveFrom: string; // YYYY-MM-DD
+  effectiveTo?: string | null; // YYYY-MM-DD
   status: DependentStatusV3;
-  canConfirm?: boolean;
+  canApprove?: boolean;
   canReject?: boolean;
   canEdit?: boolean;
   documentsCount?: number;
@@ -430,18 +541,48 @@ export interface DependentSummaryV3 {
 export interface DependentDetailV3 extends DependentSummaryV3 {
   documentType?: DocumentTypeCode;
   rejectionReason?: string | null;
-  confirmedAt?: string | null;
-  confirmedBy?: {
-    id: number;
-    fullName: string;
-    roleName: string;
-  } | null;
   approvedAt?: string | null;
   approvedBy?: {
     id: number;
     fullName: string;
     roleName: string;
   } | null;
+}
+
+export interface CreateEmployeeDependentRequest {
+  EmployeeCode?: string;
+  DependentName?: string;
+  Relationship?: string;
+  DateOfBirth?: string;
+  IdNumber?: string;
+  TaxCode?: string;
+  EffectiveFrom?: string;
+  EffectiveTo?: string;
+}
+
+export interface UpdateEmployeeDependentRequest {
+  DependentName?: string;
+  Relationship?: string;
+  DateOfBirth?: string;
+  IdNumber?: string;
+  TaxCode?: string;
+  EffectiveFrom?: string;
+  EffectiveTo?: string;
+}
+
+export interface RejectEmployeeDependentRequest {
+  RejectionReason?: string;
+}
+
+export interface ApproveManyDependentsRequest {
+  DependentIds?: number[];
+}
+
+export interface SaveDependentDocumentRequest {
+  DependentId: number;
+  DocumentTypeId: number;
+  FileName?: string;
+  FilePath?: string;
 }
 
 export interface CreateDependentRequestV3 {
@@ -474,7 +615,7 @@ export interface RejectDependentRequestV3 {
   reason: string;
 }
 
-export interface BulkConfirmRequestV3 {
+export interface BulkApproveRequestV3 {
   dependentIds: number[];
 }
 
@@ -614,18 +755,43 @@ export interface AnnualLeaveHistoryResponse {
   year?: number;
 }
 
-// ================= OpenAPI 3.0 (03-cong-doan-phi.yaml) Types =================
-export type UnionDuesParticipationStatus = "ALL" | "PARTICIPATING" | "NOT_PARTICIPATING";
+export type LeaveEmployeeItemV3 = AnnualLeaveEmployee;
+export type LeaveListResponseV3 = AnnualLeaveListResponse;
+export type LeaveHistoryResponseV3 = AnnualLeaveHistoryResponse;
+export type LeaveHistoryItemV3 = AnnualLeaveHistoryItemV3;
 
-export interface UnionDuesMemberV3 {
+// ================= WebPayroll - Union Types =================
+export type UnionParticipationStatus = "ALL" | "PARTICIPATING" | "NOT_PARTICIPATING";
+export type UnionDuesParticipationStatus = UnionParticipationStatus;
+
+export interface UnionMemberItemV3 {
   employee: EmployeeSummaryV3;
   participating: boolean;
-  joinDate?: string | null; // YYYY-MM-DD
-  leaveDate?: string | null; // YYYY-MM-DD
-  contributionAmount?: number | null; // e.g. 23400 (VNĐ)
-  contributionFormula?: string | null; // e.g. "1% Lương cơ bản" hoặc "1% Lương tối thiểu vùng"
+  joinDate?: string | null;
+  leaveDate?: string | null;
+  contributionAmount?: number | null;
+  contributionFormula?: string | null;
   note?: string | null;
   updatedAt?: string | null;
+}
+export type UnionDuesMemberV3 = UnionMemberItemV3;
+
+export interface RegisterUnionRequest {
+  employeeCode?: string | null;
+  unionJoinDate?: string | null;
+  contributionAmount?: number | null;
+  note?: string | null;
+}
+
+export interface UpdateUnionContributionRequest {
+  employeeCode?: string | null;
+  contributionAmount?: number | null;
+  note?: string | null;
+}
+
+export interface DeactivateUnionRequest {
+  employeeCode?: string | null;
+  note?: string | null;
 }
 
 export interface UpdateUnionDuesRequestV3 {
@@ -637,17 +803,37 @@ export interface UpdateUnionDuesRequestV3 {
   note?: string;
 }
 
-export interface UnionDuesHistoryItemV3 {
-  id: number;
-  occurredAt: string;
-  eventType: string; // "JOINED" | "LEFT" | "ADJUSTED" | "IMPORTED"
+export interface UnionHistoryItemV3 {
+  id: number | string;
+  employeeCode?: string;
+  occurredAt?: string;
+  action?: string;
+  eventType?: string;
   contributionAmount?: number | null;
-  performedBy: {
+  performedBy?: {
     id?: number;
-    fullName: string;
+    fullName?: string;
     roleName?: string;
   };
   note?: string | null;
+}
+export type UnionDuesHistoryItemV3 = UnionHistoryItemV3;
+
+export interface UnionAuditLogItemV3 {
+  id: number | string;
+  occurredAt?: string;
+  action?: string;
+  description?: string;
+  actor?: {
+    id?: number;
+    fullName?: string;
+    roleName?: string;
+  };
+  employee?: {
+    id?: number;
+    employeeCode?: string;
+    fullName?: string;
+  };
 }
 
 export interface UnionDuesSummaryResponse {
@@ -658,20 +844,23 @@ export interface UnionDuesSummaryResponse {
   counts?: StatusCountV3[];
 }
 
-export interface UnionDuesListResponse {
-  items: UnionDuesMemberV3[];
+export interface UnionListResponseV3 {
+  items: UnionMemberItemV3[];
   total: number;
-  page: number;
+  page?: number;
+  pageIndex?: number;
   pageSize: number;
-  totalPages: number;
+  totalPages?: number;
 }
+export type UnionDuesListResponse = UnionListResponseV3;
 
-export interface UnionDuesHistoryResponse {
-  items: UnionDuesHistoryItemV3[];
+export interface UnionHistoryResponseV3 {
+  items: UnionHistoryItemV3[];
   total: number;
-  page: number;
-  pageSize: number;
+  page?: number;
+  pageSize?: number;
 }
+export type UnionDuesHistoryResponse = UnionHistoryResponseV3;
 
 // ================= OpenAPI 3.0 (04-ngay-cong-chuan.yaml) Types =================
 export type StandardWorkdayMode = "ALL" | "CUSTOM" | "PROJECT_DEFAULT";
@@ -709,68 +898,155 @@ export interface StandardWorkdayListResponse {
   counts?: { all: number; custom: number; projectDefault: number };
 }
 
-// ================= OpenAPI 3.0 (05-bao-hiem-xa-hoi.yaml) Types =================
-export type SocialInsuranceParticipationStatus = "ALL" | "ACTIVE" | "SUSPENDED" | "STOPPED";
-export type SocialInsuranceChangeType = "INCREASE" | "DECREASE" | "ADJUST_SALARY";
-export type SocialInsuranceChangeStatus = "DRAFT" | "SUBMITTED" | "RECONCILED" | "APPROVED" | "REJECTED";
+// ================= OpenAPI 3.0 (WebPayroll - Insurance) Types =================
+export type InsuranceParticipationStatus = "ALL" | "ACTIVE" | "SUSPENDED" | "STOPPED";
+export type SocialInsuranceParticipationStatus = InsuranceParticipationStatus;
 
-export interface SocialInsuranceMemberV3 {
+export type InsuranceChangeType =
+  | "TANG_MOI"
+  | "DIEU_CHINH_LUONG"
+  | "GIAM_HAN"
+  | "THOAI_THU"
+  | "NGHI_THAI_SAN"
+  | "NGHI_OM_DAU"
+  | "INCREASE"
+  | "DECREASE"
+  | "ADJUST_SALARY"
+  | string;
+export type SocialInsuranceChangeType = InsuranceChangeType;
+
+export type InsuranceChangeStatus = "ALL" | "PENDING" | "CONFIRMED" | "REJECTED" | "DRAFT" | "SUBMITTED" | "APPROVED" | string;
+export type SocialInsuranceChangeStatus = InsuranceChangeStatus;
+
+export interface MedicalFacilityItemV3 {
+  id: number;
+  facilityCode?: string;
+  facilityName: string;
+  province?: string;
+  address?: string;
+}
+
+export interface InsuranceContributionPreview {
+  baseSalary: number;
+  socialInsuranceEmployee: number; // 8%
+  healthInsuranceEmployee: number; // 1.5%
+  unemploymentInsuranceEmployee: number; // 1%
+  totalEmployeeContribution: number; // 10.5%
+  socialInsuranceEmployer: number; // 17.5%
+  healthInsuranceEmployer: number; // 3%
+  unemploymentInsuranceEmployer: number; // 1%
+  totalEmployerContribution: number; // 21.5%
+  totalContribution: number; // 32%
+}
+
+export interface CreateInsuranceChangeRequest {
+  projectId?: number;
+  employeeCode: string;
+  changeType: string;
+  effectiveFrom: string; // YYYY-MM-DD
+  newBaseSalary?: number;
+  newInsuranceBookNumber?: string;
+  newParticipationStatus?: string;
+  newMedicalFacilityId?: number;
+  reason?: string;
+  reasonCode?: string;
+}
+
+export interface ConfirmInsuranceChangeRequest {
+  externalDossierCode: string;
+}
+
+export interface InsuranceParticipantItemV3 {
+  id?: number;
   employee: EmployeeSummaryV3;
-  socialInsuranceNumber: string;
-  contributionSalary: number;
+  insuranceBookNumber?: string;
+  socialInsuranceNumber?: string;
+  insuranceSalary?: number;
+  baseSalary?: number;
+  contributionSalary?: number;
+  participationStatus?: InsuranceParticipationStatus;
+  status?: InsuranceParticipationStatus;
+  medicalFacilityId?: number | null;
+  medicalFacilityCode?: string | null;
+  medicalFacilityName?: string | null;
+  medicalRegistrationPlace?: string | null;
+  effectiveFrom?: string | null;
+  effectiveMonth?: string | null;
   employeeContributionRate: number; // 10.5
   employeeContribution: number;
   employerContributionRate: number; // 21.5
   employerContribution: number;
   totalContributionRate: number; // 32
   totalContribution: number;
-  effectiveMonth: string; // YYYY-MM
-  status: "ACTIVE" | "SUSPENDED" | "STOPPED";
-  medicalRegistrationPlace?: string | null;
+  note?: string | null;
   confirmedBy?: { id?: number; fullName: string; roleName?: string };
   confirmedAt?: string | null;
 }
+export type SocialInsuranceMemberV3 = InsuranceParticipantItemV3;
 
-export interface SocialInsuranceChangeV3 {
+export interface InsuranceChangeItemV3 {
   id: number;
   employee: EmployeeSummaryV3;
-  changeType: SocialInsuranceChangeType;
-  effectiveMonth: string;
+  changeType: string;
+  changeTypeName?: string;
+  effectiveFrom?: string;
+  effectiveMonth?: string;
+  oldBaseSalary?: number | null;
+  newBaseSalary?: number | null;
   oldSalary?: number | null;
   newSalary?: number | null;
-  status: SocialInsuranceChangeStatus;
-  reason: string;
+  oldInsuranceBookNumber?: string | null;
+  newInsuranceBookNumber?: string | null;
+  oldParticipationStatus?: string | null;
+  newParticipationStatus?: string | null;
+  medicalFacilityId?: number | null;
+  medicalFacilityName?: string | null;
+  reason?: string;
+  reasonCode?: string | null;
+  status: string;
+  statusName?: string;
+  externalDossierCode?: string | null;
   reconciliationCode?: string | null;
+  fileName?: string | null;
+  filePath?: string | null;
   documents?: DependentDocument[];
-  createdAt: string;
+  createdAt?: string;
+  confirmedAt?: string | null;
+  confirmedByName?: string | null;
   approvedAt?: string | null;
 }
+export type SocialInsuranceChangeV3 = InsuranceChangeItemV3;
 
-export interface SocialInsuranceSummaryResponse {
+export interface InsuranceSummaryResponseV3 {
   total: number;
   activeCount: number;
   suspendedCount: number;
   stoppedCount: number;
   totalMonthlyContribution: number;
+  totalInsuranceSalary?: number;
   pendingChangesCount: number;
   counts?: StatusCountV3[];
 }
+export type SocialInsuranceSummaryResponse = InsuranceSummaryResponseV3;
 
-export interface SocialInsuranceMemberListResponse {
-  items: SocialInsuranceMemberV3[];
+export interface InsuranceParticipantListResponseV3 {
+  items: InsuranceParticipantItemV3[];
   total: number;
   page: number;
   pageSize: number;
-  totalPages: number;
+  totalPages?: number;
+  summary?: InsuranceSummaryResponseV3;
 }
+export type SocialInsuranceMemberListResponse = InsuranceParticipantListResponseV3;
 
-export interface SocialInsuranceChangeListResponse {
-  items: SocialInsuranceChangeV3[];
+export interface InsuranceChangeListResponseV3 {
+  items: InsuranceChangeItemV3[];
   total: number;
   page: number;
   pageSize: number;
-  totalPages: number;
+  totalPages?: number;
 }
+export type SocialInsuranceChangeListResponse = InsuranceChangeListResponseV3;
 
 // ================= OpenAPI 3.0 (06-che-do-phu-cap.yaml) Types =================
 export type BenefitsAllowanceMode = "ALL" | "CUSTOM" | "PROJECT_DEFAULT";
@@ -818,107 +1094,205 @@ export interface BenefitsAllowanceListResponse {
 }
 
 // ================= OpenAPI 3.0 (07-khoan-tru-khac.yaml) Types =================
-export type OtherDeductionType = "DISCIPLINE_FINE" | "ASSET_COMPENSATION" | "ADVANCE_PAYMENT" | "OTHER";
+// ================= WebPayroll - Other Deductions Swagger Types =================
+export interface OtherDeductionTypeItem {
+  id: number;
+  deductionCode: string;
+  deductionName: string;
+}
 
-export interface OtherDeductionV3 {
+export type OtherDeductionType = "DISCIPLINE_FINE" | "ASSET_COMPENSATION" | "ADVANCE_PAYMENT" | "OTHER" | string;
+
+export interface OtherDeductionItemV3 {
   id: number;
   employee: EmployeeSummaryV3;
-  month: string; // YYYY-MM
-  type: OtherDeductionType;
-  typeName: string;
+  month?: string | null; // YYYY-MM
+  year?: number | null;
+  payrollPeriodId?: number | null;
+  deductionTypeId?: number | null;
+  deductionCode?: string | null;
+  deductionName?: string | null;
+  type?: OtherDeductionType;
+  typeName?: string;
   amount: number;
   decisionNumber?: string | null;
   decisionDate?: string | null;
-  reason: string;
+  reason?: string | null;
+  note?: string | null;
+  fileName?: string | null;
+  filePath?: string | null;
   attachment?: {
-    id: number;
-    fileName: string;
-    fileUrl: string;
-    fileSize: number;
+    id?: number;
+    fileName?: string;
+    fileUrl?: string;
+    fileSize?: number;
   } | null;
   updatedBy?: { id?: number; fullName: string; roleName?: string };
-  updatedAt: string;
+  updatedAt?: string | null;
+}
+export type OtherDeductionV3 = OtherDeductionItemV3;
+
+export interface CreateOtherDeductionRequest {
+  employeeCode?: string | null;
+  payrollPeriodId?: number | null;
+  otherDeductionTypeId?: number | null;
+  amount?: number | null;
+  decisionNumber?: string | null;
+  decisionDate?: string | null;
+  note?: string | null;
+  fileName?: string | null;
+  filePath?: string | null;
+  // Legacy fields fallback
+  month?: string;
+  type?: OtherDeductionType;
+  reason?: string;
+}
+export type CreateOtherDeductionRequestV3 = CreateOtherDeductionRequest;
+
+export interface UpdateOtherDeductionRequest {
+  employeeCode?: string | null;
+  payrollPeriodId?: number | null;
+  otherDeductionTypeId?: number | null;
+  amount?: number | null;
+  decisionNumber?: string | null;
+  decisionDate?: string | null;
+  note?: string | null;
+  fileName?: string | null;
+  filePath?: string | null;
 }
 
-export interface CreateOtherDeductionRequestV3 {
-  employeeCode: string;
-  month: string;
-  type: OtherDeductionType;
-  amount: number;
-  decisionNumber?: string;
-  decisionDate?: string;
-  reason: string;
+export interface SaveOtherDeductionDocumentRequest {
+  deductionId: number;
+  fileName?: string | null;
+  filePath?: string | null;
 }
 
 export interface OtherDeductionsSummaryResponse {
   total: number;
   totalAmount: number;
-  disciplineFineCount: number;
-  assetCompensationCount: number;
-  advancePaymentCount: number;
-  otherCount: number;
+  disciplineFineCount?: number;
+  assetCompensationCount?: number;
+  advancePaymentCount?: number;
+  otherCount?: number;
   counts?: StatusCountV3[];
 }
 
-export interface OtherDeductionsListResponse {
-  items: OtherDeductionV3[];
+export interface OtherDeductionsListResponseV3 {
+  items: OtherDeductionItemV3[];
   total: number;
-  page: number;
+  page?: number;
+  pageIndex?: number;
   pageSize: number;
-  totalPages: number;
+  totalPages?: number;
+}
+export type OtherDeductionsListResponse = OtherDeductionsListResponseV3;
+
+// ================= OpenAPI 3.0 WebPayroll - Other Income Types =================
+export interface OtherIncomeTypeItem {
+  id: number;
+  incomeCode?: string;
+  incomeName?: string;
+  code?: string;
+  name?: string;
+  description?: string;
 }
 
-// ================= OpenAPI 3.0 (08-thu-nhap-khac.yaml) Types =================
-export type OtherIncomeType = "HOT_BONUS" | "PERFORMANCE_BONUS" | "HOLIDAY_BONUS" | "PROJECT_SUPPORT" | "OTHER";
-
-export interface OtherIncomeV3 {
+export interface OtherIncomeItemV3 {
   id: number;
-  employee: EmployeeSummaryV3;
-  month: string; // YYYY-MM
-  type: OtherIncomeType;
-  typeName: string;
+  employeeCode?: string;
+  employeeName?: string;
+  employee: {
+    employeeCode: string;
+    fullName: string;
+    department?: string;
+    position?: string;
+    projectCode?: string;
+    project?: { projectId: number; projectCode: string; projectName: string };
+    email?: string;
+    phone?: string;
+    status?: any;
+  };
+  incomeTypeId?: number;
+  incomeCode?: string;
+  incomeName?: string;
+  otherIncomeTypeId?: number;
+  type?: string;
+  typeName?: string;
+  month?: string;
   amount: number;
   decisionNumber?: string | null;
   decisionDate?: string | null;
-  reason: string;
+  note?: string | null;
+  reason?: string | null;
+  fileName?: string | null;
+  filePath?: string | null;
   attachment?: {
-    id: number;
-    fileName: string;
-    fileUrl: string;
-    fileSize: number;
+    id?: number;
+    fileName?: string;
+    fileUrl?: string;
+    fileSize?: number;
   } | null;
-  updatedBy?: { id?: number; fullName: string; roleName?: string };
-  updatedAt: string;
+  updatedBy?: string | { id?: number; fullName: string; roleName?: string };
+  updatedAt?: string;
 }
 
-export interface CreateOtherIncomeRequestV3 {
-  employeeCode: string;
-  month: string;
-  type: OtherIncomeType;
-  amount: number;
+export type OtherIncomeV3 = OtherIncomeItemV3;
+export type OtherIncomeType = string;
+
+export interface CreateOtherIncomeRequest {
+  employeeCode?: string;
+  payrollPeriodId?: number;
+  otherIncomeTypeId?: number;
+  amount?: number;
   decisionNumber?: string;
   decisionDate?: string;
-  reason: string;
+  note?: string;
+  reason?: string;
+  fileName?: string;
+  filePath?: string;
+  month?: string;
+  type?: string;
+}
+export type CreateOtherIncomeRequestV3 = CreateOtherIncomeRequest;
+
+export interface UpdateOtherIncomeRequest {
+  employeeCode?: string;
+  payrollPeriodId?: number;
+  otherIncomeTypeId?: number;
+  amount?: number;
+  decisionNumber?: string;
+  decisionDate?: string;
+  note?: string;
+  fileName?: string;
+  filePath?: string;
+}
+
+export interface SaveOtherIncomeDocumentRequest {
+  incomeId: number;
+  fileName?: string;
+  filePath?: string;
 }
 
 export interface OtherIncomesSummaryResponse {
   total: number;
   totalAmount: number;
-  hotBonusCount: number;
-  performanceBonusCount: number;
-  holidayBonusCount: number;
-  projectSupportCount: number;
-  otherCount: number;
+  hotBonusCount?: number;
+  performanceBonusCount?: number;
+  holidayBonusCount?: number;
+  projectSupportCount?: number;
+  otherCount?: number;
   counts?: StatusCountV3[];
 }
 
-export interface OtherIncomesListResponse {
-  items: OtherIncomeV3[];
+export interface OtherIncomesListResponseV3 {
+  items: OtherIncomeItemV3[];
   total: number;
-  page: number;
+  page?: number;
+  pageIndex?: number;
   pageSize: number;
-  totalPages: number;
+  totalPages?: number;
 }
+export type OtherIncomesListResponse = OtherIncomesListResponseV3;
 
 
 
@@ -1021,7 +1395,7 @@ export interface InsuranceRecord {
   verifiedAt?: string;
 }
 
-export type InsuranceChangeType =
+export type LegacyInsuranceChangeType =
   | "increase"      // Báo tăng mới (ký HĐLĐ)
   | "decrease"      // Báo giảm hẳn (nghỉ việc)
   | "salary_adjust" // Điều chỉnh mức lương đóng
@@ -1036,7 +1410,7 @@ export interface InsuranceChangeRecord {
   projectId: string;
   projectCode?: string;
   period: string; // YYYY-MM (Kỳ biến động, vd "2026-08")
-  changeType: InsuranceChangeType;
+  changeType: LegacyInsuranceChangeType | InsuranceChangeType;
   oldSalary?: number;
   newSalary: number;
   effectiveMonth: string; // YYYY-MM

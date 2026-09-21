@@ -74,19 +74,25 @@ export function ManageEmployeeGroupsModal({
     enabled: isOpen && !!projectId,
   });
 
+  const groupIdParam = useMemo(() => {
+    if (selectedCategory === "all" || selectedCategory === "unassigned") return undefined;
+    return selectedCategory;
+  }, [selectedCategory]);
+
   const isAssignedParam = useMemo(() => {
     if (selectedCategory === "unassigned") return false;
     if (selectedCategory === "all") return undefined;
-    return true;
+    return undefined;
   }, [selectedCategory]);
 
   const employeesQuery = useQuery({
-    queryKey: ["project-employees", projectId, isAssignedParam, page, pageSize, searchQuery],
+    queryKey: ["project-employees", projectId, isAssignedParam, groupIdParam, page, pageSize, searchQuery],
     queryFn: () =>
       api.getProjectEmployees(projectId, {
         pageIndex: page,
         pageSize: pageSize,
         isAssigned: isAssignedParam,
+        groupId: groupIdParam,
         search: searchQuery.trim() || undefined,
       }),
     enabled: isOpen && !!projectId,
@@ -117,7 +123,7 @@ export function ManageEmployeeGroupsModal({
   const groupMap = useMemo(() => {
     const map = new Map<string, ProjectEmployeeGroup>();
     groups.forEach((g) => {
-      map.set(g.id, g);
+      map.set(String(g.id), g);
       if (g.code) map.set(g.code, g);
     });
     return map;
@@ -126,14 +132,15 @@ export function ManageEmployeeGroupsModal({
   // Active Group object if a specific group is selected
   const activeGroup = useMemo(() => {
     if (selectedCategory === "all" || selectedCategory === "unassigned") return null;
-    return groups.find((g) => g.id === selectedCategory || g.code === selectedCategory) ?? null;
+    return groups.find((g) => String(g.id) === String(selectedCategory) || g.code === selectedCategory) ?? null;
   }, [groups, selectedCategory]);
 
   // Filtered employees according to selected category
   const categoryEmployees = useMemo(() => {
-    if (selectedCategory === "all" || selectedCategory === "unassigned") return employees;
+    if (selectedCategory === "all") return employees;
+    if (selectedCategory === "unassigned") return employees.filter((emp) => !emp.groupId);
     return employees.filter(
-      (emp) => emp.groupId === selectedCategory || (activeGroup && emp.groupId === activeGroup.code)
+      (emp) => String(emp.groupId) === String(selectedCategory) || (activeGroup && String(emp.groupId) === String(activeGroup.code))
     );
   }, [selectedCategory, employees, activeGroup]);
 
@@ -213,7 +220,7 @@ export function ManageEmployeeGroupsModal({
 
   const assignMutation = useMutation({
     mutationFn: ({ groupId, employeeIds }: { groupId: string; employeeIds: string[] }) =>
-      api.assignEmployeesToGroup(projectId, groupId, { employeeIds }),
+      api.assignEmployeesToGroup(projectId, groupId, { employeeCodes: employeeIds }),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ["project-employee-groups", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-employees", projectId] });
@@ -221,7 +228,7 @@ export function ManageEmployeeGroupsModal({
       setSelectedEmpIds(new Set());
       setSelectedToAddIds(new Set());
       setIsAddMembersModalOpen(false);
-      const targetGrp = groups.find((g) => g.id === vars.groupId || g.code === vars.groupId);
+      const targetGrp = groups.find((g) => String(g.id) === String(vars.groupId) || g.code === vars.groupId);
       notify(`Đã chuyển ${vars.employeeIds.length} nhân sự sang "${targetGrp?.name ?? "nhóm mới"}"!`);
     },
     onError: (err: Error) => notify(err.message, "error"),
@@ -290,17 +297,23 @@ export function ManageEmployeeGroupsModal({
 
   const handleExecuteBulkTransfer = () => {
     if (!bulkTargetGroupId || selectedEmpIds.size === 0) return;
+    const codes = displayedEmployees
+      .filter((e) => selectedEmpIds.has(e.id) || selectedEmpIds.has(e.code))
+      .map((e) => e.code || e.id);
     assignMutation.mutate({
       groupId: bulkTargetGroupId,
-      employeeIds: Array.from(selectedEmpIds),
+      employeeIds: codes.length > 0 ? codes : Array.from(selectedEmpIds),
     });
   };
 
   const handleExecuteAddMembers = () => {
     if (!activeGroup || selectedToAddIds.size === 0) return;
+    const codes = candidateEmployeesToAdd
+      .filter((e) => selectedToAddIds.has(e.id) || selectedToAddIds.has(e.code))
+      .map((e) => e.code || e.id);
     assignMutation.mutate({
       groupId: activeGroup.id,
-      employeeIds: Array.from(selectedToAddIds),
+      employeeIds: codes.length > 0 ? codes : Array.from(selectedToAddIds),
     });
   };
 
@@ -1006,7 +1019,7 @@ export function ManageEmployeeGroupsModal({
                         if (!activeGroup) return;
                         assignMutation.mutate({
                           groupId: activeGroup.id,
-                          employeeIds: [emp.id],
+                          employeeIds: [emp.code || emp.id],
                         });
                       }}
                     >

@@ -13,7 +13,7 @@ let memoryDb: MockDatabase = (() => {
           return parsed;
         }
       }
-    } catch {}
+    } catch { }
   }
   return structuredClone(seedDatabase);
 })();
@@ -27,7 +27,7 @@ export function writeMockDatabase(database: MockDatabase) {
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(database));
-    } catch {}
+    } catch { }
   }
 }
 

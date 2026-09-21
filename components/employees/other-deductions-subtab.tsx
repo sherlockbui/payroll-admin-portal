@@ -18,6 +18,7 @@ import {
   Plus,
   ReceiptText,
   RefreshCw,
+  Save,
   Search,
   ShieldAlert,
   Trash2,
@@ -31,8 +32,6 @@ import {
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DecisionDocumentPreviewModal } from "@/components/employees/decision-preview-modal";
-import { ExcelImportModal, type ExcelImportColumn } from "@/components/employees/excel-import-modal";
-import { SubtabActivityLog } from "@/components/employees/subtab-activity-log";
 import { useToast } from "@/components/providers";
 import {
   Badge,
@@ -42,25 +41,19 @@ import {
   LoadingBlock,
   Modal,
   MonthPicker,
+  SearchInput,
   SearchableSelect,
   TablePaginationFooter,
-  TableRowActions,
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import type {
-  CreateOtherDeductionRequestV3,
+  CreateOtherDeductionRequest,
   Employee,
-  OtherDeductionType,
-  OtherDeductionV3,
+  OtherDeductionItemV3,
+  OtherDeductionTypeItem,
+  UpdateOtherDeductionRequest,
 } from "@/lib/types";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
-
-const DEDUCTION_TYPE_OPTIONS: { value: OtherDeductionType; label: string; tone: "danger" | "warning" | "info" | "neutral" }[] = [
-  { value: "ADVANCE_PAYMENT", label: "Tạm ứng lương giữa kỳ", tone: "info" },
-  { value: "ASSET_COMPENSATION", label: "Bồi thường CCDC", tone: "warning" },
-  { value: "DISCIPLINE_FINE", label: "Phạt kỷ luật", tone: "danger" },
-  { value: "OTHER", label: "Khoản giảm trừ khác", tone: "neutral" },
-];
 
 export function OtherDeductionsSubtab({
   projectId,
@@ -74,179 +67,166 @@ export function OtherDeductionsSubtab({
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
+  // Filters
   const [searchTerm, setSearchTerm] = useState("");
-  const [periodFilter, setPeriodFilter] = useState("2026-08");
-  const [typeFilter, setTypeFilter] = useState<string>("ALL");
+  const [periodFilter, setPeriodFilter] = useState("2026-09");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
 
   // Pagination
-  const [page, setPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
   // Modals state
   const [formModalOpen, setFormModalOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<OtherDeductionV3 | null>(null);
+  const [editingRecord, setEditingRecord] = useState<OtherDeductionItemV3 | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [targetDeleteRecord, setTargetDeleteRecord] = useState<OtherDeductionV3 | null>(null);
+  const [targetDeleteRecord, setTargetDeleteRecord] = useState<OtherDeductionItemV3 | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [previewFileModalOpen, setPreviewFileModalOpen] = useState(false);
-  const [previewingRecord, setPreviewingRecord] = useState<OtherDeductionV3 | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadTemplate = async () => {
+    try {
+      setDownloadingTemplate(true);
+      await api.downloadOtherDeductionsImportTemplateV3();
+      notify("Đã tải xuống biểu mẫu import khoản giảm trừ (.xlsx)");
+    } catch {
+      notify("Không thể tải file mẫu. Vui lòng thử lại sau.", "error");
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
+  const [previewDocumentOpen, setPreviewDocumentOpen] = useState(false);
+  const [previewingRecord, setPreviewingRecord] = useState<OtherDeductionItemV3 | null>(null);
 
   // Form state
   const [formEmployeeCode, setFormEmployeeCode] = useState("");
-  const [formMonth, setFormMonth] = useState("2026-08");
-  const [formType, setFormType] = useState<OtherDeductionType>("DISCIPLINE_FINE");
+  const [formDeductionTypeId, setFormDeductionTypeId] = useState<number | undefined>(undefined);
   const [formAmount, setFormAmount] = useState<number>(500000);
   const [formDecisionNumber, setFormDecisionNumber] = useState("");
-  const [formDecisionDate, setFormDecisionDate] = useState("2026-08-15");
-  const [formReason, setFormReason] = useState("");
-  const [formSelectedFile, setFormSelectedFile] = useState<File | null>(null);
+  const [formDecisionDate, setFormDecisionDate] = useState(new Date().toISOString().slice(0, 10));
+  const [formNote, setFormNote] = useState("");
+  const [formFileName, setFormFileName] = useState("");
+  const [formFilePath, setFormFilePath] = useState("");
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [projectId, periodFilter, typeFilter]);
 
-  // Summary Query
-  const summaryQuery = useQuery({
-    queryKey: ["other-deductions-summary", projectId, periodFilter],
-    queryFn: () =>
-      api.getOtherDeductionsSummaryV3({
-        projectId: projectId === "all" ? undefined : projectId,
-        month: periodFilter === "all" ? undefined : periodFilter,
-      }),
+  // Query: Deduction Types
+  const { data: deductionTypes = [] } = useQuery({
+    queryKey: ["web-payroll-other-deduction-types"],
+    queryFn: () => api.getOtherDeductionTypesV3(),
+    staleTime: 1000 * 60 * 10,
   });
 
-  // List Query
-  const listQuery = useQuery({
-    queryKey: ["other-deductions-list", projectId, periodFilter, typeFilter, searchTerm, page, pageSize],
+  // Parse periodFilter (YYYY-MM)
+  const { selectedMonth, selectedYear } = useMemo(() => {
+    if (periodFilter && periodFilter.includes("-")) {
+      const parts = periodFilter.split("-");
+      return { selectedYear: Number(parts[0]), selectedMonth: Number(parts[1]) };
+    }
+    return { selectedMonth: undefined, selectedYear: undefined };
+  }, [periodFilter]);
+
+  // Query: Deductions List
+  const {
+    data: listResponse,
+    isLoading: isListLoading,
+    isError: isListError,
+    refetch: refetchList,
+  } = useQuery({
+    queryKey: [
+      "web-payroll-other-deductions",
+      projectId,
+      selectedMonth,
+      selectedYear,
+      typeFilter,
+      searchTerm,
+      currentPage,
+      pageSize,
+    ],
     queryFn: () =>
-      api.getOtherDeductionsListV3({
+      api.getOtherDeductionsV3({
         projectId: projectId === "all" ? undefined : projectId,
-        month: periodFilter === "all" ? undefined : periodFilter,
-        type: typeFilter === "ALL" ? undefined : typeFilter,
-        search: searchTerm || undefined,
-        page,
+        month: selectedMonth,
+        year: selectedYear,
+        deductionTypeId: typeFilter === "all" ? undefined : typeFilter,
+        keyword: searchTerm,
+        pageIndex: currentPage,
         pageSize,
       }),
   });
 
-  // Master deduction types
-  const typesQuery = useQuery({
-    queryKey: ["master-other-deduction-types"],
-    queryFn: () => api.getMasterOtherDeductionTypesV3(),
-  });
+  const deductionItems = listResponse?.items ?? [];
+  const totalItems = listResponse?.total ?? 0;
 
-  const summary = summaryQuery.data;
-  const listData = listQuery.data;
-  const items = listData?.items ?? [];
-  const totalItems = listData?.total ?? 0;
+  // Compute Summary Statistics
+  const { totalAmount, countByType } = useMemo(() => {
+    let sum = 0;
+    const counts: Record<string, number> = {};
+    deductionItems.forEach((item) => {
+      sum += Number(item.amount || 0);
+      const code = item.deductionCode || "OTHER";
+      counts[code] = (counts[code] || 0) + 1;
+    });
+    return { totalAmount: sum, countByType: counts };
+  }, [deductionItems]);
 
   // Open Create Modal
   const handleOpenCreate = () => {
     setEditingRecord(null);
-    setFormEmployeeCode(employees[0]?.code || "NV-00124");
-    setFormMonth(periodFilter === "all" ? "2026-08" : periodFilter);
-    setFormType("DISCIPLINE_FINE");
+    setFormEmployeeCode(employees[0]?.code || "");
+    setFormDeductionTypeId(deductionTypes[0]?.id);
     setFormAmount(500000);
-    setFormDecisionNumber("QĐ-2026/08-01/VP");
+    setFormDecisionNumber("");
     setFormDecisionDate(new Date().toISOString().slice(0, 10));
-    setFormReason("");
-    setFormSelectedFile(null);
+    setFormNote("");
+    setFormFileName("");
+    setFormFilePath("");
     setFormModalOpen(true);
   };
 
   // Open Edit Modal
-  const handleOpenEdit = (item: OtherDeductionV3) => {
+  const handleOpenEdit = (item: OtherDeductionItemV3) => {
     setEditingRecord(item);
     setFormEmployeeCode(item.employee.employeeCode);
-    setFormMonth(item.month);
-    setFormType(item.type);
+    setFormDeductionTypeId(item.deductionTypeId ?? deductionTypes[0]?.id);
     setFormAmount(item.amount);
     setFormDecisionNumber(item.decisionNumber || "");
-    setFormDecisionDate(item.decisionDate || new Date().toISOString().slice(0, 10));
-    setFormReason(item.reason);
-    setFormSelectedFile(null);
+    setFormDecisionDate(item.decisionDate ? item.decisionDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    setFormNote(item.note || item.reason || "");
+    setFormFileName(item.fileName || "");
+    setFormFilePath(item.filePath || "");
     setFormModalOpen(true);
   };
-
-  // Export Excel
-  const handleExportExcel = async () => {
-    try {
-      const res = await api.exportOtherDeductionsExcelV3({
-        projectId: projectId === "all" ? undefined : projectId,
-        month: periodFilter === "all" ? undefined : periodFilter,
-        type: typeFilter === "ALL" ? undefined : typeFilter,
-      });
-      notify(`Đã xuất báo cáo ${res.fileName} thành công (${res.totalRecords} bản ghi).`);
-    } catch (err: any) {
-      notify(err.message || "Lỗi khi xuất báo cáo Excel", "error");
-    }
-  };
-
-  // Register Header Action
-  useEffect(() => {
-    if (!setHeaderAction) return;
-    setHeaderAction(
-      <div className="flex items-center gap-2">
-        <Button
-          variant="secondary"
-          onClick={handleExportExcel}
-          className="gap-1.5 font-semibold text-xs h-8 px-3"
-        >
-          <Download className="w-3.5 h-3.5" /> Xuất Excel
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => setImportModalOpen(true)}
-          className="gap-1.5 font-semibold text-xs h-8 px-3"
-        >
-          <UploadCloud className="w-3.5 h-3.5" /> Import Excel
-        </Button>
-        <Button
-          variant="primary"
-          onClick={handleOpenCreate}
-          className="gap-1.5 font-semibold text-xs h-8 px-3"
-        >
-          <Plus className="w-3.5 h-3.5" /> Thêm khoản giảm trừ
-        </Button>
-      </div>
-    );
-    return () => setHeaderAction(null);
-  }, [setHeaderAction, projectId, periodFilter, typeFilter]);
 
   // Save Mutation (Create / Update)
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const payload: CreateOtherDeductionRequest = {
+        employeeCode: formEmployeeCode,
+        otherDeductionTypeId: formDeductionTypeId,
+        amount: Number(formAmount) || 0,
+        decisionNumber: formDecisionNumber.trim() || undefined,
+        decisionDate: formDecisionDate || undefined,
+        note: formNote.trim() || undefined,
+        fileName: formFileName.trim() || undefined,
+        filePath: formFilePath.trim() || undefined,
+      };
+
       if (editingRecord) {
-        const updated = await api.updateOtherDeductionV3(editingRecord.id, {
-          month: formMonth,
-          type: formType,
-          amount: Number(formAmount) || 0,
-          decisionNumber: formDecisionNumber.trim() || undefined,
-          decisionDate: formDecisionDate || undefined,
-          reason: formReason.trim() || "Khoản giảm trừ tiền lương",
-        });
-        if (formSelectedFile) {
-          await api.uploadOtherDeductionAttachmentV3(editingRecord.id, formSelectedFile);
-        }
-        return updated;
+        return api.updateOtherDeductionV3(editingRecord.id, payload as UpdateOtherDeductionRequest);
       } else {
-        const payload: CreateOtherDeductionRequestV3 = {
-          employeeCode: formEmployeeCode,
-          month: formMonth,
-          type: formType,
-          amount: Number(formAmount) || 0,
-          decisionNumber: formDecisionNumber.trim() || undefined,
-          decisionDate: formDecisionDate || undefined,
-          reason: formReason.trim() || "Khoản giảm trừ tiền lương",
-        };
-        const created = await api.createOtherDeductionV3(payload);
-        if (formSelectedFile && created.id) {
-          await api.uploadOtherDeductionAttachmentV3(created.id, formSelectedFile);
-        }
-        return created;
+        return api.createOtherDeductionV3(payload);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["other-deductions-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["other-deductions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-other-deductions"] });
       setFormModalOpen(false);
       notify(editingRecord ? "Đã cập nhật khoản giảm trừ thành công!" : "Đã tạo mới khoản giảm trừ thành công!");
     },
@@ -261,8 +241,7 @@ export function OtherDeductionsSubtab({
       return api.deleteOtherDeductionV3(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["other-deductions-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["other-deductions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-other-deductions"] });
       setDeleteModalOpen(false);
       setTargetDeleteRecord(null);
       notify("Đã xóa khoản giảm trừ thành công!");
@@ -272,424 +251,351 @@ export function OtherDeductionsSubtab({
     },
   });
 
-  // Excel Import Setup
-  const [importPreviewRows, setImportPreviewRows] = useState<any[]>([]);
-  const excelColumns: ExcelImportColumn[] = [
-    { key: "employeeCode", label: "Mã NLĐ", width: "120px" },
-    { key: "fullName", label: "Họ và tên NLĐ", width: "160px" },
-    {
-      key: "month",
-      label: "Tháng",
-      width: "100px",
-      align: "center",
-      render: (row) => <Badge tone="neutral">{formatMonthYear(row.month)}</Badge>,
+  // Import Mutation
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      return api.importOtherDeductionsExcelV3(file);
     },
-    {
-      key: "typeName",
-      label: "Loại giảm trừ",
-      render: (row) => <span className="font-medium">{row.typeName || "Phạt vi phạm"}</span>,
-    },
-    {
-      key: "amount",
-      label: "Số tiền (VND)",
-      align: "right",
-      render: (row) => <span className="font-mono text-danger font-semibold">-{formatCurrency(row.amount)}</span>,
-    },
-    { key: "decisionNumber", label: "Số QĐ", width: "130px" },
-    { key: "reason", label: "Lý do / Nội dung" },
-  ];
-
-  const handleSimulateExcelUpload = () => {
-    const mockExcelData = [
-      {
-        employeeCode: "NV-00124",
-        fullName: "Nguyễn Văn An",
-        month: "2026-08",
-        type: "DISCIPLINE_FINE",
-        typeName: "Phạt vi phạm kỷ luật",
-        amount: 500000,
-        decisionNumber: "QĐ-2026/08-01/VP",
-        decisionDate: "2026-08-10",
-        reason: "Không mang bảo hộ lao động phòng sạch",
-      },
-      {
-        employeeCode: "NV-00125",
-        fullName: "Trần Thị Mai",
-        month: "2026-08",
-        type: "ADVANCE_PAYMENT",
-        typeName: "Tạm ứng tiền lương giữa kỳ",
-        amount: 2000000,
-        decisionNumber: "ĐN-2026/08-04/TU",
-        decisionDate: "2026-08-15",
-        reason: "Tạm ứng viện phí gia đình",
-      },
-      {
-        employeeCode: "NV-00126",
-        fullName: "Lê Hoàng Nam",
-        month: "2026-08",
-        type: "ASSET_COMPENSATION",
-        typeName: "Bồi thường thiệt hại CCDC",
-        amount: 400000,
-        decisionNumber: "BB-2026/08-09/BT",
-        decisionDate: "2026-08-18",
-        reason: "Làm mất dụng cụ đo kiểm",
-      },
-    ];
-    setImportPreviewRows(mockExcelData);
-    notify("Đã đọc dữ liệu thành công từ file Excel (3 dòng hợp lệ)");
-  };
-
-  const importBatchMutation = useMutation({
-    mutationFn: async () => {
-      const dummyFile = new File(["dummy"], "import_giam_tru.xlsx");
-      return api.importOtherDeductionsExcelV3(dummyFile, projectId === "all" ? undefined : projectId);
-    },
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["other-deductions-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["other-deductions-list"] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-other-deductions"] });
       setImportModalOpen(false);
-      setImportPreviewRows([]);
-      notify(`Đã nhập khẩu thành công ${res.successRows || importPreviewRows.length} khoản giảm trừ vào hệ thống!`);
+      setImportFile(null);
+      notify("Nhập khẩu dữ liệu giảm trừ từ Excel thành công!");
     },
     onError: (err: any) => {
-      notify(err.message || "Lỗi khi nhập khẩu file Excel", "error");
+      notify(err.message || "Lỗi khi import file Excel", "error");
     },
   });
 
+  const ensureSpecificProject = (actionName: string = "thao tác này") => {
+    if (!projectId || projectId === "all") {
+      notify(`Vui lòng chọn một dự án cụ thể ở thanh công cụ phía trên trước khi ${actionName}!`, "warning");
+      return false;
+    }
+    return true;
+  };
+
+  // Sync Header Actions
+  useEffect(() => {
+    if (setHeaderAction) {
+      setHeaderAction(
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => refetchList()}
+            className="gap-1.5 font-medium shrink-0"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Làm mới
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (!ensureSpecificProject("import khoản giảm trừ")) return;
+              setImportModalOpen(true);
+            }}
+            className="gap-1.5 font-medium shrink-0"
+          >
+            <UploadCloud className="w-3.5 h-3.5" /> Import Excel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              if (!ensureSpecificProject("thêm mới khoản giảm trừ")) return;
+              handleOpenCreate();
+            }}
+            className="gap-1.5 font-semibold shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" /> Thêm khoản giảm trừ
+          </Button>
+        </div>
+      );
+    }
+    return () => {
+      if (setHeaderAction) setHeaderAction(null);
+    };
+  }, [setHeaderAction, refetchList, projectId]);
+
+  // Helper Badge Color for Deduction Type
+  const renderDeductionTypeBadge = (item: OtherDeductionItemV3) => {
+    const code = (item.deductionCode || item.type || "").toUpperCase();
+    const name = item.deductionName || item.typeName || "Khoản giảm trừ";
+
+    if (code.includes("ADVANCE") || code.includes("TAM_UNG")) {
+      return <Badge tone="info">{name}</Badge>;
+    }
+    if (code.includes("COMPENSATION") || code.includes("BOI_THUONG")) {
+      return <Badge tone="warning">{name}</Badge>;
+    }
+    if (code.includes("UNIFORM") || code.includes("DONG_PHUC")) {
+      return <Badge tone="neutral">{name}</Badge>;
+    }
+    if (code.includes("FINE") || code.includes("KY_LUAT")) {
+      return <Badge tone="danger">{name}</Badge>;
+    }
+    return <Badge tone="neutral">{name}</Badge>;
+  };
+
   return (
-    <div className="subtab-container space-y-4">
-      {/* 5 KPI SUMMARY CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+    <div className="other-deductions-subtab space-y-4">
+      {/* 4 KPI Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* Card 1: Tổng số khoản trừ */}
+        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Tổng số khoản trừ</span>
-            <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Tổng số khoản trừ
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
               <ReceiptText className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-foreground mt-2 font-mono">
-            {summary?.total ?? 0}
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground font-mono">
+              {isListLoading ? "—" : totalItems}
+            </span>
+            <span className="text-xs text-muted-foreground">khoản</span>
           </div>
-          <div className="text-xs text-muted mt-0.5 leading-relaxed">Bản ghi trong kỳ</div>
+          <p className="mt-1 text-xs text-muted leading-relaxed">
+            Trong kỳ {formatMonthYear(periodFilter)}
+          </p>
         </div>
 
-        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+        {/* Card 2: Tổng tiền giảm trừ */}
+        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Tổng tiền giảm trừ</span>
-            <div className="w-7 h-7 rounded-lg bg-danger/10 text-danger flex items-center justify-center">
+            <span className="text-xs font-medium text-rose-700 dark:text-rose-400 uppercase tracking-wider">
+              Tổng tiền giảm trừ
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
               <TrendingDown className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl font-bold text-danger mt-2 font-mono">
-            -{formatCurrency(summary?.totalAmount ?? 0)}
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400 font-mono">
+              {isListLoading ? "—" : formatCurrency(totalAmount)}
+            </span>
           </div>
-          <div className="text-xs text-muted mt-0.5 leading-relaxed">Khấu trừ tiền lương</div>
+          <p className="mt-1 text-xs text-muted leading-relaxed">Khấu trừ trực tiếp tiền lương</p>
         </div>
 
-        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+        {/* Card 3: Tạm ứng lương */}
+        <div
+          onClick={() => {
+            const adv = deductionTypes.find((t) => t.deductionCode.includes("ADVANCE"));
+            if (adv) setTypeFilter(String(adv.id));
+          }}
+          className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md cursor-pointer hover:border-blue-300"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Tạm ứng lương</span>
-            <div className="w-7 h-7 rounded-lg bg-info/10 text-info flex items-center justify-center">
+            <span className="text-xs font-medium text-blue-700 dark:text-blue-400 uppercase tracking-wider">
+              Tạm ứng lương
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
               <WalletCards className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-info mt-2 font-mono">
-            {summary?.advancePaymentCount ?? 0}
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400 font-mono">
+              {isListLoading ? "—" : countByType["ADVANCE_SALARY"] || countByType["ADVANCE_PAYMENT"] || 0}
+            </span>
+            <span className="text-xs text-muted-foreground">khoản</span>
           </div>
-          <div className="text-xs text-muted mt-0.5 leading-relaxed">Tạm ứng giữa kỳ</div>
+          <p className="mt-1 text-xs text-muted leading-relaxed">Tạm ứng lương giữa kỳ</p>
         </div>
 
-        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
+        {/* Card 4: Bồi thường / Đồng phục */}
+        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Bồi thường CCDC</span>
-            <div className="w-7 h-7 rounded-lg bg-warning/10 text-warning flex items-center justify-center">
+            <span className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+              Khấu trừ khác
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
               <AlertTriangle className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-warning mt-2 font-mono">
-            {summary?.assetCompensationCount ?? 0}
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400 font-mono">
+              {isListLoading
+                ? "—"
+                : (countByType["COMPENSATION"] || 0) + (countByType["UNIFORM_FEE"] || 0) + (countByType["OTHER"] || 0)}
+            </span>
+            <span className="text-xs text-muted-foreground">khoản</span>
           </div>
-          <div className="text-xs text-muted mt-0.5 leading-relaxed">Hư hỏng tài sản</div>
-        </div>
-
-        <div className="bg-card border border-border/70 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Phạt kỷ luật</span>
-            <div className="w-7 h-7 rounded-lg bg-danger/10 text-danger flex items-center justify-center">
-              <ShieldAlert className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-danger mt-2 font-mono">
-            {summary?.disciplineFineCount ?? 0}
-          </div>
-          <div className="text-xs text-muted mt-0.5 leading-relaxed">Vi phạm quy định</div>
+          <p className="mt-1 text-xs text-muted leading-relaxed">Đồng phục, bồi thường CCDC</p>
         </div>
       </div>
 
-      {/* Integrated Flat Card Table */}
+      {/* Main Integrated Table Card */}
       <div className="integrated-table-card">
-        {/* Toolbar: Single Row */}
+        {/* Table Toolbar */}
         <div className="table-card-toolbar">
-          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-            {/* Left: Category segmentation pills */}
-            <div className="filter-status-pills">
-              <button
-                type="button"
-                className={`pill-btn ${typeFilter === "ALL" ? "active" : ""}`}
-                onClick={() => {
-                  setTypeFilter("ALL");
-                  setPage(1);
-                }}
-              >
-                Tất cả ({summary?.total ?? 0})
-              </button>
-              {DEDUCTION_TYPE_OPTIONS.map((opt) => {
-                let count = 0;
-                if (opt.value === "ADVANCE_PAYMENT") count = summary?.advancePaymentCount ?? 0;
-                if (opt.value === "ASSET_COMPENSATION") count = summary?.assetCompensationCount ?? 0;
-                if (opt.value === "DISCIPLINE_FINE") count = summary?.disciplineFineCount ?? 0;
-                if (opt.value === "OTHER") count = summary?.otherCount ?? 0;
-
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`pill-btn ${opt.tone === "danger" ? "danger" : opt.tone === "warning" ? "warning" : opt.tone === "info" ? "info" : ""} ${typeFilter === opt.value ? "active" : ""}`}
-                    onClick={() => {
-                      setTypeFilter(opt.value);
-                      setPage(1);
-                    }}
-                  >
-                    {opt.label} ({count})
-                  </button>
-                );
-              })}
+          <div className="flex items-center justify-between gap-3 w-full">
+            {/* Left: Record Count */}
+            <div className="text-xs font-semibold text-foreground shrink-0">
+              Danh sách khoản giảm trừ ({totalItems})
             </div>
 
-            {/* Right: Search + MonthPicker */}
-            <div className="flex items-center gap-2.5 ml-auto">
-              <div className="relative min-w-[220px] max-w-[300px]">
-                <Search className="search-icon-fixed text-muted-foreground" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Tìm mã, tên NLĐ, số QĐ, lý do..."
-                  className="search-box-input w-full pl-10 pr-8 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
-                />
-                {searchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm("")}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-              <div style={{ width: "160px" }}>
-                <MonthPicker
-                  value={periodFilter}
+            {/* Right: Filters & Search on a single horizontal line */}
+            <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-nowrap shrink-0">
+              {/* Month Picker */}
+              <MonthPicker
+                value={periodFilter}
+                onChange={setPeriodFilter}
+                className="w-[155px] sm:w-[165px] shrink-0"
+              />
+
+              {/* Deduction Type Select */}
+              {deductionTypes.length > 0 && (
+                <SearchableSelect
+                  value={typeFilter}
                   onChange={(val) => {
-                    setPeriodFilter(val || "all");
-                    setPage(1);
+                    setTypeFilter(val || "all");
+                    setCurrentPage(1);
                   }}
-                  allowClear
-                  clearLabel="Tất cả các tháng"
-                  placeholder="Tất cả các tháng"
-                  variant="filter"
+                  options={[
+                    { value: "all", label: "Tất cả loại giảm trừ" },
+                    ...deductionTypes.map((t: OtherDeductionTypeItem) => ({
+                      value: String(t.id),
+                      label: t.deductionName || (t as any).name || t.deductionCode || `Loại #${t.id}`,
+                    })),
+                  ]}
+                  placeholder="Tất cả loại giảm trừ"
+                  className="w-[190px] sm:w-[205px] shrink-0"
+                  allowClear={false}
                 />
-              </div>
+              )}
+
+              {/* Search Box */}
+              <SearchInput
+                value={searchTerm}
+                onChange={(val) => {
+                  setSearchTerm(val);
+                  setCurrentPage(1);
+                }}
+                placeholder="Tìm mã NV, tên, số QĐ..."
+                containerClassName="w-[180px] sm:w-[220px] lg:w-[250px] shrink min-w-[140px]"
+              />
             </div>
           </div>
         </div>
 
-        {/* Main Table */}
-        {listQuery.isLoading ? (
+        {/* Data Table */}
+        {isListLoading ? (
           <LoadingBlock rows={6} />
-        ) : listQuery.isError ? (
+        ) : isListError ? (
           <ErrorState
-            message="Không thể tải danh sách khoản giảm trừ khác"
-            retry={() => listQuery.refetch()}
+            message="Không thể tải danh sách khoản giảm trừ."
+            retry={() => refetchList()}
           />
-        ) : items.length === 0 ? (
+        ) : deductionItems.length === 0 ? (
           <EmptyState
-            title="Không tìm thấy khoản giảm trừ nào"
+            title="Chưa có dữ liệu giảm trừ"
             description={
-              searchTerm || periodFilter !== "all" || typeFilter !== "ALL"
-                ? "Không có dữ liệu phù hợp với bộ lọc hiện tại."
-                : "Chưa có quyết định khấu trừ nào cho người lao động trong kỳ."
-            }
-            action={
-              searchTerm || periodFilter !== "all" || typeFilter !== "ALL" ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setPeriodFilter("all");
-                    setTypeFilter("ALL");
-                  }}
-                >
-                  Xóa bộ lọc
-                </Button>
-              ) : (
-                <Button variant="primary" onClick={handleOpenCreate}>
-                  <Plus className="w-4 h-4 mr-1.5" /> Thêm khoản giảm trừ đầu tiên
-                </Button>
-              )
+              searchTerm
+                ? "Không tìm thấy khoản giảm trừ phù hợp với từ khóa tìm kiếm."
+                : "Chưa ghi nhận khoản giảm trừ nào trong kỳ đã chọn."
             }
           />
         ) : (
           <div className="data-table-wrap">
             <div className="data-table-scroll">
-              <table className="data-table min-w-[1050px]">
+              <table className="data-table min-w-[1000px]">
                 <thead>
                   <tr>
                     <th style={{ width: "45px" }} className="text-center">STT</th>
-                    <th style={{ minWidth: "170px" }}>NGƯỜI LAO ĐỘNG</th>
-                    <th style={{ width: "120px" }} className="text-center">THÁNG ÁP DỤNG</th>
-                    <th style={{ width: "180px" }}>LOẠI GIẢM TRỪ</th>
-                    <th style={{ width: "130px" }} className="text-right">SỐ TIỀN</th>
-                    <th style={{ width: "220px" }}>CĂN CỨ &amp; FILE QĐ</th>
-                    <th>LÝ DO / CĂN CỨ</th>
-                    <th style={{ width: "150px" }}>CẬP NHẬT</th>
-                    <th style={{ width: "80px" }} className="text-center">THAO TÁC</th>
+                    <th style={{ minWidth: "190px" }}>NGƯỜI LAO ĐỘNG</th>
+                    <th style={{ width: "160px" }}>LOẠI GIẢM TRỪ</th>
+                    <th style={{ width: "140px" }} className="text-right">SỐ TIỀN KHẤU TRỪ</th>
+                    <th style={{ width: "150px" }}>SỐ QĐ / NGÀY</th>
+                    <th style={{ minWidth: "180px" }}>LÝ DO / GHI CHÚ</th>
+                    <th style={{ width: "100px" }} className="text-center">CHỨNG TỪ</th>
+                    <th style={{ width: "120px" }} className="text-center">THAO TÁC</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, idx) => {
-                    const rawStt = (page - 1) * pageSize + idx + 1;
+                  {deductionItems.map((item: OtherDeductionItemV3, idx: number) => {
+                    const rawStt = (currentPage - 1) * pageSize + idx + 1;
                     const stt = String(rawStt).padStart(2, "0");
-                    const typeDef = DEDUCTION_TYPE_OPTIONS.find((t) => t.value === item.type);
 
                     return (
-                      <tr key={item.id} className="hover:bg-secondary/40 transition-colors">
-                        {/* STT */}
+                      <tr key={item.id || idx}>
                         <td className="text-center text-muted font-medium">{stt}</td>
-
-                        {/* Employee Info */}
                         <td>
                           <div className="employee-cell-info">
-                            <span className="employee-cell-name font-semibold">{item.employee.fullName}</span>
+                            <span className="employee-cell-name font-semibold text-foreground">
+                              {item.employee.fullName || "—"}
+                            </span>
                             <span className="employee-cell-sub">
                               <span className="employee-code-badge">{item.employee.employeeCode}</span>
                               {item.employee.project?.projectCode && (
-                                <span className="text-muted text-[11px] font-normal">· {item.employee.project.projectCode}</span>
+                                <span className="text-muted text-[11px] font-medium">
+                                  · [{item.employee.project.projectCode}]
+                                </span>
                               )}
                             </span>
                           </div>
                         </td>
-
-                        {/* Month */}
-                        <td className="text-center">
-                          <Badge tone="neutral">{formatMonthYear(item.month)}</Badge>
-                        </td>
-
-                        {/* Type */}
-                        <td>
-                          <Badge tone={typeDef?.tone || "neutral"}>
-                            {item.typeName || typeDef?.label || item.type}
-                          </Badge>
-                        </td>
-
-                        {/* Amount */}
+                        <td>{renderDeductionTypeBadge(item)}</td>
                         <td className="text-right">
-                          <span className="font-mono font-bold text-danger text-[13.5px]">
+                          <strong className="text-rose-600 dark:text-rose-400 font-bold font-mono text-[13px]">
                             -{formatCurrency(item.amount)}
-                          </span>
+                          </strong>
                         </td>
-
-                        {/* Decision & Attachment */}
                         <td>
-                          <div className="flex flex-col gap-1">
-                            {item.decisionNumber ? (
-                              <div className="flex flex-col">
-                                <span className="text-xs font-medium text-foreground flex items-center gap-1">
-                                  <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
-                                  {item.decisionNumber}
-                                </span>
-                                {item.decisionDate && (
-                                  <span className="text-[11px] text-muted ml-4.5">
-                                    Ngày {formatDate(item.decisionDate)}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted italic">Chưa có số QĐ</span>
-                            )}
-
-                            {item.attachment ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPreviewingRecord(item);
-                                  setPreviewFileModalOpen(true);
-                                }}
-                                className="inline-flex items-center gap-1 text-[11.5px] text-primary hover:underline font-medium text-left truncate max-w-[190px]"
-                                title={`Xem file: ${item.attachment.fileName}`}
-                              >
-                                <Paperclip className="w-3 h-3 shrink-0" />
-                                <span className="truncate">{item.attachment.fileName}</span>
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-muted">Chưa đính kèm file</span>
-                            )}
+                          <div className="text-xs font-medium text-foreground">
+                            {item.decisionNumber || "—"}
                           </div>
+                          {item.decisionDate && (
+                            <div className="text-[11px] text-muted-foreground mt-0.5">
+                              {formatDate(item.decisionDate)}
+                            </div>
+                          )}
                         </td>
-
-                        {/* Reason */}
-                        <td>
-                          <p className="text-xs text-foreground/90 line-clamp-2" title={item.reason}>
-                            {item.reason}
-                          </p>
+                        <td className="text-xs text-muted-foreground">
+                          {item.note || item.reason || "—"}
                         </td>
-
-                        {/* Updated Info */}
-                        <td>
-                          <div className="text-[11.5px] text-muted space-y-0.5">
-                            <div className="truncate font-medium text-foreground/80">{item.updatedBy?.fullName || "Quản trị viên"}</div>
-                            <div>{formatDate(item.updatedAt)}</div>
-                          </div>
-                        </td>
-
-                        {/* Actions */}
                         <td className="text-center">
-                          <TableRowActions
-                            items={[
-                              {
-                                key: "edit",
-                                label: "Chỉnh sửa khoản giảm trừ",
-                                icon: <Pencil />,
-                                onClick: () => handleOpenEdit(item),
-                              },
-                              ...(item.attachment
-                                ? [
-                                    {
-                                      key: "preview_doc",
-                                      label: "Xem file quyết định",
-                                      icon: <Eye />,
-                                      onClick: () => {
-                                        setPreviewingRecord(item);
-                                        setPreviewFileModalOpen(true);
-                                      },
-                                    },
-                                  ]
-                                : []),
-                              {
-                                key: "delete",
-                                label: "Xóa khoản giảm trừ",
-                                icon: <Trash2 />,
-                                danger: true,
-                                onClick: () => {
-                                  setTargetDeleteRecord(item);
-                                  setDeleteModalOpen(true);
-                                },
-                              },
-                            ]}
-                          />
+                          {item.fileName || item.filePath || item.attachment ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewingRecord(item);
+                                setPreviewDocumentOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline font-medium"
+                              title="Xem file đính kèm"
+                            >
+                              <Paperclip className="w-3.5 h-3.5" /> Xem
+                            </button>
+                          ) : (
+                            <span className="text-muted text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(item)}
+                              className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md shadow-xs transition-colors cursor-pointer"
+                              title="Chỉnh sửa khoản giảm trừ"
+                            >
+                              <Pencil className="w-3 h-3 text-slate-500 dark:text-slate-400" /> Sửa
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetDeleteRecord(item);
+                                setDeleteModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 h-7 px-2 text-[11px] font-medium text-rose-600 dark:text-rose-400 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-md shadow-xs transition-colors cursor-pointer"
+                              title="Xóa khoản giảm trừ"
+                            >
+                              <Trash2 className="w-3 h-3 text-rose-500" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -698,367 +604,311 @@ export function OtherDeductionsSubtab({
               </table>
             </div>
 
+            {/* Pagination */}
             <TablePaginationFooter
               totalItems={totalItems}
-              currentPage={page}
+              currentPage={currentPage}
               pageSize={pageSize}
-              onPageChange={setPage}
+              onPageChange={setCurrentPage}
               onPageSizeChange={(newSize) => {
                 setPageSize(newSize);
-                setPage(1);
+                setCurrentPage(1);
               }}
             />
           </div>
         )}
       </div>
 
-      {/* BOTTOM AUDIT / ACTIVITY LOG */}
-      <SubtabActivityLog
-        projectId={projectId}
-        module="deductions"
-        title="Nhật ký biến động Khoản giảm trừ khác"
-        description="Lịch sử thêm mới, điều chỉnh, xóa và import các khoản phạt, bồi thường, tạm ứng tiền lương của người lao động"
-      />
-
-      {/* ========================================================================= */}
-      {/* MODAL: Thêm mới / Chỉnh sửa khoản giảm trừ                               */}
-      {/* ========================================================================= */}
+      {/* Modal: Thêm mới / Chỉnh sửa khoản giảm trừ */}
       <Modal
         open={formModalOpen}
         onOpenChange={setFormModalOpen}
-        title={editingRecord ? "Chỉnh sửa khoản giảm trừ khác" : "Thêm mới khoản giảm trừ khác"}
-        description="Nhập thông tin quyết định xử phạt / bồi thường / tạm ứng và đính kèm văn bản căn cứ."
-        size="lg"
+        title={editingRecord ? "Chỉnh sửa khoản giảm trừ" : "Thêm mới khoản giảm trừ"}
+        description={
+          editingRecord
+            ? `Cập nhật thông tin khoản giảm trừ cho nhân viên ${editingRecord.employee.fullName}`
+            : "Khai báo khoản giảm trừ trực tiếp vào tiền lương của nhân viên."
+        }
+        size="md"
         footer={
-          <>
+          <div className="flex items-center justify-end gap-2">
             <Button variant="secondary" onClick={() => setFormModalOpen(false)}>
               Hủy
             </Button>
             <Button
               variant="primary"
-              disabled={!formEmployeeCode || !formAmount || saveMutation.isPending}
+              loading={saveMutation.isPending}
               onClick={() => saveMutation.mutate()}
-              className="gap-1.5 font-semibold"
+              className="gap-1.5"
             >
-              <Check className="w-3.5 h-3.5" />
-              {saveMutation.isPending
-                ? "Đang lưu…"
-                : editingRecord
-                ? "Cập nhật khoản giảm trừ"
-                : "Tạo khoản giảm trừ"}
+              <Save className="w-4 h-4" /> {editingRecord ? "Lưu thay đổi" : "Lưu hồ sơ"}
             </Button>
-          </>
+          </div>
         }
       >
         <div className="space-y-4 py-1">
-          {/* Row 1: Employee & Period */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="form-group">
-              <label className="form-label">
-                Người lao động <span className="text-danger">*</span>
-              </label>
-              {editingRecord ? (
-                <div className="p-2.5 rounded-lg border border-border bg-secondary/30 font-medium text-sm">
-                  {editingRecord.employee.employeeCode} - {editingRecord.employee.fullName}
-                </div>
-              ) : (
-                <SearchableSelect
-                  value={formEmployeeCode}
-                  onChange={setFormEmployeeCode}
-                  placeholder="Chọn người lao động..."
-                  searchPlaceholder="Tìm mã hoặc tên người lao động..."
-                  options={employees.map((emp) => ({
-                    value: emp.code,
-                    label: `${emp.code} - ${emp.name}`,
-                    subLabel: emp.position || emp.department,
-                  }))}
-                />
-              )}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                Tháng áp dụng <span className="text-danger">*</span>
-              </label>
-              <MonthPicker
-                value={formMonth}
-                onChange={setFormMonth}
-                variant="form"
-                placeholder="Chọn tháng áp dụng..."
-              />
-            </div>
-          </div>
-
-          {/* Row 2: Type & Amount */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="form-group">
-              <label className="form-label">
-                Loại khoản giảm trừ <span className="text-danger">*</span>
-              </label>
-              <SearchableSelect
-                value={formType}
-                onChange={(val) => setFormType(val as OtherDeductionType)}
-                options={DEDUCTION_TYPE_OPTIONS.map((c) => ({
-                  value: c.value,
-                  label: c.label,
-                }))}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                Số tiền giảm trừ (VND) <span className="text-danger">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="10000"
-                  className="form-input w-full font-mono font-bold text-danger pr-12"
-                  value={formAmount}
-                  onChange={(e) => setFormAmount(Number(e.target.value))}
-                  placeholder="Nhập số tiền..."
-                />
-                <span className="absolute right-3 top-2.5 text-xs text-muted font-bold">VND</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Row 3: Decision Number & Date */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="form-group">
-              <label className="form-label">Số quyết định / Biên bản căn cứ</label>
-              <input
-                type="text"
-                className="form-input w-full"
-                value={formDecisionNumber}
-                onChange={(e) => setFormDecisionNumber(e.target.value)}
-                placeholder="VD: QĐ-2026/08-01/VP"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label flex items-center justify-between">
-                <span>Ngày ban hành quyết định</span>
-                {formDecisionDate && (
-                  <span className="text-xs text-primary font-medium">
-                    {formatDate(formDecisionDate)}
-                  </span>
-                )}
-              </label>
-              <input
-                type="date"
-                className="form-input w-full"
-                value={formDecisionDate}
-                onChange={(e) => setFormDecisionDate(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Row 4: Attachment Upload Area */}
-          <div className="form-group">
-            <label className="form-label flex items-center justify-between">
-              <span>Đính kèm file quyết định (PDF, Word, Ảnh)</span>
-              {formSelectedFile && (
-                <span className="text-xs text-primary font-medium">
-                  {formSelectedFile.name} ({(formSelectedFile.size / 1024).toFixed(0)} KB)
-                </span>
-              )}
+          {/* Nhân viên */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Nhân viên <span className="text-rose-500">*</span>
             </label>
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setFormSelectedFile(file);
-                  notify(`Đã chọn file: ${file.name}`);
-                }
-              }}
-            />
-
-            {formSelectedFile || editingRecord?.attachment ? (
-              <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/30">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-foreground truncate">
-                      {formSelectedFile?.name || editingRecord?.attachment?.fileName}
-                    </div>
-                    <div className="text-[11px] text-muted">
-                      {formSelectedFile ? "Tệp mới chọn" : "Tệp đã lưu trên hệ thống"} · Sẵn sàng lưu
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    Thay file
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setFormSelectedFile(null)}
-                  >
-                    <X className="w-4 h-4 text-danger" />
-                  </Button>
-                </div>
+            {editingRecord ? (
+              <div className="text-xs p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold text-foreground">
+                {editingRecord.employee.fullName} ({editingRecord.employee.employeeCode})
               </div>
             ) : (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-border hover:border-primary/60 rounded-xl p-4 text-center cursor-pointer transition-colors bg-secondary/20 hover:bg-secondary/40 flex flex-col items-center justify-center gap-1.5"
+              <select
+                value={formEmployeeCode}
+                onChange={(e) => setFormEmployeeCode(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
               >
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                  <UploadCloud className="w-5 h-5" />
-                </div>
-                <div className="text-xs font-semibold text-foreground">
-                  Bấm vào đây để tải lên file quyết định
-                </div>
-                <div className="text-[11px] text-muted">
-                  Hỗ trợ định dạng PDF, DOCX, PNG, JPG (Tối đa 15MB)
-                </div>
-              </div>
+                {employees.map((emp) => (
+                  <option key={emp.code || emp.id} value={emp.code || emp.id}>
+                    {emp.name || (emp as any).fullName || emp.code} ({emp.code || emp.id})
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 
-          {/* Row 5: Reason */}
-          <div className="form-group">
-            <label className="form-label">
-              Lý do / Nội dung chi tiết <span className="text-danger">*</span>
+          {/* Loại giảm trừ */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Loại giảm trừ <span className="text-rose-500">*</span>
+            </label>
+            <select
+              value={formDeductionTypeId}
+              onChange={(e) => setFormDeductionTypeId(Number(e.target.value))}
+              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+            >
+              {deductionTypes.map((t: OtherDeductionTypeItem) => (
+                <option key={t.id} value={t.id}>
+                  {t.deductionName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Số tiền khấu trừ */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Số tiền khấu trừ (VNĐ) <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="number"
+              step="10000"
+              value={formAmount}
+              onChange={(e) => setFormAmount(Number(e.target.value))}
+              placeholder="VD: 500000"
+              className="w-full px-3 py-2 text-xs font-bold text-rose-600 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          {/* Số QĐ & Ngày QĐ */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+                Số quyết định / Chứng từ
+              </label>
+              <input
+                type="text"
+                value={formDecisionNumber}
+                onChange={(e) => setFormDecisionNumber(e.target.value)}
+                placeholder="VD: QĐ-2026/09-01"
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+                Ngày quyết định
+              </label>
+              <input
+                type="date"
+                value={formDecisionDate}
+                onChange={(e) => setFormDecisionDate(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          </div>
+
+          {/* Ghi chú */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Lý do / Ghi chú chi tiết
             </label>
             <textarea
-              className="form-textarea w-full"
-              rows={2}
-              value={formReason}
-              onChange={(e) => setFormReason(e.target.value)}
-              placeholder="Ghi rõ lý do xử phạt / căn cứ bồi thường / tạm ứng..."
+              value={formNote}
+              onChange={(e) => setFormNote(e.target.value)}
+              rows={3}
+              placeholder="Nhập lý do giảm trừ tiền lương..."
+              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none text-foreground"
             />
           </div>
         </div>
       </Modal>
 
-      {/* ========================================================================= */}
-      {/* MODAL: Xác nhận xóa khoản giảm trừ                                       */}
-      {/* ========================================================================= */}
+      {/* Modal: Xác nhận xóa */}
       <Modal
         open={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
-        title="Xác nhận xóa khoản giảm trừ"
-        description="Khoản giảm trừ này sẽ bị xóa khỏi hồ sơ và không còn được áp dụng khi tính bảng lương."
+        title="Xóa khoản giảm trừ"
+        description={`Bạn có chắc chắn muốn xóa khoản giảm trừ của nhân viên ${targetDeleteRecord?.employee.fullName ?? ""}?`}
         size="sm"
         footer={
-          <>
+          <div className="flex items-center justify-end gap-2">
             <Button variant="secondary" onClick={() => setDeleteModalOpen(false)}>
               Hủy
             </Button>
             <Button
               variant="danger"
-              disabled={deleteMutation.isPending}
-              onClick={() => targetDeleteRecord && deleteMutation.mutate(targetDeleteRecord.id)}
+              loading={deleteMutation.isPending}
+              onClick={() => {
+                if (targetDeleteRecord) deleteMutation.mutate(targetDeleteRecord.id);
+              }}
             >
-              {deleteMutation.isPending ? "Đang xóa…" : "Xác nhận xóa"}
+              Xác nhận xóa
             </Button>
-          </>
+          </div>
         }
       >
-        {targetDeleteRecord && (
-          <div className="p-3 bg-danger/5 border border-danger/20 rounded-lg text-xs space-y-1.5">
-            <div>
-              <strong>Người lao động:</strong> {targetDeleteRecord.employee.employeeCode} -{" "}
-              {targetDeleteRecord.employee.fullName}
-            </div>
-            <div>
-              <strong>Số tiền:</strong>{" "}
-              <span className="text-danger font-bold">
-                -{formatCurrency(targetDeleteRecord.amount)}
-              </span>{" "}
-              ({targetDeleteRecord.typeName})
-            </div>
-            <div>
-              <strong>Tháng áp dụng:</strong> {formatMonthYear(targetDeleteRecord.month)}
-            </div>
-            {targetDeleteRecord.decisionNumber && (
-              <div>
-                <strong>Số QĐ:</strong> {targetDeleteRecord.decisionNumber}
-              </div>
-            )}
-            {targetDeleteRecord.decisionDate && (
-              <div>
-                <strong>Ngày ban hành:</strong> {formatDate(targetDeleteRecord.decisionDate)}
-              </div>
-            )}
-          </div>
-        )}
+        <p className="text-xs text-muted-foreground">
+          Thao tác này không thể hoàn tác. Số tiền <strong>{formatCurrency(targetDeleteRecord?.amount ?? 0)}</strong> sẽ được hoàn trả vào bảng lương của nhân viên.
+        </p>
       </Modal>
 
-      {/* ========================================================================= */}
-      {/* MODAL: Import Excel khoản giảm trừ theo tháng                             */}
-      {/* ========================================================================= */}
-      <ExcelImportModal
+      {/* ================= Modal: Import Excel Wizard ================= */}
+      <Modal
         open={importModalOpen}
-        onOpenChange={setImportModalOpen}
-        title="Import danh sách khoản giảm trừ khác từ Excel"
-        description="Nhập danh sách nhân sự có các khoản phạt, bồi thường, tạm ứng theo quyết định trong kỳ."
-        period={periodFilter === "all" ? "2026-08" : periodFilter}
-        sampleTemplateName="Mau_Import_Giam_Tru.xlsx"
-        sampleTemplateDescription="Biểu mẫu chuẩn bao gồm: Mã NV, Họ tên, Tháng (YYYY-MM), Loại khoản trừ, Số tiền, Số QĐ, Lý do."
-        columns={excelColumns}
-        previewRows={importPreviewRows}
-        stats={[
-          { label: "Tổng dòng dữ liệu", value: importPreviewRows.length, tone: "primary" },
-          {
-            label: "Tổng tiền khấu trừ",
-            value: `-${formatCurrency(importPreviewRows.reduce((s, r) => s + (r.amount || 0), 0))}`,
-            tone: "danger",
-          },
-        ]}
-        onDownloadSample={() => api.downloadOtherDeductionsImportTemplateV3()}
-        onSimulateUpload={handleSimulateExcelUpload}
-        onConfirmImport={() => importBatchMutation.mutate()}
-        confirmLoading={importBatchMutation.isPending}
-        confirmLabel={`Nhập ${importPreviewRows.length || ""} khoản giảm trừ vào hệ thống`}
-        onClearPreview={() => setImportPreviewRows([])}
-      />
+        onOpenChange={(open) => {
+          setImportModalOpen(open);
+          if (!open) {
+            setImportFile(null);
+            setIsDragging(false);
+          }
+        }}
+        title="Import danh sách Khoản giảm trừ từ Excel"
+        description="Tải lên tệp danh sách các khoản giảm trừ lương của nhân sự theo biểu mẫu chuẩn để thêm hàng loạt."
+        size="lg"
+      >
+        <div className="space-y-4 text-xs">
+          {/* Step 1: Download Template */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-slate-800 dark:text-slate-100">1. Tải biểu mẫu Excel chuẩn</div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Sử dụng tệp mẫu để đảm bảo đúng định dạng các cột dữ liệu giảm trừ lương.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={downloadingTemplate}
+              onClick={handleDownloadTemplate}
+              className="gap-1.5 text-xs font-semibold shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" /> Tải file mẫu (.xlsx)
+            </Button>
+          </div>
 
-      {/* ========================================================================= */}
-      {/* MODAL: Xem trước file quyết định & văn bản căn cứ                         */}
-      {/* ========================================================================= */}
-      <DecisionDocumentPreviewModal
-        open={previewFileModalOpen}
-        onOpenChange={setPreviewFileModalOpen}
-        data={
-          previewingRecord
-            ? {
-                type: "deduction",
-                employeeCode: previewingRecord.employee.employeeCode,
-                employeeName: previewingRecord.employee.fullName,
-                position: previewingRecord.employee.position || undefined,
-                projectCode: previewingRecord.employee.project?.projectCode,
-                period: previewingRecord.month,
-                categoryLabel: previewingRecord.typeName || "Khoản giảm trừ khác",
-                amount: previewingRecord.amount,
-                decisionNo: previewingRecord.decisionNumber || "",
-                decisionDate: previewingRecord.decisionDate || "",
-                reason: previewingRecord.reason,
-                attachmentName: previewingRecord.attachment?.fileName,
-                attachmentUrl: previewingRecord.attachment?.fileUrl,
-                attachmentSize: previewingRecord.attachment?.fileSize ? `${(previewingRecord.attachment.fileSize / 1024).toFixed(0)} KB` : undefined,
-                updatedBy: previewingRecord.updatedBy?.fullName,
-                updatedAt: previewingRecord.updatedAt,
-              }
-            : null
-        }
-      />
+          {/* Step 2: Upload File Dropzone */}
+          <div>
+            <div className="font-semibold text-slate-800 dark:text-slate-100 mb-1.5">2. Chọn tệp dữ liệu đã điền</div>
+            <div
+              onClick={() => importFileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) setImportFile(file);
+              }}
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                isDragging
+                  ? "border-primary bg-primary/5"
+                  : importFile
+                  ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                  : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              }`}
+            >
+              <input
+                type="file"
+                ref={importFileInputRef}
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+              />
+              {importFile ? (
+                <div className="flex items-center justify-center gap-3">
+                  <FileSpreadsheet className="w-8 h-8 text-emerald-600" />
+                  <div className="text-left">
+                    <div className="font-bold text-slate-900 dark:text-slate-100">{importFile.name}</div>
+                    <div className="text-slate-500 dark:text-slate-400 text-[11px]">
+                      {(importFile.size / 1024).toFixed(1)} KB • Bấm để chọn tệp khác
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <UploadCloud className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+                  <p className="font-semibold text-slate-700 dark:text-slate-200">Kéo thả tệp Excel vào đây hoặc bấm để chọn</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Chấp nhận .xlsx, .xls tối đa 10MB</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setImportModalOpen(false);
+                setImportFile(null);
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!importFile}
+              loading={importMutation.isPending}
+              onClick={() => {
+                if (importFile) importMutation.mutate(importFile);
+              }}
+              className="gap-1.5 font-semibold"
+            >
+              <Upload className="w-3.5 h-3.5" /> Bắt đầu Import
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Preview Document */}
+      {previewingRecord && (
+        <DecisionDocumentPreviewModal
+          open={previewDocumentOpen}
+          onOpenChange={setPreviewDocumentOpen}
+          data={{
+            type: "deduction",
+            employeeCode: previewingRecord.employee.employeeCode,
+            employeeName: previewingRecord.employee.fullName,
+            period: periodFilter,
+            categoryLabel: previewingRecord.deductionName || "Khoản giảm trừ",
+            amount: previewingRecord.amount,
+            decisionNo: previewingRecord.decisionNumber || undefined,
+            decisionDate: previewingRecord.decisionDate || undefined,
+            reason: previewingRecord.note || previewingRecord.reason || undefined,
+            attachmentName: previewingRecord.fileName || undefined,
+            attachmentUrl: previewingRecord.filePath || undefined,
+          }}
+        />
+      )}
     </div>
   );
 }

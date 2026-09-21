@@ -19,7 +19,7 @@ import { Badge, Button, Modal } from "@/components/ui";
 import { formatCurrency, formatDate, formatFullDateVN, formatMonthYear } from "@/lib/utils";
 
 export interface DecisionPreviewData {
-  type: "deduction" | "income";
+  type: "deduction" | "income" | "insurance";
   employeeCode: string;
   employeeName: string;
   position?: string;

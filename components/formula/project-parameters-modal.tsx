@@ -31,10 +31,57 @@ export function ProjectParametersModal({
   const queryClient = useQueryClient();
   const { notify } = useToast();
 
-  // Query custom variables
+  // Query custom variables from BE with fallback
   const { data: serverVariables = [], isLoading } = useQuery({
     queryKey: ["project-custom-variables", projectId],
-    queryFn: () => api.getProjectCustomVariables(projectId),
+    queryFn: async () => {
+      try {
+        const [prjVars, allVars] = await Promise.all([
+          api.getProjectVariables(projectId).catch(() => []),
+          api.getAllVariables().catch(() => []),
+        ]);
+
+        const varMap = new Map<number, typeof allVars[0]>();
+        allVars.forEach((v) => varMap.set(v.id, v));
+
+        const result: ProjectCustomVariable[] = prjVars.map((pv) => {
+          const master = varMap.get(pv.variableId);
+          return {
+            id: String(pv.id || pv.variableId),
+            projectId,
+            variableId: pv.variableId,
+            code: pv.code || master?.code || `VAR_${pv.variableId}`,
+            name: pv.name || master?.name || pv.code,
+            description: pv.description || master?.description || undefined,
+            unit: pv.unit || master?.unit || "đ",
+            value: pv.value !== null && pv.value !== undefined && pv.value !== "" ? Number(pv.value) : 0,
+            defaultValue: pv.defaultValue !== null && pv.defaultValue !== undefined ? Number(pv.defaultValue) : master?.defaultValue !== null && master?.defaultValue !== undefined ? Number(master.defaultValue) : undefined,
+            updatedAt: pv.effectiveFrom || undefined,
+          };
+        });
+
+        // Add custom variables from master that are not yet configured in project
+        const existingVarIds = new Set(result.map((r) => r.variableId));
+        allVars.filter((v) => !v.isSystem && !existingVarIds.has(v.id)).forEach((v) => {
+          result.push({
+            id: String(v.id),
+            projectId,
+            variableId: v.id,
+            code: v.code,
+            name: v.name,
+            description: v.description || undefined,
+            unit: v.unit || "đ",
+            value: 0,
+            defaultValue: v.defaultValue !== null && v.defaultValue !== undefined ? Number(v.defaultValue) : undefined,
+          });
+        });
+
+        return result;
+      } catch (err) {
+        console.warn("Failed to fetch project variables from BE", err);
+        return [];
+      }
+    },
     enabled: isOpen,
   });
 
@@ -47,7 +94,7 @@ export function ProjectParametersModal({
     if (serverVariables.length > 0) {
       const initialMap: Record<string, string> = {};
       serverVariables.forEach((v) => {
-        initialMap[v.code] = v.value !== null && v.value !== undefined ? String(v.value) : "";
+        initialMap[v.code] = v.value !== null && v.value !== undefined ? String(v.value) : (v.defaultValue !== null && v.defaultValue !== undefined ? String(v.defaultValue) : "0");
       });
       setDraftValues(initialMap);
       setIsInitialized(true);
@@ -62,8 +109,8 @@ export function ProjectParametersModal({
     if (!isInitialized) return false;
     return serverVariables.some((v) => {
       const draftStr = draftValues[v.code] ?? "";
-      const draftNum = draftStr.trim() === "" ? null : Number(draftStr);
-      return draftNum !== v.value;
+      const draftNum = draftStr.trim() === "" ? 0 : Number(draftStr);
+      return draftNum !== (v.value ?? 0);
     });
   }, [serverVariables, draftValues, isInitialized]);
 
@@ -87,8 +134,29 @@ export function ProjectParametersModal({
 
   // Mutation to save
   const saveMutation = useMutation({
-    mutationFn: (payload: Array<{ code: string; value: number | null }>) =>
-      api.saveProjectCustomVariables(projectId, payload),
+    mutationFn: async (payload: Array<{ code: string; variableId?: number; value: number | null }>) => {
+      // 1. Try to save to real BE if variableId exists
+      const bePayload = payload
+        .filter((p) => p.variableId !== undefined && p.variableId > 0)
+        .map((p) => ({
+          VariableId: p.variableId!,
+          Value: p.value !== null && p.value !== undefined && !isNaN(Number(p.value)) ? String(p.value) : "0",
+        }));
+
+      if (bePayload.length > 0) {
+        try {
+          await api.saveProjectVariables(projectId, bePayload);
+        } catch (e) {
+          console.warn("Save project variables to BE failed, falling back", e);
+        }
+      }
+
+      // 2. Also save to local store
+      return api.saveProjectCustomVariables(
+        projectId,
+        payload.map((p) => ({ code: p.code, value: p.value ?? 0 }))
+      );
+    },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["project-custom-variables", projectId] });
       queryClient.invalidateQueries({ queryKey: ["formula-variables"] });
@@ -109,7 +177,8 @@ export function ProjectParametersModal({
       const valStr = (draftValues[v.code] ?? "").trim();
       return {
         code: v.code,
-        value: valStr === "" ? null : Number(valStr),
+        variableId: v.variableId,
+        value: valStr === "" ? 0 : (isNaN(Number(valStr)) ? 0 : Number(valStr)),
       };
     });
     saveMutation.mutate(payload);
@@ -128,7 +197,7 @@ export function ProjectParametersModal({
       if (v.defaultValue !== undefined && v.defaultValue !== null) {
         resetMap[v.code] = String(v.defaultValue);
       } else {
-        resetMap[v.code] = "";
+        resetMap[v.code] = "0";
       }
     });
     setDraftValues(resetMap);

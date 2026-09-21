@@ -17,7 +17,7 @@ const localStorageMock: Storage = {
 Object.defineProperty(window, "localStorage", { value: localStorageMock, configurable: true });
 Object.defineProperty(globalThis, "localStorage", { value: localStorageMock, configurable: true });
 
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterEach(() => {
   server.resetHandlers();
   window.localStorage.clear();

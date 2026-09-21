@@ -110,6 +110,14 @@ export function StandardWorkdaysSubtab({
   };
 
   // Register Header Action: Export & Import
+  const ensureSpecificProject = (actionName: string = "thao tác này") => {
+    if (!projectId || projectId === "all") {
+      notify(`Vui lòng chọn một dự án cụ thể ở thanh công cụ phía trên trước khi ${actionName}!`, "warning");
+      return false;
+    }
+    return true;
+  };
+
   useEffect(() => {
     if (!setHeaderAction) return;
     setHeaderAction(
@@ -123,7 +131,10 @@ export function StandardWorkdaysSubtab({
         </Button>
         <Button
           variant="secondary"
-          onClick={() => setImportModalOpen(true)}
+          onClick={() => {
+            if (!ensureSpecificProject("import ngày công chuẩn")) return;
+            setImportModalOpen(true);
+          }}
           className="gap-1.5 font-semibold text-xs h-8 px-3"
         >
           <UploadCloud className="w-3.5 h-3.5" /> Import ngày công chuẩn

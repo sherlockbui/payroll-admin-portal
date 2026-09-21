@@ -9,17 +9,21 @@ import {
   Download,
   FileSpreadsheet,
   History,
+  Pencil,
+  Plus,
   RefreshCw,
+  Save,
   Search,
   ShieldAlert,
   ShieldCheck,
   Upload,
+  UploadCloud,
   UserCheck,
   UserMinus,
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useToast } from "@/components/providers";
 import {
   Badge,
@@ -28,15 +32,16 @@ import {
   ErrorState,
   LoadingBlock,
   Modal,
+  SearchInput,
   TablePaginationFooter,
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import type {
   Employee,
-  UnionDuesHistoryItemV3,
-  UnionDuesMemberV3,
-  UnionDuesParticipationStatus,
-  UpdateUnionDuesRequestV3,
+  UnionAuditLogItemV3,
+  UnionHistoryItemV3,
+  UnionMemberItemV3,
+  UnionParticipationStatus,
 } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -53,170 +58,221 @@ export function UnionFeesSubtab({
   const queryClient = useQueryClient();
 
   // Filters & State
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "all");
-  const [statusFilter, setStatusFilter] = useState<UnionDuesParticipationStatus>("ALL");
+  const [statusFilter, setStatusFilter] = useState<UnionParticipationStatus>("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [isExporting, setIsExporting] = useState(false);
 
   // Modal States
-  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
-  const [targetMember, setTargetMember] = useState<UnionDuesMemberV3 | null>(null);
-  const [toggleReason, setToggleReason] = useState("");
-  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
+  const [registerMember, setRegisterMember] = useState<UnionMemberItemV3 | null>(null);
+  const [registerJoinDate, setRegisterJoinDate] = useState(new Date().toISOString().slice(0, 10));
+  const [registerAmount, setRegisterAmount] = useState<number>(23400);
+  const [registerNote, setRegisterNote] = useState("");
+
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editMember, setEditMember] = useState<UnionMemberItemV3 | null>(null);
+  const [editAmount, setEditAmount] = useState<number>(23400);
+  const [editNote, setEditNote] = useState("");
+
+  const [deactivateModalOpen, setDeactivateModalOpen] = useState(false);
+  const [deactivateMember, setDeactivateMember] = useState<UnionMemberItemV3 | null>(null);
+  const [deactivateNote, setDeactivateNote] = useState("");
 
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const [selectedMemberForHistory, setSelectedMemberForHistory] = useState<UnionDuesMemberV3 | null>(null);
+  const [historyMember, setHistoryMember] = useState<UnionMemberItemV3 | null>(null);
 
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadTemplate = async () => {
+    try {
+      setDownloadingTemplate(true);
+      await api.downloadUnionImportTemplateV3();
+      notify("Đã tải xuống biểu mẫu import công đoàn phí (.xlsx)");
+    } catch {
+      notify("Không thể tải file mẫu. Vui lòng thử lại sau.", "error");
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
   const [auditLogsModalOpen, setAuditLogsModalOpen] = useState(false);
 
-  // Sync prop changes for projectId
+  // Reset page when project or filter changes
   useEffect(() => {
-    if (projectId && projectId !== "all") {
-      setSelectedProjectId(projectId);
-    }
-  }, [projectId]);
+    setCurrentPage(1);
+  }, [projectId, statusFilter]);
 
-  // Query: Projects lookup list
-  const { data: projectList = [] } = useQuery({
-    queryKey: ["web-payroll-projects"],
-    queryFn: () => api.getProjectsV3(),
-    staleTime: 1000 * 60 * 10,
-  });
-
-  // Query: Summary KPIs
-  const {
-    data: summaryData,
-    isLoading: isSummaryLoading,
-    refetch: refetchSummary,
-  } = useQuery({
-    queryKey: ["union-dues-summary-v3", selectedProjectId],
-    queryFn: () => api.getUnionDuesSummaryV3(selectedProjectId),
-  });
-
-  // Query: Members List
+  // Main Query: Union Members List
   const {
     data: listResponse,
     isLoading: isListLoading,
     isError: isListError,
     refetch: refetchList,
   } = useQuery({
-    queryKey: [
-      "union-dues-members-v3",
-      selectedProjectId,
-      statusFilter,
-      searchTerm,
-      currentPage,
-      pageSize,
-    ],
+    queryKey: ["web-payroll-unions", projectId, statusFilter, searchTerm, currentPage, pageSize],
     queryFn: () =>
-      api.getUnionDuesMembersV3({
-        projectId: selectedProjectId,
-        participationStatus: statusFilter,
-        search: searchTerm,
-        page: currentPage,
+      api.getUnionsV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        status: statusFilter,
+        keyword: searchTerm,
+        pageIndex: currentPage,
         pageSize,
       }),
   });
 
-  // Query: Member History
+  // KPI Queries for accurate counts
+  const { data: allCountData, refetch: refetchAllCount } = useQuery({
+    queryKey: ["web-payroll-unions-count-all", projectId],
+    queryFn: () =>
+      api.getUnionsV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        status: "ALL",
+        pageIndex: 1,
+        pageSize: 1,
+      }),
+    staleTime: 1000 * 30,
+  });
+
+  const { data: partCountData, refetch: refetchPartCount } = useQuery({
+    queryKey: ["web-payroll-unions-count-part", projectId],
+    queryFn: () =>
+      api.getUnionsV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        status: "PARTICIPATING",
+        pageIndex: 1,
+        pageSize: 1,
+      }),
+    staleTime: 1000 * 30,
+  });
+
+  const { data: notPartCountData, refetch: refetchNotPartCount } = useQuery({
+    queryKey: ["web-payroll-unions-count-not-part", projectId],
+    queryFn: () =>
+      api.getUnionsV3({
+        projectId: projectId === "all" ? undefined : projectId,
+        status: "NOT_PARTICIPATING",
+        pageIndex: 1,
+        pageSize: 1,
+      }),
+    staleTime: 1000 * 30,
+  });
+
+  const totalCount = allCountData?.total ?? (statusFilter === "ALL" ? listResponse?.total ?? 0 : 0);
+  const participatingCount = partCountData?.total ?? (statusFilter === "PARTICIPATING" ? listResponse?.total ?? 0 : 0);
+  const notParticipatingCount = notPartCountData?.total ?? (statusFilter === "NOT_PARTICIPATING" ? listResponse?.total ?? 0 : 0);
+
+  // Member History Query
   const {
     data: historyResponse,
     isLoading: isHistoryLoading,
   } = useQuery({
-    queryKey: ["union-dues-history-v3", selectedMemberForHistory?.employee.employeeCode],
-    queryFn: () =>
-      api.getUnionDuesHistoryV3(selectedMemberForHistory!.employee.employeeCode),
-    enabled: Boolean(historyModalOpen && selectedMemberForHistory?.employee.employeeCode),
+    queryKey: ["web-payroll-unions-history", historyMember?.employee.employeeCode],
+    queryFn: () => api.getUnionHistoryV3(historyMember!.employee.employeeCode),
+    enabled: Boolean(historyModalOpen && historyMember?.employee.employeeCode),
   });
 
-  // Query: Audit Logs
-  const { data: auditLogsData } = useQuery({
-    queryKey: ["union-dues-audit-logs-v3"],
-    queryFn: () => api.getUnionDuesAuditLogsV3({ pageSize: 50 }),
+  // Audit Logs Query
+  const {
+    data: auditLogsData,
+    isLoading: isAuditLogsLoading,
+  } = useQuery({
+    queryKey: ["web-payroll-unions-audit-logs", auditLogsModalOpen],
+    queryFn: () => api.getUnionAuditLogsV3({ pageIndex: 1, pageSize: 50 }),
     enabled: auditLogsModalOpen,
   });
 
   const memberItems = listResponse?.items ?? [];
   const totalMembers = listResponse?.total ?? 0;
 
-  // Mutation: Toggle participation
-  const toggleMutation = useMutation({
-    mutationFn: async ({
-      employeeCode,
-      newStatus,
-      date,
-      reason,
-    }: {
-      employeeCode: string;
-      newStatus: boolean;
-      date: string;
-      reason: string;
-    }) => {
-      return api.updateUnionDuesMemberV3(employeeCode, {
-        participating: newStatus,
-        effectiveDate: date,
-        contributionAmount: newStatus ? 23400 : 0,
-        reason,
-        note: reason,
-      });
+  // Refetch all queries helper
+  const refreshAllData = () => {
+    refetchList();
+    refetchAllCount();
+    refetchPartCount();
+    refetchNotPartCount();
+  };
+
+  // Mutation: Register Union
+  const registerMutation = useMutation({
+    mutationFn: (payload: { employeeCode: string; unionJoinDate: string; contributionAmount: number; note: string }) =>
+      api.registerUnionV3(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-all"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-part"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-not-part"] });
+      setRegisterModalOpen(false);
+      setRegisterMember(null);
+      setRegisterNote("");
+      notify("Đăng ký tham gia công đoàn thành công!");
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["union-dues-members-v3"] });
-      queryClient.invalidateQueries({ queryKey: ["union-dues-summary-v3"] });
-      setConfirmModalOpen(false);
-      setTargetMember(null);
-      setToggleReason("");
-      notify(
-        data.participating
-          ? `Đã đăng ký tham gia Công đoàn cho nhân viên ${data.employee.fullName}!`
-          : `Đã dừng trích nộp Công đoàn cho nhân viên ${data.employee.fullName}!`
-      );
-    },
-    onError: (err: any) => notify(err?.message || "Không thể cập nhật trạng thái", "error"),
+    onError: (err: any) => notify(err?.message || "Không thể đăng ký tham gia công đoàn", "error"),
   });
 
-  // Handle Export Excel
-  const handleExportExcel = async () => {
-    try {
-      setIsExporting(true);
-      const res = await api.exportUnionDuesExcelV3({
-        projectId: selectedProjectId,
-        participationStatus: statusFilter,
-        search: searchTerm,
-      });
-      notify(`Đã xuất báo cáo công đoàn phí (${res.totalRecords} nhân sự)!`);
-    } catch (err: any) {
-      notify(err?.message || "Không thể xuất báo cáo lúc này.", "error");
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  // Mutation: Update Contribution
+  const updateContributionMutation = useMutation({
+    mutationFn: (payload: { employeeCode: string; contributionAmount: number; note: string }) =>
+      api.updateUnionContributionV3(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions"] });
+      setEditModalOpen(false);
+      setEditMember(null);
+      setEditNote("");
+      notify("Cập nhật mức trích nộp công đoàn thành công!");
+    },
+    onError: (err: any) => notify(err?.message || "Không thể cập nhật mức đóng", "error"),
+  });
 
-  // Handle Import
-  const handleImport = async () => {
-    if (!importFile) return;
-    try {
-      const res = await api.importUnionDuesExcelV3(importFile, selectedProjectId);
-      notify(`Đã import thành công ${res.importedRows}/${res.totalRows} dòng dữ liệu công đoàn phí!`);
+  // Mutation: Deactivate Union
+  const deactivateMutation = useMutation({
+    mutationFn: (payload: { employeeCode: string; note: string }) =>
+      api.deactivateUnionV3(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-all"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-part"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-not-part"] });
+      setDeactivateModalOpen(false);
+      setDeactivateMember(null);
+      setDeactivateNote("");
+      notify("Đã dừng trích nộp công đoàn cho nhân viên!");
+    },
+    onError: (err: any) => notify(err?.message || "Không thể dừng trích nộp", "error"),
+  });
+
+  // Mutation: Import Excel
+  const importMutation = useMutation({
+    mutationFn: (file: File) => api.importUnionExcelV3(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-all"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-part"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-unions-count-not-part"] });
       setImportModalOpen(false);
       setImportFile(null);
-      refetchSummary();
-      refetchList();
-    } catch (err: any) {
-      notify(err?.message || "Lỗi khi import file Excel", "error");
-    }
-  };
+      notify("Import danh sách đoàn phí thành công!");
+    },
+    onError: (err: any) => notify(err?.message || "Lỗi khi import file Excel", "error"),
+  });
 
-  // Sync Header Action
+  // Sync Header Actions
   useEffect(() => {
     if (setHeaderAction) {
       setHeaderAction(
         <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={refreshAllData}
+            className="gap-1.5 font-medium shrink-0"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Làm mới
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -225,35 +281,54 @@ export function UnionFeesSubtab({
           >
             <History className="w-3.5 h-3.5" /> Nhật ký
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setImportModalOpen(true)}
-            className="gap-1.5 font-medium shrink-0"
-          >
-            <Upload className="w-3.5 h-3.5" /> Import Excel
-          </Button>
-          <Button
+          {/* Tạm thời ẩn nút Import Excel theo yêu cầu, không xóa */}
+          {/* <Button
             variant="primary"
             size="sm"
-            onClick={handleExportExcel}
-            loading={isExporting}
+            onClick={() => setImportModalOpen(true)}
             className="gap-1.5 font-semibold shrink-0"
           >
-            <Download className="w-3.5 h-3.5" /> Xuất Excel
-          </Button>
+            <Upload className="w-3.5 h-3.5" /> Import Excel
+          </Button> */}
         </div>
       );
     }
     return () => {
       if (setHeaderAction) setHeaderAction(null);
     };
-  }, [setHeaderAction, isExporting, selectedProjectId, statusFilter, searchTerm]);
+  }, [setHeaderAction]);
+
+  // Handlers to open modals
+  const handleOpenRegister = (m: UnionMemberItemV3) => {
+    setRegisterMember(m);
+    setRegisterJoinDate(new Date().toISOString().slice(0, 10));
+    setRegisterAmount(23400);
+    setRegisterNote("Đăng ký tham gia tổ chức Công đoàn cơ sở");
+    setRegisterModalOpen(true);
+  };
+
+  const handleOpenEdit = (m: UnionMemberItemV3) => {
+    setEditMember(m);
+    setEditAmount(m.contributionAmount ?? 23400);
+    setEditNote(m.note || "");
+    setEditModalOpen(true);
+  };
+
+  const handleOpenDeactivate = (m: UnionMemberItemV3) => {
+    setDeactivateMember(m);
+    setDeactivateNote("Người lao động làm đơn xin rút khỏi tổ chức Công đoàn");
+    setDeactivateModalOpen(true);
+  };
+
+  const handleOpenHistory = (m: UnionMemberItemV3) => {
+    setHistoryMember(m);
+    setHistoryModalOpen(true);
+  };
 
   return (
     <div className="union-fees-subtab space-y-4">
-      {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* 3 KPI Summary Cards (Interactive Filter Selectors) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {/* Card 1: Tổng nhân sự */}
         <div
           onClick={() => {
@@ -276,7 +351,7 @@ export function UnionFeesSubtab({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-foreground">
-              {isSummaryLoading ? "—" : summaryData?.total ?? 0}
+              {isListLoading && statusFilter === "ALL" ? "—" : totalCount}
             </span>
             <span className="text-xs text-muted-foreground">người</span>
           </div>
@@ -305,7 +380,7 @@ export function UnionFeesSubtab({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-              {isSummaryLoading ? "—" : summaryData?.participatingCount ?? 0}
+              {isListLoading && statusFilter === "PARTICIPATING" ? "—" : participatingCount}
             </span>
             <span className="text-xs text-muted-foreground">đoàn viên</span>
           </div>
@@ -334,118 +409,33 @@ export function UnionFeesSubtab({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-              {isSummaryLoading ? "—" : summaryData?.notParticipatingCount ?? 0}
+              {isListLoading && statusFilter === "NOT_PARTICIPATING" ? "—" : notParticipatingCount}
             </span>
             <span className="text-xs text-muted-foreground">người</span>
           </div>
           <p className="mt-1 text-xs text-muted leading-relaxed">Chưa gia nhập hoặc đã làm đơn xin rút</p>
         </div>
-
-        {/* Card 4: Tổng trích nộp tháng */}
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-              Tổng trích nộp / tháng
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400">
-              {isSummaryLoading
-                ? "—"
-                : formatCurrency(summaryData?.totalMonthlyDues ?? 0)}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Dự kiến nộp Liên đoàn Lao động</p>
-        </div>
       </div>
 
-      {/* Main Table Card */}
+      {/* Main Integrated Table Card */}
       <div className="integrated-table-card">
-        {/* Toolbar */}
+        {/* Table Toolbar */}
         <div className="table-card-toolbar">
-          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-            {/* Left: Filter Pills */}
-            <div className="filter-status-pills flex items-center gap-1.5 flex-wrap">
-              <button
-                type="button"
-                className={`pill-btn ${statusFilter === "ALL" ? "active" : ""}`}
-                onClick={() => {
-                  setStatusFilter("ALL");
-                  setCurrentPage(1);
-                }}
-              >
-                Tất cả ({summaryData?.total ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn success ${statusFilter === "PARTICIPATING" ? "active" : ""}`}
-                onClick={() => {
-                  setStatusFilter("PARTICIPATING");
-                  setCurrentPage(1);
-                }}
-              >
-                Đang trích nộp ({summaryData?.participatingCount ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`pill-btn neutral ${statusFilter === "NOT_PARTICIPATING" ? "active" : ""}`}
-                onClick={() => {
-                  setStatusFilter("NOT_PARTICIPATING");
-                  setCurrentPage(1);
-                }}
-              >
-                Không tham gia ({summaryData?.notParticipatingCount ?? 0})
-              </button>
+          <div className="flex items-center justify-between gap-3 w-full">
+            <div className="text-xs font-semibold text-foreground">
+              Danh sách đoàn phí ({totalMembers})
             </div>
 
-            {/* Right: Project Dropdown & Search */}
-            <div className="flex items-center gap-2.5 ml-auto flex-wrap">
-              {projectList.length > 0 && (
-                <div className="form-field-wrap">
-                  <select
-                    value={selectedProjectId}
-                    onChange={(e) => {
-                      setSelectedProjectId(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="select-input text-xs py-1.5 px-2.5 h-9 rounded-md border border-input bg-background"
-                  >
-                    <option value="all">Tất cả dự án</option>
-                    {projectList.map((p) => (
-                      <option key={p.projectId} value={String(p.projectId)}>
-                        {p.projectCode} - {p.projectName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="relative min-w-[240px] max-w-[320px]">
-                <Search className="search-icon-fixed text-muted-foreground" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  placeholder="Tìm theo tên NV, mã NV, phòng ban..."
-                  className="search-box-input w-full pl-10 pr-8 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
-                />
-                {searchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm("")}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
+            {/* Right: Search Box */}
+            <SearchInput
+              value={searchTerm}
+              onChange={(val) => {
+                setSearchTerm(val);
+                setCurrentPage(1);
+              }}
+              placeholder="Tìm theo tên NV, mã NV, phòng ban..."
+              containerClassName="min-w-[260px] max-w-[340px]"
+            />
           </div>
         </div>
 
@@ -455,7 +445,7 @@ export function UnionFeesSubtab({
         ) : isListError ? (
           <ErrorState
             message="Không thể tải danh sách dữ liệu công đoàn phí."
-            retry={() => refetchList()}
+            retry={refreshAllData}
           />
         ) : memberItems.length === 0 ? (
           <EmptyState
@@ -469,38 +459,34 @@ export function UnionFeesSubtab({
         ) : (
           <div className="data-table-wrap">
             <div className="data-table-scroll">
-              <table className="data-table min-w-[1020px]">
+              <table className="data-table min-w-[980px]">
                 <thead>
                   <tr>
                     <th style={{ width: "45px" }} className="text-center">STT</th>
                     <th style={{ minWidth: "190px" }}>NGƯỜI LAO ĐỘNG</th>
-                    <th style={{ width: "140px" }} className="text-center">TRẠNG THÁI</th>
+                    <th style={{ width: "135px" }} className="text-center">TRẠNG THÁI</th>
                     <th style={{ width: "125px" }}>NGÀY GIA NHẬP</th>
-                    <th style={{ width: "125px" }}>NGÀY DỪNG</th>
                     <th style={{ minWidth: "170px" }}>CÔNG THỨC TRÍCH NỘP</th>
                     <th style={{ width: "135px" }} className="text-right">MỨC ĐÓNG/THÁNG</th>
-                    <th style={{ minWidth: "170px" }}>GHI CHÚ</th>
-                    <th style={{ width: "120px" }} className="text-center">THAO TÁC</th>
+                    <th style={{ minWidth: "160px" }}>GHI CHÚ</th>
+                    <th style={{ width: "130px" }} className="text-center">THAO TÁC</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {memberItems.map((m: UnionDuesMemberV3, idx: number) => {
+                  {memberItems.map((m: UnionMemberItemV3, idx: number) => {
                     const rawStt = (currentPage - 1) * pageSize + idx + 1;
                     const stt = String(rawStt).padStart(2, "0");
 
                     return (
-                      <tr key={m.employee.employeeCode}>
+                      <tr key={m.employee.employeeCode || idx}>
                         <td className="text-center text-muted font-medium">{stt}</td>
                         <td>
                           <div className="employee-cell-info">
                             <span className="employee-cell-name font-semibold text-foreground">
-                              {m.employee.fullName}
+                              {m.employee.fullName || "—"}
                             </span>
                             <span className="employee-cell-sub">
                               <span className="employee-code-badge">{m.employee.employeeCode}</span>
-                              {m.employee.department && (
-                                <span className="text-muted text-[11px]">· {m.employee.department}</span>
-                              )}
                               {m.employee.project?.projectCode && (
                                 <span className="text-muted text-[11px] font-medium">
                                   · [{m.employee.project.projectCode}]
@@ -518,15 +504,6 @@ export function UnionFeesSubtab({
                         </td>
                         <td className="text-[13px] text-foreground">
                           {m.joinDate ? formatDate(m.joinDate) : "—"}
-                        </td>
-                        <td className="text-[13px]">
-                          {m.leaveDate ? (
-                            <span className="text-rose-600 dark:text-rose-400 font-medium">
-                              {formatDate(m.leaveDate)}
-                            </span>
-                          ) : (
-                            <span className="text-muted">—</span>
-                          )}
                         </td>
                         <td className="text-xs text-foreground font-medium">
                           {m.participating
@@ -546,37 +523,46 @@ export function UnionFeesSubtab({
                           {m.note || "—"}
                         </td>
                         <td className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button
-                              variant={m.participating ? "danger" : "primary"}
-                              size="sm"
-                              onClick={() => {
-                                setTargetMember(m);
-                                setEffectiveDate(new Date().toISOString().slice(0, 10));
-                                setToggleReason(
-                                  m.participating
-                                    ? "Người lao động làm đơn xin rút khỏi tổ chức Công đoàn cơ sở"
-                                    : "Đăng ký tham gia Công đoàn cơ sở"
-                                );
-                                setConfirmModalOpen(true);
-                              }}
-                              className="h-7 text-[11px] px-2 font-medium"
-                              title={m.participating ? "Dừng tham gia công đoàn" : "Kích hoạt tham gia công đoàn"}
-                            >
-                              {m.participating ? "Dừng trích" : "Tham gia"}
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedMemberForHistory(m);
-                                setHistoryModalOpen(true);
-                              }}
-                              className="h-7 text-[11px] px-1.5"
+                          <div className="flex items-center justify-center gap-1.5">
+                            {m.participating ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEdit(m)}
+                                  className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md shadow-xs transition-colors cursor-pointer"
+                                  title="Chỉnh sửa mức trích nộp"
+                                >
+                                  <Pencil className="w-3 h-3 text-slate-500 dark:text-slate-400" /> Sửa
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenDeactivate(m)}
+                                  className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-rose-600 dark:text-rose-400 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-md shadow-xs transition-colors cursor-pointer"
+                                  title="Dừng trích nộp công đoàn"
+                                >
+                                  <UserMinus className="w-3 h-3 text-rose-500" /> Dừng
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRegister(m)}
+                                className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-semibold !text-white bg-primary hover:bg-primary-hover border border-primary rounded-md shadow-xs transition-colors cursor-pointer"
+                                style={{ color: "#ffffff", backgroundColor: "#038b8c", borderColor: "#038b8c" }}
+                                title="Đăng ký tham gia công đoàn"
+                              >
+                                <Plus className="w-3.5 h-3.5 !text-white" style={{ color: "#ffffff" }} />
+                                <span className="!text-white" style={{ color: "#ffffff" }}>Tham gia</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenHistory(m)}
+                              className="inline-flex items-center justify-center w-7 h-7 text-slate-500 dark:text-slate-400 hover:text-primary dark:hover:text-primary bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md shadow-xs transition-colors cursor-pointer"
                               title="Xem lịch sử biến động"
                             >
-                              <History className="w-3.5 h-3.5 text-primary" />
-                            </Button>
+                              <History className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -601,73 +587,192 @@ export function UnionFeesSubtab({
         )}
       </div>
 
-      {/* Modal: Xác nhận Thay đổi trạng thái tham gia Công đoàn */}
+      {/* Modal 1: Đăng ký tham gia Công đoàn (POST /register) */}
       <Modal
-        open={confirmModalOpen}
-        onOpenChange={setConfirmModalOpen}
-        title={
-          targetMember?.participating
-            ? `Dừng trích nộp Công đoàn: ${targetMember?.employee.fullName}`
-            : `Đăng ký tham gia Công đoàn: ${targetMember?.employee.fullName}`
-        }
-        description={`Mã NV: ${targetMember?.employee.employeeCode} · Phòng ban: ${
-          targetMember?.employee.department ?? "Khối Sản xuất"
-        }`}
+        open={registerModalOpen}
+        onOpenChange={setRegisterModalOpen}
+        title={`Đăng ký tham gia Công đoàn: ${registerMember?.employee.fullName ?? ""}`}
+        description={`Mã NV: ${registerMember?.employee.employeeCode ?? ""}`}
         size="md"
         footer={
           <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" onClick={() => setConfirmModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setRegisterModalOpen(false)}>
               Hủy
             </Button>
             <Button
-              variant={targetMember?.participating ? "danger" : "primary"}
-              loading={toggleMutation.isPending}
+              variant="primary"
+              loading={registerMutation.isPending}
               onClick={() => {
-                if (!targetMember) return;
-                toggleMutation.mutate({
-                  employeeCode: targetMember.employee.employeeCode,
-                  newStatus: !targetMember.participating,
-                  date: effectiveDate,
-                  reason: toggleReason,
+                if (!registerMember) return;
+                registerMutation.mutate({
+                  employeeCode: registerMember.employee.employeeCode,
+                  unionJoinDate: registerJoinDate,
+                  contributionAmount: Number(registerAmount) || 23400,
+                  note: registerNote,
                 });
               }}
+              className="gap-1.5"
             >
-              {targetMember?.participating ? "Xác nhận dừng tham gia" : "Xác nhận tham gia"}
+              <Save className="w-4 h-4" /> Lưu đăng ký
             </Button>
           </div>
         }
       >
-        <div className="space-y-3.5">
-          <div className="form-field-wrap">
-            <label className="text-xs font-semibold text-foreground">Ngày áp dụng</label>
+        <div className="space-y-4 py-1">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Ngày gia nhập công đoàn <span className="text-rose-500">*</span>
+            </label>
             <input
               type="date"
-              value={effectiveDate}
-              onChange={(e) => setEffectiveDate(e.target.value)}
-              className="text-input h-9 text-xs"
+              value={registerJoinDate}
+              onChange={(e) => setRegisterJoinDate(e.target.value)}
+              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
             />
           </div>
 
-          <div className="form-field-wrap">
-            <label className="text-xs font-semibold text-foreground">Lý do thay đổi</label>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Mức đóng hàng tháng (VNĐ) <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="number"
+              step="1000"
+              value={registerAmount}
+              onChange={(e) => setRegisterAmount(Number(e.target.value))}
+              placeholder="23400"
+              className="w-full px-3 py-2 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
+            />
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              Mặc định 23.400 đ (1% lương tối thiểu vùng)
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Ghi chú
+            </label>
             <textarea
-              value={toggleReason}
-              onChange={(e) => setToggleReason(e.target.value)}
+              value={registerNote}
+              onChange={(e) => setRegisterNote(e.target.value)}
               rows={3}
-              placeholder="Nhập lý do thay đổi trạng thái tham gia công đoàn..."
-              className="text-input text-xs p-2 rounded-md"
+              placeholder="Nhập ghi chú đăng ký tham gia..."
+              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground resize-none"
             />
           </div>
         </div>
       </Modal>
 
-      {/* Modal: Lịch sử biến động Công đoàn của nhân viên */}
+      {/* Modal 2: Chỉnh sửa mức trích nộp (PUT /contribution) */}
+      <Modal
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        title={`Điều chỉnh mức đóng đoàn phí: ${editMember?.employee.fullName ?? ""}`}
+        description={`Mã NV: ${editMember?.employee.employeeCode ?? ""}`}
+        size="md"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" onClick={() => setEditModalOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              loading={updateContributionMutation.isPending}
+              onClick={() => {
+                if (!editMember) return;
+                updateContributionMutation.mutate({
+                  employeeCode: editMember.employee.employeeCode,
+                  contributionAmount: Number(editAmount) || 0,
+                  note: editNote,
+                });
+              }}
+              className="gap-1.5"
+            >
+              <Save className="w-4 h-4" /> Lưu thay đổi
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4 py-1">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Mức trích nộp mới (VNĐ) <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="number"
+              step="1000"
+              value={editAmount}
+              onChange={(e) => setEditAmount(Number(e.target.value))}
+              className="w-full px-3 py-2 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Lý do / Ghi chú điều chỉnh
+            </label>
+            <textarea
+              value={editNote}
+              onChange={(e) => setEditNote(e.target.value)}
+              rows={3}
+              placeholder="Nhập lý do điều chỉnh mức đóng..."
+              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground resize-none"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal 3: Dừng tham gia Công đoàn (POST /deactivate) */}
+      <Modal
+        open={deactivateModalOpen}
+        onOpenChange={setDeactivateModalOpen}
+        title={`Dừng trích nộp Công đoàn: ${deactivateMember?.employee.fullName ?? ""}`}
+        description={`Mã NV: ${deactivateMember?.employee.employeeCode ?? ""}`}
+        size="md"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDeactivateModalOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              variant="danger"
+              loading={deactivateMutation.isPending}
+              onClick={() => {
+                if (!deactivateMember) return;
+                deactivateMutation.mutate({
+                  employeeCode: deactivateMember.employee.employeeCode,
+                  note: deactivateNote,
+                });
+              }}
+            >
+              Xác nhận dừng trích
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4 py-1">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+              Lý do dừng tham gia công đoàn <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              value={deactivateNote}
+              onChange={(e) => setDeactivateNote(e.target.value)}
+              rows={3}
+              placeholder="Nhập lý do dừng tham gia công đoàn..."
+              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground resize-none"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal 4: Lịch sử biến động Công đoàn (GET /history) */}
       <Modal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
-        title={`Lịch sử công đoàn phí: ${selectedMemberForHistory?.employee.fullName ?? ""}`}
-        description={`Mã NV: ${selectedMemberForHistory?.employee.employeeCode} · Trạng thái hiện tại: ${
-          selectedMemberForHistory?.participating ? "Đang tham gia" : "Không tham gia"
+        title={`Lịch sử đoàn phí: ${historyMember?.employee.fullName ?? ""}`}
+        description={`Mã NV: ${historyMember?.employee.employeeCode} · Trạng thái: ${
+          historyMember?.participating ? "Đang trích nộp" : "Không tham gia"
         }`}
         size="lg"
         footer={<Button onClick={() => setHistoryModalOpen(false)}>Đóng</Button>}
@@ -689,17 +794,17 @@ export function UnionFeesSubtab({
                   </tr>
                 </thead>
                 <tbody>
-                  {historyResponse.items.map((h: UnionDuesHistoryItemV3, i: number) => (
-                    <tr key={h.id}>
+                  {historyResponse.items.map((h: UnionHistoryItemV3, i: number) => (
+                    <tr key={h.id || i}>
                       <td className="text-center text-muted font-medium">{String(i + 1).padStart(2, "0")}</td>
-                      <td className="text-xs font-medium text-foreground">{formatDate(h.occurredAt)}</td>
+                      <td className="text-xs font-medium text-foreground">{h.occurredAt ? formatDate(h.occurredAt) : "—"}</td>
                       <td>
                         {h.eventType === "JOINED" ? (
                           <Badge tone="success">Gia nhập</Badge>
                         ) : h.eventType === "LEFT" ? (
                           <Badge tone="danger">Rút lui</Badge>
                         ) : (
-                          <Badge tone="info">Điều chỉnh</Badge>
+                          <Badge tone="info">{h.action || "Điều chỉnh"}</Badge>
                         )}
                       </td>
                       <td className="text-right font-semibold text-xs">
@@ -707,10 +812,10 @@ export function UnionFeesSubtab({
                       </td>
                       <td>
                         <span className="text-xs text-foreground font-medium block">
-                          {h.performedBy?.fullName}
+                          {h.performedBy?.fullName || "Hệ thống"}
                         </span>
                         <span className="text-[11px] text-muted-foreground">
-                          {h.performedBy?.roleName ?? "Quản trị viên"}
+                          {h.performedBy?.roleName || "Quản trị viên"}
                         </span>
                       </td>
                       <td className="text-xs text-muted-foreground">{h.note || "—"}</td>
@@ -728,68 +833,120 @@ export function UnionFeesSubtab({
         )}
       </Modal>
 
-      {/* Modal: Import Excel */}
+      {/* ================= Modal 5: Import Excel Wizard (POST /import) ================= */}
       <Modal
         open={importModalOpen}
-        onOpenChange={setImportModalOpen}
+        onOpenChange={(open) => {
+          setImportModalOpen(open);
+          if (!open) {
+            setImportFile(null);
+            setIsDragging(false);
+          }
+        }}
         title="Import danh sách Công đoàn phí từ Excel"
-        description="Tải lên danh sách nhân viên tham gia/rút lui công đoàn theo biểu mẫu chuẩn."
-        size="md"
-        footer={
-          <div className="flex items-center justify-between w-full">
+        description="Tải lên danh sách nhân viên tham gia/rút lui công đoàn theo biểu mẫu chuẩn để thêm hàng loạt."
+        size="lg"
+      >
+        <div className="space-y-4 text-xs">
+          {/* Step 1: Download Template */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-slate-800 dark:text-slate-100">1. Tải biểu mẫu Excel chuẩn</div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Sử dụng tệp mẫu để đảm bảo đúng định dạng các cột dữ liệu công đoàn phí.
+              </p>
+            </div>
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
-              onClick={() => api.downloadUnionDuesImportTemplateV3()}
-              className="gap-1.5 text-xs font-semibold"
+              loading={downloadingTemplate}
+              onClick={handleDownloadTemplate}
+              className="gap-1.5 text-xs font-semibold shrink-0"
             >
               <Download className="w-3.5 h-3.5" /> Tải file mẫu (.xlsx)
             </Button>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" onClick={() => setImportModalOpen(false)}>
-                Hủy
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!importFile}
-                onClick={handleImport}
-                className="gap-1.5"
-              >
-                <Upload className="w-3.5 h-3.5" /> Bắt đầu Import
-              </Button>
+          </div>
+
+          {/* Step 2: Upload File Dropzone */}
+          <div>
+            <div className="font-semibold text-slate-800 dark:text-slate-100 mb-1.5">2. Chọn tệp dữ liệu đã điền</div>
+            <div
+              onClick={() => importFileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) setImportFile(file);
+              }}
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                isDragging
+                  ? "border-primary bg-primary/5"
+                  : importFile
+                  ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                  : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              }`}
+            >
+              <input
+                type="file"
+                ref={importFileInputRef}
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+              />
+              {importFile ? (
+                <div className="flex items-center justify-center gap-3">
+                  <FileSpreadsheet className="w-8 h-8 text-emerald-600" />
+                  <div className="text-left">
+                    <div className="font-bold text-slate-900 dark:text-slate-100">{importFile.name}</div>
+                    <div className="text-slate-500 dark:text-slate-400 text-[11px]">
+                      {(importFile.size / 1024).toFixed(1)} KB • Bấm để chọn tệp khác
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <UploadCloud className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+                  <p className="font-semibold text-slate-700 dark:text-slate-200">Kéo thả tệp Excel vào đây hoặc bấm để chọn</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Chấp nhận .xlsx, .xls tối đa 10MB</p>
+                </div>
+              )}
             </div>
           </div>
-        }
-      >
-        <div className="space-y-4">
-          <input
-            type="file"
-            ref={importFileInputRef}
-            onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-            accept=".xlsx, .xls"
-            className="hidden"
-          />
-          <div
-            onClick={() => importFileInputRef.current?.click()}
-            className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 transition-colors bg-muted/20"
-          >
-            <FileSpreadsheet className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-            {importFile ? (
-              <div>
-                <p className="text-sm font-semibold text-foreground">{importFile.name}</p>
-                <p className="text-xs text-muted-foreground">{(importFile.size / 1024).toFixed(1)} KB</p>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xs font-medium text-foreground">Click để chọn tệp Excel (.xlsx)</p>
-                <p className="text-[11px] text-muted-foreground mt-1">Dung lượng tối đa 10MB</p>
-              </div>
-            )}
+
+          {/* Actions */}
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setImportModalOpen(false);
+                setImportFile(null);
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!importFile}
+              loading={importMutation.isPending}
+              onClick={() => {
+                if (importFile) importMutation.mutate(importFile);
+              }}
+              className="gap-1.5 font-semibold"
+            >
+              <Upload className="w-3.5 h-3.5" /> Bắt đầu Import
+            </Button>
           </div>
         </div>
       </Modal>
 
-      {/* Modal: Audit Logs */}
+      {/* Modal 6: Nhật ký hoạt động (GET /audit-logs) */}
       <Modal
         open={auditLogsModalOpen}
         onOpenChange={setAuditLogsModalOpen}
@@ -798,7 +955,9 @@ export function UnionFeesSubtab({
         size="lg"
         footer={<Button onClick={() => setAuditLogsModalOpen(false)}>Đóng</Button>}
       >
-        {auditLogsData?.items && auditLogsData.items.length > 0 ? (
+        {isAuditLogsLoading ? (
+          <LoadingBlock rows={4} />
+        ) : auditLogsData?.items && auditLogsData.items.length > 0 ? (
           <div className="data-table-wrap border rounded-lg overflow-hidden">
             <div className="data-table-scroll">
               <table className="data-table compact-table min-w-[600px]">
@@ -812,19 +971,31 @@ export function UnionFeesSubtab({
                   </tr>
                 </thead>
                 <tbody>
-                  {auditLogsData.items.map((log: any, idx: number) => (
-                    <tr key={log.id}>
+                  {auditLogsData.items.map((log: UnionAuditLogItemV3, idx: number) => (
+                    <tr key={log.id || idx}>
                       <td className="text-center text-muted font-medium">{String(idx + 1).padStart(2, "0")}</td>
-                      <td className="text-xs font-medium text-foreground">{formatDate(log.occurredAt)}</td>
-                      <td>
-                        <span className="text-xs font-semibold text-foreground block">{log.actor?.fullName}</span>
-                        <span className="text-[11px] text-muted-foreground">{log.actor?.roleName}</span>
+                      <td className="text-xs font-medium text-foreground">
+                        {log.occurredAt ? formatDate(log.occurredAt) : "—"}
                       </td>
                       <td>
-                        <span className="text-xs font-medium text-foreground block">{log.employee?.fullName}</span>
-                        <span className="text-[11px] text-muted-foreground">[{log.employee?.employeeCode}]</span>
+                        <span className="text-xs font-semibold text-foreground block">
+                          {log.actor?.fullName || "Hệ thống"}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {log.actor?.roleName || "Quản trị viên"}
+                        </span>
                       </td>
-                      <td className="text-xs text-muted-foreground">{log.description}</td>
+                      <td>
+                        <span className="text-xs font-medium text-foreground block">
+                          {log.employee?.fullName || "—"}
+                        </span>
+                        {log.employee?.employeeCode && (
+                          <span className="text-[11px] text-muted-foreground">
+                            [{log.employee.employeeCode}]
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-xs text-muted-foreground">{log.description || log.action || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
