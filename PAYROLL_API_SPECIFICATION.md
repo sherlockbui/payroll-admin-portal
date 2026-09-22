@@ -9,8 +9,8 @@
 ## 1. TỔNG QUAN HỆ THỐNG
 
 ### 1.1. Thông tin kết nối
-- **Base URL:** `/api/payroll-v3`
-- **Môi trường Development:** `https://localhost:5001/api/payroll-v3` hoặc IIS Express `http://localhost:5000/api/payroll-v3`
+- **Base URL:** `/api/web/payroll`
+- **Môi trường Development:** `https://localhost:5001/api/web/payroll` hoặc IIS Express `http://localhost:5000/api/web/payroll`
 - **Định dạng dữ liệu:** `application/json` (Encoding: `UTF-8`)
 - **Authentication:** Bearer JWT Token gửi qua Request Header:
   ```http
