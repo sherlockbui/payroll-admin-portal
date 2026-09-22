@@ -7,6 +7,12 @@ export interface ProjectItem {
   projectId: number;
   projectCode: string;
   projectName: string;
+  ownerName?: string | null;
+  ownerPhone?: string | null;
+  ownerEmail?: string | null;
+  totalActiveEmployees?: number;
+  payrollCycleStartDate?: string | null;
+  payrollCycleEndDate?: string | null;
 }
 
 export interface ApprovedTimesheet {

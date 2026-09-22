@@ -56,7 +56,11 @@ export function ProjectSelect({
     debouncedSearch.trim() ? { search: debouncedSearch.trim() } : undefined
   );
 
-  const projects = projectsData || [];
+  const projects: ProjectItem[] = useMemo(() => {
+    if (Array.isArray(projectsData)) return projectsData;
+    if (Array.isArray((projectsData as any)?.items)) return (projectsData as any).items;
+    return [];
+  }, [projectsData]);
 
   // Cache to remember selected project even if server search results exclude it
   const [projectCache, setProjectCache] = useState<Map<string | number, ProjectItem>>(new Map());

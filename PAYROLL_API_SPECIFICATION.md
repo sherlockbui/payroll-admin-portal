@@ -87,26 +87,49 @@ Khi người dùng truy cập các màn hình quản lý bảng lương:
 - **Method:** `GET`
 - **URL:** `/projects`
 - **Mô tả:** Lấy danh sách các dự án đang hoạt động (`Active = 1`) mà tài khoản đang đăng nhập được phân quyền quản lý (Admin thấy tất cả dự án, user thường chỉ thấy các dự án được gán trong `dbo.ProjectUsers`).
-- **Query Parameters:** Không có.
+- **Query Parameters:**
+  - `search` (`string`, tuỳ chọn): Tìm kiếm theo mã dự án (`projectCode`) hoặc tên dự án (`projectName`).
+  - `pageIndex` (`int`, tuỳ chọn, mặc định: `1`): Số trang hiện tại.
+  - `pageSize` (`int`, tuỳ chọn, mặc định: `20`): Kích thước trang (khuyến nghị truyền `100` khi tải cho Dropdown để hiển thị đầy đủ).
 - **Response `200 OK`:**
 ```json
 {
   "success": true,
-  "message": "Tải danh sách dự án theo phân quyền thành công.",
-  "data": [
-    {
-      "id": 6,
-      "projectId": 1115,
-      "projectCode": "ABB-MT",
-      "projectName": "Khu vực Abbott"
-    },
-    {
-      "id": 11,
-      "projectId": 1104,
-      "projectCode": "AJN-LT",
-      "projectName": "Khu vực Ajinomoto Long Thành"
-    }
-  ]
+  "message": "Success",
+  "data": {
+    "items": [
+      {
+        "id": 6,
+        "projectId": 1115,
+        "projectCode": "ABB-MT",
+        "projectName": "Khu vực Abbott",
+        "ownerName": "Hồ Văn Phúc",
+        "ownerPhone": null,
+        "ownerEmail": "hauvc@greenspeed.vn",
+        "totalActiveEmployees": 39,
+        "payrollCycleStartDate": "2026-09-01T00:00:00",
+        "payrollCycleEndDate": "2026-09-30T00:00:00"
+      },
+      {
+        "id": 11,
+        "projectId": 1104,
+        "projectCode": "AJN-LT",
+        "projectName": "Khu vực Ajinomoto Long Thành",
+        "ownerName": "Nguyễn Hiếu Nghĩa",
+        "ownerPhone": "",
+        "ownerEmail": "anhh@greenspeed.vn",
+        "totalActiveEmployees": 144,
+        "payrollCycleStartDate": null,
+        "payrollCycleEndDate": null
+      }
+    ],
+    "pageIndex": 1,
+    "pageSize": 20,
+    "totalRow": 54
+  },
+  "error": null,
+  "traceId": "400009d4-0001-9f00-b63f-84710c7967bb",
+  "timestamp": "2026-09-22T09:20:03.6314831Z"
 }
 ```
 

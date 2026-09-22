@@ -14,7 +14,7 @@ import type {
 } from "./payroll-types";
 
 // Temporarily point to ngrok backend
-const API_BASE_URL = "https://claudine-footless-first.ngrok-free.dev/api";
+const API_BASE_URL = "https://api-stage-hris.greenspeed.vn/api";
 const MOCK_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJFbWFpbCI6InRvYW5odkBncmVlbnNwZWVkLnZuIiwiSWQiOiIxIiwiRW1wbG95ZWVJZCI6IjEiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiaXRhZG1pbkBncmVlbnNwZWVkLnZuIiwiRW1wbG95ZWUiOiIiLCJmdWxsTmFtZSI6IkdSU0MgQURNSU4iLCJVc2VyVHlwZSI6IkVtcGxveWVlIiwiR0lEIjoiR1JTQy1BRE1JTiIsImp0aSI6IjZmMjgyODRkLTJhYjAtNDExNy04M2MyLWMxNjliZTJmZTY1ZiIsImV4cCI6MTgxNzk1MjgxNiwiaXNzIjoiaHR0cHM6Ly90aW1ldHJhY2tpbmctYml0Zmx5LmdyZWVuc3BlZWQudm4iLCJhdWQiOiJodHRwczovL3RpbWV0cmFja2luZy1iaXRmbHkuZ3JlZW5zcGVlZC52biJ9.awS3S2rzvS5AMHrVLSR8TlhpP_mKNyF1ZCAS4dfdAz4";
 
 export class PayrollApiError extends Error {
@@ -29,13 +29,13 @@ export class PayrollApiError extends Error {
 
 async function payrollRequest<T>(endpoint: string, init?: RequestInit): Promise<{ data: T; meta?: PaginationMeta }> {
   // Add ngrok-skip-browser-warning just in case
-  const headers = { 
-    "Content-Type": "application/json", 
+  const headers = {
+    "Content-Type": "application/json",
     "ngrok-skip-browser-warning": "true",
     "Authorization": `Bearer ${MOCK_TOKEN}`,
-    ...init?.headers 
+    ...init?.headers
   };
-  
+
   const response = await fetch(`${API_BASE_URL}/web/payroll${endpoint}`, { ...init, headers });
   let payload: any = {};
   try {
@@ -43,25 +43,44 @@ async function payrollRequest<T>(endpoint: string, init?: RequestInit): Promise<
   } catch {
     payload = { message: response.statusText || "Lỗi kết nối máy chủ" };
   }
-  
+
   if (!response.ok || !payload.success) {
     const errorCode = payload.error?.code || payload.code || "UNKNOWN";
     throw new PayrollApiError(payload.message || "Yêu cầu thất bại", errorCode, response.status);
   }
-  
+
   return { data: payload.data, meta: payload.meta };
 }
 
 export const payrollApi = {
   // 1.0 Danh sách Dự án theo phân quyền (Bearer JWT claims)
-  getPayrollProjects: (params?: { search?: string }) => {
+  getPayrollProjects: (params?: { search?: string; pageIndex?: number; pageSize?: number }) => {
     const query = new URLSearchParams(
-      Object.entries(params || {})
+      Object.entries({ pageSize: 100, ...(params || {}) })
         .filter(([, v]) => v !== undefined && v !== null && v !== "")
         .map(([k, v]) => [k, String(v)])
     );
     const qs = query.toString() ? `?${query.toString()}` : "";
-    return payrollRequest<ProjectItem[]>(`/projects${qs}`).then((res) => res.data);
+    return payrollRequest<any>(`/projects${qs}`).then((res) => {
+      const raw = res.data;
+      const list: any[] = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.items)
+        ? raw.items
+        : [];
+      return list.map((p) => ({
+        id: p.id ?? p.projectId,
+        projectId: p.projectId ?? p.id,
+        projectCode: p.projectCode ?? "",
+        projectName: p.projectName ?? "",
+        ownerName: p.ownerName ?? null,
+        ownerPhone: p.ownerPhone ?? null,
+        ownerEmail: p.ownerEmail ?? null,
+        totalActiveEmployees: p.totalActiveEmployees ?? 0,
+        payrollCycleStartDate: p.payrollCycleStartDate ?? null,
+        payrollCycleEndDate: p.payrollCycleEndDate ?? null,
+      })) as ProjectItem[];
+    });
   },
 
   // 1.1 Danh sách Bảng công đã chốt
@@ -90,15 +109,15 @@ export const payrollApi = {
       return { data: items, total, page, pageSize, totalPages };
     });
   },
-  
+
   // 1.3 Xem thông tin chi tiết 1 kỳ lương
-  getPeriodDetail: (id: number) => 
+  getPeriodDetail: (id: number) =>
     payrollRequest<PayrollPeriod>(`/periods/${id}`).then((res) => res.data),
 
   // 2.1 Đồng bộ dữ liệu từ Bảng công đã duyệt
   syncTimesheet: (payload: { projectTimesheetId: number; payrollPeriodId?: number; forceResetManual?: boolean }) =>
     payrollRequest<any>("/periods/sync-timesheet", { method: "POST", body: JSON.stringify(payload) }).then((res) => res.data),
-    
+
   // 2.2 Chạy tính toán bảng lương (hỗ trợ tính toàn bộ hoặc nhóm mã nhân viên)
   calculatePayroll: (id: number, employeeCodes?: string[] | null) => {
     const body: Record<string, any> = {};
@@ -110,11 +129,11 @@ export const payrollApi = {
       body: JSON.stringify(body),
     }).then((res) => res.data);
   },
-    
+
   // 2.3 Dashboard KPI tổng quan kỳ lương
   getSummary: (id: number) =>
     payrollRequest<PayrollSummary>(`/periods/${id}/summary`).then((res) => res.data),
-    
+
   // 2.4 Danh sách nhân viên trong kỳ lương (Paged Result)
   getEmployees: (id: number, params?: { search?: string; page?: number; pageSize?: number }) => {
     const query = new URLSearchParams(
@@ -126,11 +145,11 @@ export const payrollApi = {
       `/periods/${id}/employees?${query}`
     ).then((res) => res.data);
   },
-  
+
   // 2.5 Chi tiết Phiếu lương (Payslip) của 1 nhân viên
   getPayslipDetail: (id: number, employeeCode: string) =>
     payrollRequest<PayslipDetail>(`/periods/${id}/employees/${employeeCode}`).then((res) => res.data),
-    
+
   // 2.6 Bảng lương đầy đủ cột động (Dynamic UI Grid)
   getPayrollMatrix: (id: number, params?: { search?: string; page?: number; pageSize?: number }) => {
     const query = new URLSearchParams(
@@ -140,12 +159,12 @@ export const payrollApi = {
     );
     return payrollRequest<PayrollMatrix>(`/periods/${id}/payroll-sheet?${query}`).then((res) => res.data);
   },
-  
+
   // 2.7 Xuất file Excel Bảng lương chuẩn doanh nghiệp
   exportPayrollExcelUrl: (id: number) => `${API_BASE_URL}/web/payroll/periods/${id}/export`,
 
   downloadPayrollExcel: async (id: number, filename?: string) => {
-    const headers = { 
+    const headers = {
       "ngrok-skip-browser-warning": "true",
       "Authorization": `Bearer ${MOCK_TOKEN}`,
     };
@@ -167,17 +186,17 @@ export const payrollApi = {
   // 3. Quy trình phê duyệt
   submitWorkflow: (id: number, note: string) =>
     payrollRequest<any>(`/periods/${id}/workflow/submit`, { method: "POST", body: JSON.stringify({ note }) }).then((res) => res.data),
-    
+
   approveWorkflow: (id: number, payload: { note?: string; stepData?: any; justification?: string }) =>
     payrollRequest<any>(`/periods/${id}/workflow/approve`, { method: "POST", body: JSON.stringify(payload) }).then((res) => res.data),
-    
+
   rejectWorkflow: (id: number, reason: string) =>
     payrollRequest<any>(`/periods/${id}/workflow/reject`, { method: "POST", body: JSON.stringify({ reason }) }).then((res) => res.data),
 
   // 3.4 Xem trước đối soát doanh thu (Preview Revenue)
   previewRevenue: (id: number, revenue: number) =>
     payrollRequest<PreviewRevenueResult>(`/periods/${id}/workflow/preview-revenue?revenue=${revenue}`).then((res) => res.data),
-    
+
   getWorkflowTimeline: async (id: number): Promise<WorkflowTimeline | null> => {
     try {
       const res = await payrollRequest<any>(`/periods/${id}/workflow`);
@@ -225,7 +244,7 @@ export const payrollApi = {
       throw err;
     }
   },
-    
+
   // 5. Quản lý xác nhận
   getConfirmationStats: (id: number, params?: { status?: string; search?: string; page?: number; pageSize?: number }) => {
     const query = new URLSearchParams(
@@ -246,7 +265,7 @@ export const payrollApi = {
       return data;
     });
   },
-  
+
   resolveDispute: (id: number, confirmationId: number, resolvedNote: string) =>
     payrollRequest<any>(`/periods/${id}/confirmations/${confirmationId}/resolve`, {
       method: "POST",

@@ -3,7 +3,7 @@ import { payrollApi } from "../payroll-api";
 import { PayrollMatrix } from "../payroll-types";
 
 // === Hook for Projects (theo phân quyền Bearer Token) ===
-export function usePayrollProjects(params?: { search?: string }) {
+export function usePayrollProjects(params?: { search?: string; pageIndex?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ["payroll-projects", params],
     queryFn: () => payrollApi.getPayrollProjects(params),
