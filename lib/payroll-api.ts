@@ -36,7 +36,7 @@ async function payrollRequest<T>(endpoint: string, init?: RequestInit): Promise<
     ...init?.headers 
   };
   
-  const response = await fetch(`${API_BASE_URL}/payroll-v3${endpoint}`, { ...init, headers });
+  const response = await fetch(`${API_BASE_URL}/web/payroll${endpoint}`, { ...init, headers });
   let payload: any = {};
   try {
     payload = (await response.json()) as any;
@@ -142,14 +142,14 @@ export const payrollApi = {
   },
   
   // 2.7 Xuất file Excel Bảng lương chuẩn doanh nghiệp
-  exportPayrollExcelUrl: (id: number) => `${API_BASE_URL}/payroll-v3/periods/${id}/export`,
+  exportPayrollExcelUrl: (id: number) => `${API_BASE_URL}/web/payroll/periods/${id}/export`,
 
   downloadPayrollExcel: async (id: number, filename?: string) => {
     const headers = { 
       "ngrok-skip-browser-warning": "true",
       "Authorization": `Bearer ${MOCK_TOKEN}`,
     };
-    const response = await fetch(`${API_BASE_URL}/payroll-v3/periods/${id}/export`, { headers });
+    const response = await fetch(`${API_BASE_URL}/web/payroll/periods/${id}/export`, { headers });
     if (!response.ok) {
       throw new PayrollApiError("Không thể tải file Excel", "EXPORT_FAILED", response.status);
     }
