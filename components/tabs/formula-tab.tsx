@@ -30,6 +30,8 @@ import { SmartFormulaEditor } from "@/components/formula/smart-formula-editor";
 import {
   collectVariables,
   expressionToFriendlyText,
+  codeExpressionToFriendlyExpression,
+  friendlyExpressionToCodeExpression,
   parseExpressionText,
   tokenizeFriendlyText,
   variableCodeToName,
@@ -407,7 +409,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
         name: comp.name,
         category: comp.category === "deduction" ? "deduction" : "income",
         description: comp.description || "",
-        defaultFormulaText: comp.defaultFormulaText || `[${comp.code}]`,
+        defaultFormulaText: comp.defaultFormulaText || `{${comp.code}}`,
         outputVariable: comp.outputVariable || comp.code,
         rounding: { mode: "nearest", precision: 1 },
         enabled: Boolean(comp.isActive),
@@ -566,6 +568,23 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
 
   const variableNameMap = useMemo(() => new Map(variables.map((item) => [item.code, item.name])), [variables]);
 
+  const variableCodeMap = useMemo(() => {
+    const map = new Map<string, string>();
+    Object.entries(variableCodeToName).forEach(([code, name]) => {
+      map.set(name.trim().toLowerCase(), code);
+      map.set(code.trim().toUpperCase(), code);
+    });
+    variables.forEach((v) => {
+      if (v.name) map.set(v.name.trim().toLowerCase(), v.code);
+      if (v.code) map.set(v.code.trim().toUpperCase(), v.code);
+    });
+    componentsLibrary.forEach((c) => {
+      if (c.name) map.set(c.name.trim().toLowerCase(), c.code);
+      if (c.code) map.set(c.code.trim().toUpperCase(), c.code);
+    });
+    return map;
+  }, [variables, componentsLibrary]);
+
   const getMissingCustomParams = (formula: SalaryFormula) => {
     const customMap = new Map(customVariables.map((c) => [c.code, c]));
     const usedCodes = Array.from(new Set(collectVariables(formula.expression)));
@@ -626,7 +645,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       const initialRaw: Record<string, string> = {};
       linesQuery.data.forEach((line) => {
         const id = String(line.id || `line-${line.componentId}`);
-        initialRaw[id] = line.expression || "";
+        initialRaw[id] = codeExpressionToFriendlyExpression(line.expression || "", variableNameMap);
       });
       setRawTexts(initialRaw);
     } else {
@@ -677,14 +696,15 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
     const modified = new Set<string>();
 
     for (const f of formulas) {
-      const currentText = (rawTexts[f.id] ?? (f.expression ? expressionToFriendlyText(f.expression, variableNameMap) : "")).trim();
+      const currentRaw = (rawTexts[f.id] ?? (f.expression ? expressionToFriendlyText(f.expression, variableNameMap) : "")).trim();
+      const currentCodeExpr = friendlyExpressionToCodeExpression(currentRaw, variableCodeMap).trim();
       const originalText = (originalMap.get(f.id) ?? "").trim();
-      if (!originalMap.has(f.id) || currentText !== originalText) {
+      if (!originalMap.has(f.id) || currentCodeExpr !== originalText) {
         modified.add(f.id);
       }
     }
     return modified;
-  }, [formulas, rawTexts, linesQuery.data, variableNameMap]);
+  }, [formulas, rawTexts, linesQuery.data, variableNameMap, variableCodeMap]);
 
   // Add component to structure
   const addComponentToStructure = (item: SalaryComponentDefinition) => {
@@ -693,9 +713,11 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       return;
     }
     const maxOrder = formulas.reduce((max, f) => Math.max(max, f.order || 0), 0);
-    const newOrder = maxOrder + 10;
-    const formulaId = `new-line-${item.id}-${Date.now()}`;
-    const defaultText = item.defaultFormulaText || `{${item.code}}`;
+    const formulaId = `new-line-${Date.now()}-${uid()}`;
+    const newOrder = maxOrder + 1;
+    const defaultText = item.defaultFormulaText
+      ? codeExpressionToFriendlyExpression(item.defaultFormulaText, variableNameMap)
+      : `{${item.name}}`;
     const parsedExpr = parseExpressionText(defaultText);
     const newFormula: SalaryFormula = {
       id: formulaId,
@@ -747,7 +769,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       const initialRaw: Record<string, string> = {};
       linesQuery.data.forEach((line) => {
         const id = String(line.id || `line-${line.componentId}`);
-        initialRaw[id] = line.expression || "";
+        initialRaw[id] = codeExpressionToFriendlyExpression(line.expression || "", variableNameMap);
       });
       setRawTexts(initialRaw);
     } else {
@@ -783,6 +805,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       for (let idx = 0; idx < formulas.length; idx++) {
         const f = formulas[idx];
         const rawText = getFormulaRawText(f);
+        const codeExpression = friendlyExpressionToCodeExpression(rawText, variableCodeMap);
         const existingLine = beLinesMap.get(f.id);
         const comp = componentsLibrary.find(
           (c) => c.code === f.code || c.outputVariable === f.outputVariable
@@ -795,7 +818,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
           TargetGroupId: existingLine?.targetGroupId ?? null,
           FormulaDefinitionId: existingLine?.formulaDefinitionId ?? null,
           FormulaType: existingLine?.formulaType || "single_expression",
-          Expression: rawText,
+          Expression: codeExpression,
           ExecutionOrder: existingLine?.executionOrder ?? (idx + 1) * 10,
           DisplayOrder: existingLine?.displayOrder ?? idx + 1,
           IsVisibleOnPayslip: true,

@@ -33,6 +33,58 @@ export interface PayrollRunsWidgetConfig {
 
 export const PayrollRunsWidgetContext = createContext<PayrollRunsWidgetConfig>({});
 
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class WidgetErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("[PayrollRunsWidget] Render error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 bg-rose-50 border border-rose-200 rounded-2xl m-4 text-rose-900 font-sans shadow-sm">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-base text-rose-950">Không thể hiển thị phân hệ Bảng lương</h3>
+              <p className="text-xs text-rose-700 mt-0.5">
+                {this.state.error?.message || "Đã xảy ra sự cố trong quá trình kết xuất giao diện."}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition"
+            >
+              Thử tải lại giao diện
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function RunsRouterView() {
   const pathname = usePathname();
   const params = useParams();
@@ -109,43 +161,45 @@ export function PayrollRunsWidgetApp({ config }: { config: PayrollRunsWidgetConf
   const initialUrl = config.payrollId ? `/payroll/${config.payrollId}` : "/payroll";
 
   return (
-    <PayrollRunsWidgetContext.Provider value={config}>
-      <PortalContainerContext.Provider value={config.mountElement || null}>
-        <UserRoleContext.Provider value={roleValue}>
-          <ThemeContext.Provider value={themeValue}>
-            <ToastContext.Provider value={{ notify }}>
-              <QueryClientProvider client={queryClient}>
-                <WidgetNavigationProvider initialUrl={initialUrl}>
-                  <div
-                    className="payroll-widget-root text-slate-900 font-sans p-2 sm:p-4"
-                    data-theme={preset}
-                  >
-                    <RunsRouterView />
+    <WidgetErrorBoundary>
+      <PayrollRunsWidgetContext.Provider value={config}>
+        <PortalContainerContext.Provider value={config.mountElement || null}>
+          <UserRoleContext.Provider value={roleValue}>
+            <ThemeContext.Provider value={themeValue}>
+              <ToastContext.Provider value={{ notify }}>
+                <QueryClientProvider client={queryClient}>
+                  <WidgetNavigationProvider initialUrl={initialUrl}>
+                    <div
+                      className="payroll-widget-root text-slate-900 font-sans p-2 sm:p-4"
+                      data-theme={preset}
+                    >
+                      <RunsRouterView />
 
-                    {/* Toast Viewport */}
-                    <div className="toast-viewport" aria-live="polite">
-                      {toasts.map((toast) => (
-                        <div key={toast.id} className={`toast toast-${toast.tone}`}>
-                          {toast.tone === "success" ? <CheckCircle2 /> : <AlertTriangle />}
-                          <span>{toast.message}</span>
-                          <button
-                            type="button"
-                            aria-label="Đóng thông báo"
-                            onClick={() => setToasts((items) => items.filter((item) => item.id !== toast.id))}
-                          >
-                            <X />
-                          </button>
-                        </div>
-                      ))}
+                      {/* Toast Viewport */}
+                      <div className="toast-viewport" aria-live="polite">
+                        {toasts.map((toast) => (
+                          <div key={toast.id} className={`toast toast-${toast.tone}`}>
+                            {toast.tone === "success" ? <CheckCircle2 /> : <AlertTriangle />}
+                            <span>{toast.message}</span>
+                            <button
+                              type="button"
+                              aria-label="Đóng thông báo"
+                              onClick={() => setToasts((items) => items.filter((item) => item.id !== toast.id))}
+                            >
+                              <X />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </WidgetNavigationProvider>
-              </QueryClientProvider>
-            </ToastContext.Provider>
-          </ThemeContext.Provider>
-        </UserRoleContext.Provider>
-      </PortalContainerContext.Provider>
-    </PayrollRunsWidgetContext.Provider>
+                  </WidgetNavigationProvider>
+                </QueryClientProvider>
+              </ToastContext.Provider>
+            </ThemeContext.Provider>
+          </UserRoleContext.Provider>
+        </PortalContainerContext.Provider>
+      </PayrollRunsWidgetContext.Provider>
+    </WidgetErrorBoundary>
   );
 }
 

@@ -40,6 +40,7 @@ const generationSteps = [
 export function PayrollWorkspacePage() {
   const [query, setQuery] = useState("");
   const [filterProject, setFilterProject] = useState("");
+  const [selectedProjectItem, setSelectedProjectItem] = useState<any>(null);
   const [monthFilter, setMonthFilter] = useState("2026-07");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
@@ -72,14 +73,37 @@ export function PayrollWorkspacePage() {
   const { data: allProjects } = usePayrollProjects();
   const selectedProject = useMemo(() => {
     if (!filterProject) return null;
-    return allProjects?.find(
+    if (
+      selectedProjectItem &&
+      (String(selectedProjectItem.projectId) === String(filterProject) ||
+        String(selectedProjectItem.id) === String(filterProject))
+    ) {
+      return selectedProjectItem;
+    }
+    const fromAll = allProjects?.find(
       (p) =>
         p.projectId === Number(filterProject) ||
         String(p.projectId) === String(filterProject) ||
         p.id === Number(filterProject) ||
         String(p.id) === String(filterProject)
     );
-  }, [allProjects, filterProject]);
+    if (fromAll) return fromAll;
+
+    const fromPeriods = periodsData?.data?.find(
+      (p) =>
+        p.projectId === Number(filterProject) ||
+        String(p.projectId) === String(filterProject)
+    );
+    if (fromPeriods) {
+      return {
+        id: fromPeriods.projectId,
+        projectId: fromPeriods.projectId,
+        projectCode: fromPeriods.projectCode,
+        projectName: fromPeriods.projectName,
+      };
+    }
+    return null;
+  }, [allProjects, filterProject, selectedProjectItem, periodsData]);
 
   // Approved timesheets for Create Modal - lấy dự án + tháng ở ngoài bảng lương
   const { data: approvedTimesheets, isLoading: isLoadingApproved } = useApprovedTimesheets(
@@ -134,18 +158,24 @@ export function PayrollWorkspacePage() {
         projectTimesheetId: createSheetId,
       });
 
+      const periodId = res?.payrollPeriodId ?? res?.id ?? res?.data?.payrollPeriodId ?? res?.data?.id;
+
       // Step 5: Chạy tính toán bảng lương (Trigger Calculation)
       setGenerationStep(4);
       setGenerationProgress(90);
-      await calculateMutation.mutateAsync({
-        id: res.payrollPeriodId,
-      });
+      if (periodId) {
+        await calculateMutation.mutateAsync({
+          id: Number(periodId),
+        });
+      }
 
       setGenerationProgress(100);
       await new Promise((resolve) => window.setTimeout(resolve, 350));
       setCreateOpen(false);
       notify("Đã tạo và tính toán bảng lương thành công");
-      router.push(`/payroll/${res.payrollPeriodId}`);
+      if (periodId) {
+        router.push(`/payroll/${periodId}`);
+      }
     } catch (error: any) {
       notify(error.message || "Không thể tạo và tính toán bảng lương.", "error");
     } finally {
@@ -167,8 +197,9 @@ export function PayrollWorkspacePage() {
             <span className="payroll-control-label">CHỌN DỰ ÁN</span>
             <ProjectSelect
               value={filterProject}
-              onChange={(val) => {
+              onChange={(val, project) => {
                 setFilterProject(val ? String(val) : "");
+                setSelectedProjectItem(project || null);
                 setPage(1);
               }}
               variant="filter"
@@ -402,7 +433,9 @@ export function PayrollWorkspacePage() {
                       <span className="font-medium text-foreground truncate">{selectedProject.projectName}</span>
                     </>
                   ) : (
-                    <span className="font-medium text-foreground">Dự án #{filterProject}</span>
+                    <span className="font-mono font-bold text-xs px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-700 dark:text-teal-300 shrink-0">
+                      {filterProject}
+                    </span>
                   )}
                 </div>
               </div>
@@ -427,7 +460,7 @@ export function PayrollWorkspacePage() {
                 <div className="payroll-loading py-6">
                   <RefreshCw className="spin" /> Đang tải danh sách bảng công đã chốt…
                 </div>
-              ) : !approvedTimesheets || approvedTimesheets.length === 0 ? (
+              ) : (!approvedTimesheets || (Array.isArray(approvedTimesheets) ? approvedTimesheets.length === 0 : true)) ? (
                 <div className="attendance-empty">
                   <Inbox />
                   <div>
@@ -437,7 +470,7 @@ export function PayrollWorkspacePage() {
                 </div>
               ) : (
                 <div className="attendance-picker">
-                  {approvedTimesheets.map((ts) => {
+                  {(Array.isArray(approvedTimesheets) ? approvedTimesheets : []).map((ts) => {
                     const isCreated = ts.isCreatedPayroll;
                     const isSelected = createSheetId === ts.projectTimesheetId;
 

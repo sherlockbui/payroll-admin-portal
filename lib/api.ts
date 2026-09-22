@@ -199,13 +199,13 @@ async function request<T>(url: string, init?: RequestInit): Promise<{ data: T; m
   // 2. Môi trường Browser: Luôn gửi HTTP fetch thật ra ngoài network để DevTools ghi nhận
   try {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
 
     let targetUrl = url;
     if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-      const cleanPath = targetUrl.startsWith("/api") ? targetUrl.substring(4) : targetUrl;
-      targetUrl = `${baseUrl}${cleanPath.startsWith("/") ? cleanPath : "/" + cleanPath}`;
+      const cleanPath = targetUrl.startsWith("/") ? targetUrl : "/" + targetUrl;
+      targetUrl = `${baseUrl}${cleanPath}`;
     }
 
     const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
@@ -270,11 +270,11 @@ export const api = {
     // 2. Tải trực tiếp từ WebPayroll Projects API
     try {
       const rawBaseUrl = getApiBaseUrl();
-      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
       const token = getAuthToken();
       const headers: Record<string, string> = { Accept: "*/*" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`${baseUrl}/web/payroll/projects?pageSize=100`, { headers });
+      const res = await fetch(`${baseUrl}/api/web/payroll/projects?pageSize=100`, { headers });
       if (res.ok) {
         const json: any = await res.json();
         const dataObj = json.data || {};
@@ -300,7 +300,7 @@ export const api = {
   },
   getProjects: async (params: { q?: string; status?: string; page?: number; pageSize?: number }) => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const search = params.q ?? "";
     const pageIndex = params.page ?? 1;
@@ -311,7 +311,7 @@ export const api = {
     query.set("pageIndex", String(pageIndex));
     query.set("pageSize", String(pageSize));
 
-    const url = `${baseUrl}/web/payroll/projects?${query.toString()}`;
+    const url = `${baseUrl}/api/web/payroll/projects?${query.toString()}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -465,7 +465,7 @@ export const api = {
     }
 
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const query = new URLSearchParams();
     if (projectId !== undefined && projectId !== null && String(projectId).trim() !== "") {
@@ -478,7 +478,7 @@ export const api = {
     query.set("pageSize", String(pageSize));
 
     const queryString = query.toString();
-    const url = `${baseUrl}/web/payroll/policies${queryString ? `?${queryString}` : ""}`;
+    const url = `${baseUrl}/api/web/payroll/policies${queryString ? `?${queryString}` : ""}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -555,9 +555,9 @@ export const api = {
     }
   ) => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/policies`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/policies`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -600,7 +600,7 @@ export const api = {
     params?: { pageIndex?: number; pageSize?: number; search?: string }
   ): Promise<ProjectPoliciesResponseData> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const pageIndex = params?.pageIndex ?? 1;
     const pageSize = params?.pageSize ?? 20;
@@ -611,7 +611,7 @@ export const api = {
     query.set("pageSize", String(pageSize));
     if (search) query.set("search", search);
 
-    const url = `${baseUrl}/web/payroll/projects/${id}/policies?${query.toString()}`;
+    const url = `${baseUrl}/api/web/payroll/projects/${id}/policies?${query.toString()}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -660,9 +660,9 @@ export const api = {
     }>
   ) => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/policies`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/policies`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -709,9 +709,9 @@ export const api = {
   },
   deleteProjectPolicy: async (projectId: string, policyId: string | number) => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/policies/${policyId}`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/policies/${policyId}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -806,7 +806,7 @@ export const api = {
     }
   ): Promise<{ items: Employee[]; totalRow: number; pageIndex: number; pageSize: number }> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const pageIndex = params?.pageIndex ?? 1;
     const pageSize = params?.pageSize ?? 20;
@@ -827,7 +827,7 @@ export const api = {
       query.set("groupId", String(params.groupId));
     }
 
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/employees?${query.toString()}`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/employees?${query.toString()}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -910,11 +910,11 @@ export const api = {
   getProjectsV3: async (): Promise<Array<{ projectId: number; projectCode: string; projectName: string; active?: boolean }>> => {
     try {
       const rawBaseUrl = getApiBaseUrl();
-      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
       const token = getAuthToken();
       const headers: Record<string, string> = { Accept: "*/*" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`${baseUrl}/web/payroll/projects?pageSize=100`, { headers });
+      const res = await fetch(`${baseUrl}/api/web/payroll/projects?pageSize=100`, { headers });
       if (res.ok) {
         const json: any = await res.json();
         const dataObj = json.data || {};
@@ -935,7 +935,7 @@ export const api = {
   getProjectEmployeesV3: async (projectId?: number | string) => {
     try {
       const rawBaseUrl = getApiBaseUrl();
-      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+      const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
       const token = getAuthToken();
       const headers: Record<string, string> = { Accept: "*/*" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -949,7 +949,7 @@ export const api = {
       }
       if (!targetProjectId || targetProjectId === "all") return [];
 
-      const res = await fetch(`${baseUrl}/web/payroll/projects/${targetProjectId}/employees`, { headers });
+      const res = await fetch(`${baseUrl}/api/web/payroll/projects/${targetProjectId}/employees`, { headers });
       if (res.ok) {
         const json: any = await res.json();
         const dataObj = json.data || {};
@@ -1241,12 +1241,12 @@ export const api = {
 
   downloadDependentImportTemplateV3: async (): Promise<void> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const headers: Record<string, string> = { Accept: "*/*" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(`${baseUrl}/web/payroll/dependents/download-import-template`, {
+    const res = await fetch(`${baseUrl}/api/web/payroll/dependents/download-import-template`, {
       headers,
     });
     if (!res.ok) {
@@ -1692,7 +1692,7 @@ export const api = {
     const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
     const token = getAuthToken();
     try {
-      const res = await fetch(`${baseUrl}/web/payroll/unions/import-template`, {
+      const res = await fetch(`${baseUrl}/api/web/payroll/unions/import-template`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
@@ -2200,7 +2200,7 @@ export const api = {
   downloadInsuranceImportTemplateV3: async (): Promise<void> => {
     const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
     const token = getAuthToken();
-    const res = await fetch(`${baseUrl}/web/payroll/insurance/import-template`, {
+    const res = await fetch(`${baseUrl}/api/web/payroll/insurance/import-template`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     const blob = await res.blob();
@@ -2553,12 +2553,12 @@ export const api = {
 
   downloadOtherDeductionsImportTemplateV3: async (): Promise<void> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const headers: Record<string, string> = { Accept: "*/*" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(`${baseUrl}/web/payroll/other-deductions/import-template`, {
+    const res = await fetch(`${baseUrl}/api/web/payroll/other-deductions/import-template`, {
       method: "GET",
       headers,
     });
@@ -2760,12 +2760,12 @@ export const api = {
 
   downloadOtherIncomesImportTemplateV3: async (): Promise<void> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const headers: Record<string, string> = { Accept: "*/*" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(`${baseUrl}/web/payroll/other-incomes/import-template`, {
+    const res = await fetch(`${baseUrl}/api/web/payroll/other-incomes/import-template`, {
       method: "GET",
       headers,
     });
@@ -2792,9 +2792,9 @@ export const api = {
 
   getProjectEmployeeGroups: async (projectId: string): Promise<ProjectEmployeeGroup[]> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/employee-groups`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -2839,9 +2839,9 @@ export const api = {
     payload: Partial<ProjectEmployeeGroup>
   ): Promise<ProjectEmployeeGroup> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/employee-groups`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -2890,9 +2890,9 @@ export const api = {
     payload: Partial<ProjectEmployeeGroup>
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups/${groupId}`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/employee-groups/${groupId}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -2931,9 +2931,9 @@ export const api = {
     groupId: string | number
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups/${groupId}`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/employee-groups/${groupId}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -2970,9 +2970,9 @@ export const api = {
     payload: { employeeCodes?: string[]; employeeIds?: string[] }
   ): Promise<{ success: boolean; message?: string; updatedCount?: number }> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/employee-groups/${groupId}/employees`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/employee-groups/${groupId}/employees`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3052,9 +3052,9 @@ export const api = {
   // Salary Structures (Quy chế lương) APIs
   getSalaryStructures: async (projectId: string): Promise<SalaryStructure[]> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/salary-structures`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3094,9 +3094,9 @@ export const api = {
     payload: SalaryStructurePayload
   ): Promise<SalaryStructure> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/salary-structures`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3142,9 +3142,9 @@ export const api = {
     payload: SalaryStructurePayload
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/salary-structures/${structureId}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3182,9 +3182,9 @@ export const api = {
     structureId: number | string
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/salary-structures/${structureId}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3222,13 +3222,13 @@ export const api = {
     salaryStructureId?: number;
   }): Promise<SalaryComponentMaster[]> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const query = new URLSearchParams();
     if (params?.search) query.set("search", params.search);
     if (params?.salaryStructureId !== undefined) query.set("salaryStructureId", String(params.salaryStructureId));
 
-    const url = `${baseUrl}/web/payroll/salary-components${query.toString() ? `?${query.toString()}` : ""}`;
+    const url = `${baseUrl}/api/web/payroll/salary-components${query.toString() ? `?${query.toString()}` : ""}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3297,9 +3297,9 @@ export const api = {
     structureId: number | string
   ): Promise<SalaryStructureLine[]> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3352,9 +3352,9 @@ export const api = {
     lines: SalaryStructureLineItemRequest[]
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3393,9 +3393,9 @@ export const api = {
     lines: SalaryStructureLineItemRequest[]
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3445,9 +3445,9 @@ export const api = {
     lineIds: number[]
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/salary-structures/${structureId}/lines`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3491,12 +3491,12 @@ export const api = {
   // Variables (Biến & Tham số tính toán)
   getAllVariables: async (search?: string): Promise<BackendVariable[]> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const query = new URLSearchParams();
     if (search) query.set("search", search);
 
-    const url = `${baseUrl}/web/payroll/variables/all${query.toString() ? `?${query.toString()}` : ""}`;
+    const url = `${baseUrl}/api/web/payroll/variables/all${query.toString() ? `?${query.toString()}` : ""}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3547,9 +3547,9 @@ export const api = {
 
   getProjectVariables: async (projectId: string): Promise<ProjectVariableResponse[]> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/variables`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/variables`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3596,9 +3596,9 @@ export const api = {
     payload: ProjectVariableItemRequest[]
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/variables`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/variables`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",
@@ -3642,9 +3642,9 @@ export const api = {
     variableId: number | string
   ): Promise<boolean> => {
     const rawBaseUrl = getApiBaseUrl();
-    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
-    const url = `${baseUrl}/web/payroll/projects/${projectId}/variables/${variableId}`;
+    const url = `${baseUrl}/api/web/payroll/projects/${projectId}/variables/${variableId}`;
     const headers: Record<string, string> = {
       Accept: "*/*",
       "Content-Type": "application/json",

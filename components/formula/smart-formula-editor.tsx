@@ -130,7 +130,7 @@ export function SmartFormulaEditor({
 
     const before = rawText.slice(0, mentionState.atIndex);
     const after = rawText.slice(mentionState.atIndex + 1 + mentionState.query.length);
-    const formatted = `[${v.name}] `;
+    const formatted = `{${v.name}} `;
     const updated = before + formatted + after;
 
     onChange(updated);
@@ -422,7 +422,7 @@ export function SmartFormulaEditor({
                     key={v.code}
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => insertAtCursor(`[${v.name}] `)}
+                    onClick={() => insertAtCursor(`{${v.name}} `)}
                     className="px-2.5 py-1.5 rounded-lg bg-card hover:bg-primary/5 hover:border-primary/40 hover:text-primary border border-border text-left transition-all text-xs active:scale-[0.98] shadow-2xs flex items-center justify-between gap-1.5 group"
                   >
                     <div className="flex items-center gap-1.5 truncate">

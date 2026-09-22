@@ -500,7 +500,9 @@ export function tokensToFriendlyText(tokens: VisualToken[]): string {
         return t.text === "×" ? "*" : t.text === "÷" ? "/" : t.text === "−" ? "-" : t.text;
       }
       if (t.type === "variable") {
-        return t.text.startsWith("[") && t.text.endsWith("]") ? t.text : `[${t.text}]`;
+        return (t.text.startsWith("{") && t.text.endsWith("}")) || (t.text.startsWith("[") && t.text.endsWith("]"))
+          ? t.text
+          : `{${t.text}}`;
       }
       return t.text;
     })
@@ -557,8 +559,110 @@ export function expressionToText(node: ExpressionNode): string {
 export function expressionToFriendlyText(node: ExpressionNode, variableNameMap?: Map<string, string>): string {
   return formatExpression(node, (code) => {
     const label = variableNameMap?.get(code) ?? variableCodeToName[code] ?? code;
-    return `[${label}]`;
+    return `{${label}}`;
   });
+}
+
+/**
+ * Convert backend code expression (e.g. {BASIC_SALARY} * {DON_GIA_PHU_CAP_AN_CA_THUONG})
+ * to friendly display expression with {Name}.
+ */
+export function codeExpressionToFriendlyExpression(
+  expression: string,
+  variableNameMap?: Map<string, string> | Record<string, string>
+): string {
+  if (!expression || !expression.trim()) return "";
+
+  const getName = (code: string): string => {
+    if (variableNameMap instanceof Map) {
+      return (
+        variableNameMap.get(code) ||
+        variableNameMap.get(code.toUpperCase()) ||
+        variableCodeToName[code] ||
+        variableCodeToName[code.toUpperCase()] ||
+        code
+      );
+    } else if (variableNameMap) {
+      return (
+        variableNameMap[code] ||
+        variableNameMap[code.toUpperCase()] ||
+        variableCodeToName[code] ||
+        variableCodeToName[code.toUpperCase()] ||
+        code
+      );
+    }
+    return variableCodeToName[code] || variableCodeToName[code.toUpperCase()] || code;
+  };
+
+  // 1. Bracketed variables [VAR_CODE] -> {Tên biến}
+  let result = expression.replace(/\[\s*([^\]]+?)\s*\]/g, (match, p1) => {
+    const trimmed = p1.trim();
+    const name = getName(trimmed);
+    return `{${name}}`;
+  });
+
+  // 2. Curly components/variables {COMP_CODE} -> {Tên biến}
+  result = result.replace(/\{\s*([^}]+?)\s*\}/g, (match, p1) => {
+    const trimmed = p1.trim();
+    const name = getName(trimmed);
+    return `{${name}}`;
+  });
+
+  return result;
+}
+
+/**
+ * Convert friendly display expression (with {Name}) to backend code expression with {CODE}.
+ */
+export function friendlyExpressionToCodeExpression(
+  expression: string,
+  variableCodeMap?: Map<string, string> | Record<string, string>
+): string {
+  if (!expression || !expression.trim()) return "";
+
+  const getCode = (name: string): string => {
+    const lower = name.toLowerCase().trim();
+    const upper = name.toUpperCase().trim();
+
+    if (variableCodeMap instanceof Map) {
+      if (variableCodeMap.has(lower)) return variableCodeMap.get(lower)!;
+      if (variableCodeMap.has(upper)) return variableCodeMap.get(upper)!;
+      if (variableCodeMap.has(name.trim())) return variableCodeMap.get(name.trim())!;
+    } else if (variableCodeMap) {
+      if (variableCodeMap[lower]) return variableCodeMap[lower];
+      if (variableCodeMap[upper]) return variableCodeMap[upper];
+      if (variableCodeMap[name.trim()]) return variableCodeMap[name.trim()];
+    }
+
+    // Check built-in vietnameseNameToCode
+    for (const [pattern, code] of vietnameseNameToCode) {
+      if (pattern.test(name)) {
+        return code;
+      }
+    }
+
+    if (/^[A-Z0-9_]+$/.test(upper)) {
+      return upper;
+    }
+
+    return name;
+  };
+
+  // 1. Bracketed [Tên biến] -> {CODE}
+  let result = expression.replace(/\[\s*([^\]]+?)\s*\]/g, (match, p1) => {
+    const trimmed = p1.trim();
+    const code = getCode(trimmed);
+    return `{${code}}`;
+  });
+
+  // 2. Curly {Tên Component / Code} -> {CODE}
+  result = result.replace(/\{\s*([^}]+?)\s*\}/g, (match, p1) => {
+    const trimmed = p1.trim();
+    const code = getCode(trimmed);
+    return `{${code}}`;
+  });
+
+  return result;
 }
 
 export function validateFormulas(
