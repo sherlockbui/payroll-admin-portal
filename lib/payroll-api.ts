@@ -1,4 +1,5 @@
 import type { PaginationMeta } from "@/lib/types";
+import { getApiBaseUrl, getAuthToken } from "@/lib/api";
 import type {
   ProjectItem,
   ApprovedTimesheet,
@@ -13,10 +14,6 @@ import type {
   PreviewRevenueResult,
 } from "./payroll-types";
 
-// Temporarily point to ngrok backend
-const API_BASE_URL = "https://claudine-footless-first.ngrok-free.dev/api";
-const MOCK_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJFbWFpbCI6InRvYW5odkBncmVlbnNwZWVkLnZuIiwiSWQiOiIxIiwiRW1wbG95ZWVJZCI6IjEiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiaXRhZG1pbkBncmVlbnNwZWVkLnZuIiwiRW1wbG95ZWUiOiIiLCJmdWxsTmFtZSI6IkdSU0MgQURNSU4iLCJVc2VyVHlwZSI6IkVtcGxveWVlIiwiR0lEIjoiR1JTQy1BRE1JTiIsImp0aSI6IjZmMjgyODRkLTJhYjAtNDExNy04M2MyLWMxNjliZTJmZTY1ZiIsImV4cCI6MTgxNzk1MjgxNiwiaXNzIjoiaHR0cHM6Ly90aW1ldHJhY2tpbmctYml0Zmx5LmdyZWVuc3BlZWQudm4iLCJhdWQiOiJodHRwczovL3RpbWV0cmFja2luZy1iaXRmbHkuZ3JlZW5zcGVlZC52biJ9.awS3S2rzvS5AMHrVLSR8TlhpP_mKNyF1ZCAS4dfdAz4";
-
 export class PayrollApiError extends Error {
   constructor(
     message: string,
@@ -28,15 +25,26 @@ export class PayrollApiError extends Error {
 }
 
 async function payrollRequest<T>(endpoint: string, init?: RequestInit): Promise<{ data: T; meta?: PaginationMeta }> {
-  // Add ngrok-skip-browser-warning just in case
-  const headers = { 
-    "Content-Type": "application/json", 
+  const rawBaseUrl = getApiBaseUrl();
+  const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+  const token = getAuthToken();
+
+  const customHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
     "ngrok-skip-browser-warning": "true",
-    "Authorization": `Bearer ${MOCK_TOKEN}`,
-    ...init?.headers 
+  };
+  if (token) {
+    customHeaders["Authorization"] = `Bearer ${token}`;
+  }
+
+  const headers: HeadersInit = {
+    ...customHeaders,
+    ...(init?.headers as Record<string, string>),
   };
   
-  const response = await fetch(`${API_BASE_URL}/payroll-v3${endpoint}`, { ...init, headers });
+  const url = endpoint.startsWith("http") ? endpoint : `${baseUrl}/payroll-v3${endpoint}`;
+  const response = await fetch(url, { ...init, headers });
   let payload: any = {};
   try {
     payload = (await response.json()) as any;
@@ -142,14 +150,23 @@ export const payrollApi = {
   },
   
   // 2.7 Xuất file Excel Bảng lương chuẩn doanh nghiệp
-  exportPayrollExcelUrl: (id: number) => `${API_BASE_URL}/payroll-v3/periods/${id}/export`,
+  exportPayrollExcelUrl: (id: number) => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    return `${baseUrl}/payroll-v3/periods/${id}/export`;
+  },
 
   downloadPayrollExcel: async (id: number, filename?: string) => {
-    const headers = { 
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
+    const token = getAuthToken();
+    const headers: Record<string, string> = { 
       "ngrok-skip-browser-warning": "true",
-      "Authorization": `Bearer ${MOCK_TOKEN}`,
     };
-    const response = await fetch(`${API_BASE_URL}/payroll-v3/periods/${id}/export`, { headers });
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const response = await fetch(`${baseUrl}/payroll-v3/periods/${id}/export`, { headers });
     if (!response.ok) {
       throw new PayrollApiError("Không thể tải file Excel", "EXPORT_FAILED", response.status);
     }

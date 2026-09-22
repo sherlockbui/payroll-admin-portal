@@ -55,21 +55,10 @@ export function EmployeesTab({
 }) {
   const [activeSubtab, setActiveSubtab] = useState<EmployeeSubtab>("dependents");
 
-  const initialDefaultId = () => {
-    if (projectId) return projectId;
-    if (typeof window !== "undefined") {
-      const serverProjects = (window as any).__SERVER_PROJECTS;
-      if (Array.isArray(serverProjects) && serverProjects.length > 0) {
-        return String(serverProjects[0].id ?? serverProjects[0].ProjectId ?? serverProjects[0].Id ?? "");
-      }
-    }
-    return "";
-  };
-
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(initialDefaultId);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "all");
   const [headerAction, setHeaderAction] = useState<ReactNode>(null);
 
-  const effectiveProjectId = embedded ? projectId || "" : selectedProjectId;
+  const effectiveProjectId = embedded ? projectId || "all" : selectedProjectId || "all";
 
   const projectsQuery = useQuery({
     queryKey: ["projects-lookup"],
@@ -78,13 +67,6 @@ export function EmployeesTab({
   });
 
   const projects = projectsQuery.data ?? [];
-
-  // Tự động chọn dự án đầu tiên khi danh sách dự án tải xong nếu chưa có dự án nào được chọn
-  useEffect(() => {
-    if (!projectId && !selectedProjectId && projects.length > 0) {
-      setSelectedProjectId(projects[0].id);
-    }
-  }, [projectId, projects, selectedProjectId]);
 
   return (
     <div className="employees-main-tab">

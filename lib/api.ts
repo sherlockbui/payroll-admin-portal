@@ -145,7 +145,7 @@ export class ApiRequestError extends Error {
 export function getApiBaseUrl(): string {
   if (typeof window !== "undefined") {
     if ((window as any).API_BASE_URL) return (window as any).API_BASE_URL;
-    const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees");
+    const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees, payroll-runs");
     const attrUrl = widget?.getAttribute("api-base-url");
     if (attrUrl) return attrUrl;
   }
@@ -155,7 +155,7 @@ export function getApiBaseUrl(): string {
 export function getAuthToken(): string {
   if (typeof window !== "undefined") {
     if ((window as any).__SERVER_TOKEN) return (window as any).__SERVER_TOKEN;
-    const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees");
+    const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees, payroll-runs");
     const attrToken = widget?.getAttribute("auth-token");
     if (attrToken) return attrToken;
   }
@@ -2552,27 +2552,32 @@ export const api = {
   },
 
   downloadOtherDeductionsImportTemplateV3: async (): Promise<void> => {
-    const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
     const token = getAuthToken();
-    try {
-      const res = await fetch(`${baseUrl}/web/payroll/other-deductions/import-template`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "Mau_Import_Giam_Tru_Khac.xlsx";
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        return;
-      }
-    } catch {
-      // fallback
+    const headers: Record<string, string> = { Accept: "*/*" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseUrl}/web/payroll/other-deductions/import-template`, {
+      method: "GET",
+      headers,
+    });
+    if (!res.ok) {
+      throw new ApiRequestError(
+        `Không thể tải biểu mẫu import (Status: ${res.status})`,
+        "DOWNLOAD_TEMPLATE_FAILED",
+        res.status
+      );
     }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Template_Import_KhoanTruKhac.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   },
 
   // ================= 08. Thu nhập khác (WebPayroll - Other Income) OpenAPI 3.0 Methods =================
@@ -2754,27 +2759,32 @@ export const api = {
   },
 
   downloadOtherIncomesImportTemplateV3: async (): Promise<void> => {
-    const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "");
     const token = getAuthToken();
-    try {
-      const res = await fetch(`${baseUrl}/web/payroll/other-incomes/import-template`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "Mau_Import_Thu_Nhap_Khac.xlsx";
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        return;
-      }
-    } catch {
-      // fallback
+    const headers: Record<string, string> = { Accept: "*/*" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseUrl}/web/payroll/other-incomes/import-template`, {
+      method: "GET",
+      headers,
+    });
+    if (!res.ok) {
+      throw new ApiRequestError(
+        `Không thể tải biểu mẫu import thu nhập khác (Status: ${res.status})`,
+        "DOWNLOAD_TEMPLATE_FAILED",
+        res.status
+      );
     }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Template_Import_ThuNhapKhac.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   },
 
 
