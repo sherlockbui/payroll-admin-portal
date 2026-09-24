@@ -1,4 +1,4 @@
-import { delay, http, HttpResponse } from "msw";
+import { delay, http, HttpResponse, passthrough } from "msw";
 import { applyRounding, evaluateExpression, validateFormulas } from "@/lib/formula-engine";
 import { mutateMockDatabase, readMockDatabase } from "@/lib/mock-db";
 import type {
@@ -79,6 +79,9 @@ import type {
   CreateOtherIncomeRequestV3,
   OtherIncomesSummaryResponse,
   OtherIncomesListResponse,
+  TimesheetSummaryItem,
+  TimesheetSummaryResponse,
+  TimesheetOcrParsedItem,
 } from "@/lib/types";
 import {
   defaultCustomVariablesDefinitions,
@@ -96,6 +99,7 @@ import {
   initialBenefitsAllowanceEmployeesV3,
   initialOtherDeductionsV3,
   initialOtherIncomesV3,
+  initialTimesheetSummaries,
 } from "@/lib/mock-data";
 import { uid } from "@/lib/utils";
 
@@ -4171,9 +4175,211 @@ export const handlers = [
     });
     return okV3({ success: true }, "Xóa quyết định khen thưởng đính kèm thành công.");
   }),
+
+  // ==========================================
+  // TIMESHEETS & ATTENDANCE SUMMARY ENDPOINTS
+  // ==========================================
+  http.get("/api/timesheets", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const period = url.searchParams.get("period") || "2026-09";
+    const search = (url.searchParams.get("search") || "").toLowerCase().trim();
+    const department = url.searchParams.get("department");
+
+    const db = readMockDatabase();
+    let list: TimesheetSummaryItem[] = db.timesheetSummaries ?? initialTimesheetSummaries;
+
+    if (projectId && projectId !== "all") {
+      list = list.filter((item) => item.projectId === projectId);
+    }
+    if (period) {
+      list = list.filter((item) => item.period === period);
+    }
+    if (department && department !== "all") {
+      list = list.filter((item) => item.department === department);
+    }
+    if (search) {
+      list = list.filter(
+        (item) =>
+          item.employeeName.toLowerCase().includes(search) ||
+          item.employeeCode.toLowerCase().includes(search) ||
+          item.department.toLowerCase().includes(search) ||
+          item.position.toLowerCase().includes(search)
+      );
+    }
+
+    const totalStandardHours = list.reduce((sum, item) => sum + item.totalStandardHours, 0);
+    const totalOtHours = list.reduce((sum, item) => sum + item.totalOtNormal + item.totalOtWeekend + item.totalOtHoliday, 0);
+    const totalWarnings = list.reduce((sum, item) => sum + item.lateEarlyCount, 0);
+    const lockedCount = list.filter((item) => item.status === "locked").length;
+
+    const responseData: TimesheetSummaryResponse = {
+      items: list,
+      meta: {
+        totalEmployees: list.length,
+        totalStandardHours: Math.round(totalStandardHours * 10) / 10,
+        totalOtHours: Math.round(totalOtHours * 10) / 10,
+        totalWarnings,
+        lockedCount,
+      },
+    };
+
+    return okV3(responseData, "Tải danh sách bảng tổng hợp công thành công.");
+  }),
+
+  http.get("/api/timesheets/:id", async ({ params }) => {
+    await delay(100);
+    const id = params.id as string;
+    const db = readMockDatabase();
+    const list: TimesheetSummaryItem[] = db.timesheetSummaries ?? initialTimesheetSummaries;
+    const item = list.find((i) => i.id === id);
+    if (!item) {
+      return errorV3(404, "Không tìm thấy bản ghi chấm công.", "NOT_FOUND");
+    }
+    return okV3(item, "Tải chi tiết chấm công thành công.");
+  }),
+
+  http.put("/api/timesheets/:id", async ({ params, request }) => {
+    await delay(150);
+    const id = params.id as string;
+    const updatedData = (await request.json()) as Partial<TimesheetSummaryItem>;
+
+    let resultItem: TimesheetSummaryItem | null = null;
+    mutateMockDatabase((db) => {
+      const list = [...(db.timesheetSummaries ?? initialTimesheetSummaries)];
+      const index = list.findIndex((i) => i.id === id);
+      if (index !== -1) {
+        list[index] = {
+          ...list[index],
+          ...updatedData,
+          updatedAt: new Date().toISOString(),
+        };
+        resultItem = list[index];
+        db.timesheetSummaries = list;
+      }
+    });
+
+    if (!resultItem) {
+      return errorV3(404, "Không tìm thấy bản ghi để cập nhật.", "NOT_FOUND");
+    }
+    return okV3(resultItem, "Cập nhật bảng chấm công thành công.");
+  }),
+
+  http.post("/api/timesheets/import-ocr", async ({ request }) => {
+    await delay(300);
+    const body = (await request.json()) as {
+      projectId: string;
+      period: string;
+      records: TimesheetOcrParsedItem[];
+    };
+
+    const { projectId, period, records } = body;
+    let importedCount = 0;
+    let warningsCount = 0;
+
+    mutateMockDatabase((db) => {
+      const list = [...(db.timesheetSummaries ?? initialTimesheetSummaries)];
+      const project = db.projects.find((p) => p.id === projectId);
+      const projectName = project?.name ?? "Dự án";
+
+      records.forEach((rec) => {
+        if (!rec.ma_nv) return;
+        importedCount++;
+        if (rec.status === "warning") warningsCount++;
+
+        const existingIndex = list.findIndex(
+          (item) => item.projectId === projectId && item.employeeCode === rec.ma_nv && item.period === period
+        );
+
+        if (existingIndex !== -1) {
+          // Update existing summary
+          const existing = list[existingIndex];
+          list[existingIndex] = {
+            ...existing,
+            employeeName: rec.ten_nv || existing.employeeName,
+            department: rec.bo_phan || existing.department,
+            position: rec.vi_tri || existing.position,
+            status: "verified",
+            updatedAt: new Date().toISOString(),
+          };
+        } else {
+          // Add newly scanned employee record
+          list.push({
+            id: `ts-${projectId}-${rec.ma_nv}-${period}`,
+            projectId,
+            projectName,
+            period,
+            employeeId: `emp-${rec.ma_nv}`,
+            employeeCode: rec.ma_nv,
+            employeeName: rec.ten_nv,
+            department: rec.bo_phan || "Sản xuất",
+            position: rec.vi_tri || "Nhân viên",
+            standardWorkdays: 26,
+            actualWorkdays: 1,
+            totalStandardHours: 8,
+            totalOtNormal: 0,
+            totalOtWeekend: 0,
+            totalOtHoliday: 0,
+            totalNightHours: 0,
+            paidLeaveDays: 0,
+            unpaidLeaveDays: 0,
+            lateEarlyCount: 0,
+            status: "verified",
+            updatedAt: new Date().toISOString(),
+            dailyEntries: [],
+          });
+        }
+      });
+
+      db.timesheetSummaries = list;
+    });
+
+    return okV3(
+      {
+        success: true,
+        importedCount,
+        warningsCount,
+        message: `Đã nạp thành công ${importedCount} bản ghi chấm công từ tài liệu OCR.`,
+      },
+      "Bóc tách và đồng bộ dữ liệu OCR thành công."
+    );
+  }),
+
+  // Pass-through real Next.js API route for Gemini OCR extraction
+  http.post("/api/ocr/extract", () => {
+    return passthrough();
+  }),
+
+  http.post("/api/timesheets/lock", async ({ request }) => {
+    await delay(150);
+    const body = (await request.json()) as { projectId: string; period: string; lock: boolean };
+    const { projectId, period, lock } = body;
+
+    mutateMockDatabase((db) => {
+      const list = [...(db.timesheetSummaries ?? initialTimesheetSummaries)];
+      list.forEach((item) => {
+        if (
+          (projectId === "all" || item.projectId === projectId) &&
+          item.period === period
+        ) {
+          item.status = lock ? "locked" : "verified";
+          item.updatedAt = new Date().toISOString();
+        }
+      });
+      db.timesheetSummaries = list;
+    });
+
+    return okV3(
+      { success: true, locked: lock },
+      lock ? "Đã khóa dữ liệu bảng công của kỳ." : "Đã mở khóa dữ liệu bảng công của kỳ."
+    );
+  }),
 ];
 
 function newDocId(depId: number) {
   return `${depId}_${Math.floor(Math.random() * 10000)}`;
 }
+
+
 

@@ -40,6 +40,9 @@ import type {
   BenefitsAllowanceEmployeeV3,
   OtherDeductionV3,
   OtherIncomeV3,
+  TimesheetSummaryItem,
+  TimesheetDailyEntry,
+  TimesheetOcrParsedItem,
 } from "@/lib/types";
 import {
   payrollFormulaVariables,
@@ -4409,8 +4412,10 @@ export const initialOtherIncomesV3: OtherIncomeV3[] = [
   },
 ];
 
+export const initialTimesheetSummaries: TimesheetSummaryItem[] = [];
+
 export const seedDatabase: MockDatabase = {
-  schemaVersion: 26,
+  schemaVersion: 27,
   projects,
   policyDefinitions,
   projectPolicies,
@@ -4447,6 +4452,7 @@ export const seedDatabase: MockDatabase = {
   benefitsAllowanceEmployeesV3: initialBenefitsAllowanceEmployeesV3,
   otherDeductionsV3: initialOtherDeductionsV3,
   otherIncomesV3: initialOtherIncomesV3,
+  timesheetSummaries: initialTimesheetSummaries,
 };
 
 

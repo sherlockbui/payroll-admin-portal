@@ -125,6 +125,9 @@ import type {
   OtherIncomesSummaryResponse,
   OtherIncomesListResponseV3,
   OtherIncomesListResponse,
+  TimesheetSummaryItem,
+  TimesheetSummaryResponse,
+  TimesheetOcrParsedItem,
 } from "@/lib/types";
 
 import { handlers } from "@/mocks/handlers";
@@ -3675,4 +3678,88 @@ export const api = {
     }
     return true;
   },
+
+  // ==========================================
+  // TIMESHEET & ATTENDANCE SUMMARY APIS
+  // ==========================================
+  async getTimesheets(params?: {
+    projectId?: string;
+    period?: string;
+    search?: string;
+    department?: string;
+  }): Promise<TimesheetSummaryResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.projectId && params.projectId !== "all") {
+      searchParams.set("projectId", params.projectId);
+    }
+    if (params?.period) {
+      searchParams.set("period", params.period);
+    }
+    if (params?.search) {
+      searchParams.set("search", params.search);
+    }
+    if (params?.department && params.department !== "all") {
+      searchParams.set("department", params.department);
+    }
+
+    const url = `/api/timesheets${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new ApiRequestError("Không thể tải bảng tổng hợp công", "FETCH_TIMESHEETS_FAILED", response.status);
+    }
+    const resJson: any = await response.json();
+    return resJson.data;
+  },
+
+  async getTimesheetDetail(id: string): Promise<TimesheetSummaryItem> {
+    const response = await fetch(`/api/timesheets/${id}`);
+    if (!response.ok) {
+      throw new ApiRequestError("Không thể tải chi tiết chấm công", "FETCH_TIMESHEET_DETAIL_FAILED", response.status);
+    }
+    const resJson: any = await response.json();
+    return resJson.data;
+  },
+
+  async updateTimesheetSummary(item: TimesheetSummaryItem): Promise<TimesheetSummaryItem> {
+    const response = await fetch(`/api/timesheets/${item.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item),
+    });
+    if (!response.ok) {
+      throw new ApiRequestError("Không thể cập nhật bảng công", "UPDATE_TIMESHEET_FAILED", response.status);
+    }
+    const resJson: any = await response.json();
+    return resJson.data;
+  },
+
+  async importOcrTimesheet(payload: {
+    projectId: string;
+    period: string;
+    records: TimesheetOcrParsedItem[];
+  }): Promise<{ success: boolean; importedCount: number; warningsCount: number; message: string }> {
+    const response = await fetch("/api/timesheets/import-ocr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new ApiRequestError("Không thể nhập dữ liệu OCR chấm công", "IMPORT_OCR_FAILED", response.status);
+    }
+    const resJson: any = await response.json();
+    return resJson.data;
+  },
+
+  async lockTimesheets(projectId: string, period: string, lock: boolean): Promise<boolean> {
+    const response = await fetch("/api/timesheets/lock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, period, lock }),
+    });
+    if (!response.ok) {
+      throw new ApiRequestError("Không thể thay đổi trạng thái khóa công", "LOCK_TIMESHEET_FAILED", response.status);
+    }
+    return true;
+  },
 };
+

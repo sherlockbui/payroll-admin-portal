@@ -5,6 +5,7 @@ import {
   Banknote,
   BriefcaseBusiness,
   Calculator,
+  CalendarCheck,
   ChevronRight,
   Menu,
   Moon,
@@ -62,6 +63,7 @@ export function AdminShell({
     resetDemo();
   };
 
+  const isTimesheetPage = pathname.startsWith("/timesheet");
   const isEmployeesPage = pathname.startsWith("/employees");
   const isPayrollPage = pathname.startsWith("/payroll");
   const isProjectsPage = pathname === "/" || pathname.startsWith("/projects");
@@ -128,6 +130,20 @@ export function AdminShell({
                 </ul>
               )}
             </li>
+
+            {/* Menu riêng: Tổng hợp công */}
+            <li className="sidebar-nav-item">
+              <Link
+                className={`sidebar-nav-button ${isTimesheetPage ? "is-active" : ""}`}
+                href="/timesheet"
+                title="Tổng hợp công"
+              >
+                <div className="nav-button-left">
+                  <CalendarCheck className="nav-icon" />
+                  <span className="nav-label">Tổng hợp công</span>
+                </div>
+              </Link>
+            </li>
           </ul>
         </nav>
       </aside>
@@ -146,7 +162,17 @@ export function AdminShell({
             </button>
 
             <div className="breadcrumbs">
-              {isPayrollPage ? (
+              {isTimesheetPage ? (
+                <>
+                  <Link href="/timesheet">Tổng hợp công</Link>
+                  {detailLabel && (
+                    <>
+                      <ChevronRight />
+                      <span>{detailLabel}</span>
+                    </>
+                  )}
+                </>
+              ) : isPayrollPage ? (
                 <>
                   <Link href="/payroll">Bảng lương</Link>
                   {detailLabel && (

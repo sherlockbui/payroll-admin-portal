@@ -81,7 +81,7 @@ export function formatFullDateVN(value?: string | null): string {
   return formatDate(value);
 }
 
-export function uid(prefix: string) {
+export function uid(prefix = "id") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 

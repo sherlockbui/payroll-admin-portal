@@ -1,7 +1,7 @@
 import { seedDatabase } from "@/lib/mock-data";
 import type { MockDatabase } from "@/lib/types";
 
-const STORAGE_KEY = "payroll-admin-demo-db-v26";
+const STORAGE_KEY = "payroll-admin-demo-db-v27";
 
 let memoryDb: MockDatabase = (() => {
   if (typeof window !== "undefined") {

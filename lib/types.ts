@@ -1788,4 +1788,78 @@ export interface MockDatabase {
   benefitsAllowanceEmployeesV3?: BenefitsAllowanceEmployeeV3[];
   otherDeductionsV3?: OtherDeductionV3[];
   otherIncomesV3?: OtherIncomeV3[];
+  timesheetSummaries?: TimesheetSummaryItem[];
+}
+
+export type TimesheetEntryStatus = "present" | "late" | "early_leave" | "absent" | "leave_paid" | "leave_unpaid" | "holiday";
+
+export interface TimesheetDailyEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  dayOfWeek: string; // T2, T3, T4, T5, T6, T7, CN
+  isWeekend?: boolean;
+  isHoliday?: boolean;
+  shiftCode: string; // "HC", "CA1", "CA2", "CA3"
+  checkIn?: string; // "08:00"
+  checkOut?: string; // "17:30"
+  standardHours: number; // 8.0
+  otNormalHours: number; // 1.5
+  otWeekendHours: number; // 0
+  otHolidayHours: number; // 0
+  nightHours: number; // 0
+  status: TimesheetEntryStatus;
+  notes?: string;
+}
+
+export interface TimesheetSummaryItem {
+  id: string;
+  projectId: string;
+  projectName: string;
+  period: string; // "2026-09"
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  department: string;
+  position: string;
+  standardWorkdays: number;
+  actualWorkdays: number;
+  totalStandardHours: number;
+  totalOtNormal: number;
+  totalOtWeekend: number;
+  totalOtHoliday: number;
+  totalNightHours: number;
+  paidLeaveDays: number;
+  unpaidLeaveDays: number;
+  lateEarlyCount: number;
+  status: "draft" | "verified" | "locked";
+  updatedAt: string;
+  dailyEntries: TimesheetDailyEntry[];
+}
+
+export interface TimesheetOcrParsedItem {
+  stt?: number;
+  ngay_lam_viec: string;
+  ma_nv: string;
+  ten_nv: string;
+  bo_phan?: string;
+  vi_tri?: string;
+  gio_den_du_kien?: string;
+  gio_ve_du_kien?: string;
+  gio_den_thuc_te?: string;
+  gio_ve_thuc_te?: string;
+  gio_nghi_trua?: string;
+  ghi_chu?: string | null;
+  status: "valid" | "warning" | "error";
+  validationMessage?: string;
+}
+
+export interface TimesheetSummaryResponse {
+  items: TimesheetSummaryItem[];
+  meta: {
+    totalEmployees: number;
+    totalStandardHours: number;
+    totalOtHours: number;
+    totalWarnings: number;
+    lockedCount: number;
+  };
 }

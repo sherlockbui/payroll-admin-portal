@@ -21,13 +21,14 @@
     "build:widgets": "node build-widgets.mjs",
     "deploy:widgets": "node build-widgets.mjs",
     "build:widget": "node build-widgets.mjs",
-    "deploy:widget": "node build-widgets.mjs"
+    "deploy:widget": "node build-widgets.mjs",
+    "ocr:attendance": "node scripts/ocr/extract.js"
   },
   "dependencies": {
-    "next": "^15.1.7",
     "@fontsource/be-vietnam-pro": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/roboto": "^5.3.0",
+    "@google/genai": "^2.24.0",
     "@hookform/resolvers": "^5.8.0",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
@@ -37,13 +38,16 @@
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^18.0.3",
     "drizzle-orm": "0.45.2",
     "lucide-react": "^1.31.0",
     "msw": "^2.15.0",
+    "next": "^15.1.7",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "react-hook-form": "^7.85.0",
     "tailwind-merge": "^3.6.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
