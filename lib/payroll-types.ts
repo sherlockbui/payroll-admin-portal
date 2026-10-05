@@ -150,11 +150,33 @@ export interface PayslipDetail {
   timesheetDetails: TimesheetDetail[];
 }
 
+export type PayrollMatrixGroupKey =
+  | "INFO"
+  | "REFERENCE"
+  | "DAILY_TIMESHEET"
+  | "WORKDAYS"
+  | "EARNINGS"
+  | "TOTAL_EARNINGS"
+  | "DEDUCTIONS"
+  | "TOTAL_DEDUCTIONS"
+  | "NET"
+  | "TOTAL"
+  | string;
+
+export interface PayrollMatrixGroup {
+  key: PayrollMatrixGroupKey;
+  title: string;
+  order: number;
+  isFixed?: boolean;
+}
+
 export interface PayrollMatrixColumn {
   key: string;
   title: string;
-  group: "INFO" | "DAILY_TIMESHEET" | "WORKDAYS" | "EARNINGS" | "TOTAL" | "DEDUCTIONS";
-  dataType: "text" | "number" | "currency";
+  group: PayrollMatrixGroupKey;
+  groupKey?: PayrollMatrixGroupKey;
+  groupTitle?: string;
+  dataType: "text" | "number" | "currency" | "date" | string;
   isFixed: boolean;
 }
 
@@ -165,6 +187,7 @@ export interface PayrollMatrix {
   month: number;
   year: number;
   standardWorkdays: number;
+  groups?: PayrollMatrixGroup[];
   columns: PayrollMatrixColumn[];
   rows: Record<string, any>[];
   totalRecords: number;

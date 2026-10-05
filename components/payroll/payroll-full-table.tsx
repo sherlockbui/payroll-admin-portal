@@ -12,29 +12,44 @@ interface ColumnCategory {
   tone: string;
 }
 
-function getColumnCategory(col: PayrollMatrixColumn): ColumnCategory {
-  if (col.key === "bankAccountNumber" || col.key === "bankName") {
-    return { id: "bank", label: "Tài khoản ngân hàng", tone: "section-bank" };
+function getColumnCategory(
+  col: PayrollMatrixColumn,
+  groupTitleMap?: Map<string, string>
+): ColumnCategory {
+  const groupKey = String(col.groupKey || col.group || "INFO");
+
+  // Handle legacy payload where TOTAL grouped both gross and net
+  if (groupKey === "TOTAL") {
+    if (col.key === "grossSalary") {
+      return { id: "TOTAL_EARNINGS", label: col.groupTitle || "Tổng thu nhập", tone: "section-total-earnings font-bold" };
+    }
+    if (col.key === "totalDeduction") {
+      return { id: "TOTAL_DEDUCTIONS", label: col.groupTitle || "Tổng khấu trừ", tone: "section-total-deductions font-bold" };
+    }
+    if (col.key === "netSalary") {
+      return { id: "NET", label: col.groupTitle || "Thực lĩnh", tone: "section-net font-extrabold" };
+    }
   }
-  if (col.group === "DAILY_TIMESHEET") {
-    return { id: "daily", label: "Bảng chấm công ngày", tone: "section-daily" };
-  }
-  if (col.group === "WORKDAYS") {
-    return { id: "workdays", label: "Tổng hợp công & giờ", tone: "section-attendance" };
-  }
-  if (col.key === "grossSalary") {
-    return { id: "gross", label: "Tổng thu nhập", tone: "section-income font-bold" };
-  }
-  if (col.key === "netSalary") {
-    return { id: "net", label: "Thực lĩnh (Net)", tone: "section-income font-bold" };
-  }
-  if (col.group === "EARNINGS") {
-    return { id: "earnings", label: "Thu nhập & Phụ cấp", tone: "section-income" };
-  }
-  if (col.group === "DEDUCTIONS") {
-    return { id: "deductions", label: "Các khoản khấu trừ", tone: "section-deduction" };
-  }
-  return { id: col.group, label: col.group, tone: "section-attendance" };
+
+  // Group label is 100% dynamic from API:
+  // 1. col.groupTitle returned on the column itself
+  // 2. matrix.groups title matching groupKey
+  // 3. fallback to groupKey
+  const label =
+    col.groupTitle ||
+    groupTitleMap?.get(groupKey) ||
+    groupKey;
+
+  // Tone class is derived directly from groupKey (e.g. section-info, section-daily-timesheet, section-earnings)
+  const isSummary = groupKey.startsWith("TOTAL") || groupKey === "NET";
+  const normalizedKey = groupKey.toLowerCase().replace(/_/g, "-");
+  const tone = `section-${normalizedKey} ${isSummary ? "font-bold" : ""}`.trim();
+
+  return {
+    id: groupKey,
+    label,
+    tone,
+  };
 }
 
 export function PayrollFullTable({
@@ -140,6 +155,19 @@ export function PayrollFullTable({
     return matrix.columns.filter((c) => c.key !== "employeeCode" && c.key !== "fullName");
   }, [matrix.columns]);
 
+  // Map group titles from matrix.groups if available
+  const groupTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (matrix.groups) {
+      for (const g of matrix.groups) {
+        if (g.key && g.title) {
+          map.set(g.key, g.title);
+        }
+      }
+    }
+    return map;
+  }, [matrix.groups]);
+
   // Build group headers for row 1
   const groupHeaders = useMemo(() => {
     const groups: Array<{
@@ -150,7 +178,7 @@ export function PayrollFullTable({
     }> = [];
 
     for (const col of dataColumns) {
-      const cat = getColumnCategory(col);
+      const cat = getColumnCategory(col, groupTitleMap);
       const last = groups[groups.length - 1];
       if (last && last.id === cat.id) {
         last.colSpan += 1;
@@ -164,7 +192,7 @@ export function PayrollFullTable({
       }
     }
     return groups;
-  }, [dataColumns]);
+  }, [dataColumns, groupTitleMap]);
 
   // Helper for day info
   const getDayInfo = (col: PayrollMatrixColumn) => {
@@ -196,6 +224,15 @@ export function PayrollFullTable({
     if (col.dataType === "number") {
       const num = Number(val);
       return num.toLocaleString("vi-VN");
+    }
+    if (col.dataType === "date") {
+      if (typeof val === "string" && val.includes("T")) {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString("vi-VN");
+        }
+      }
+      return String(val);
     }
     return String(val);
   };
@@ -306,15 +343,18 @@ export function PayrollFullTable({
                   }
 
                   const isRightAlign = col.dataType === "currency" || col.dataType === "number";
-                  const isGross = col.key === "grossSalary";
-                  const isNet = col.key === "netSalary";
+                  const isGross = col.key === "grossSalary" || col.group === "TOTAL_EARNINGS";
+                  const isTotalDeduction = col.key === "totalDeduction" || col.group === "TOTAL_DEDUCTIONS";
+                  const isNet = col.key === "netSalary" || col.group === "NET";
 
                   return (
                     <th
                       key={col.key}
                       className={`whitespace-nowrap px-3 py-2 text-xs font-semibold ${
-                        isRightAlign ? "text-right" : "text-left"
-                      } ${isGross ? "bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-bold" : ""} ${
+                        isRightAlign ? "text-right" : col.dataType === "date" ? "text-center" : "text-left"
+                      } ${isGross ? "bg-emerald-50/80 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-100 font-bold" : ""} ${
+                        isTotalDeduction ? "bg-amber-50/80 dark:bg-amber-950/60 text-amber-900 dark:text-amber-100 font-bold" : ""
+                      } ${
                         isNet ? "bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 font-extrabold" : ""
                       }`}
                       title={col.title}
@@ -358,9 +398,11 @@ export function PayrollFullTable({
                       const val = row[col.key];
                       const isBankAcc = col.key === "bankAccountNumber";
                       const isDaily = col.group === "DAILY_TIMESHEET";
-                      const isGross = col.key === "grossSalary";
-                      const isNet = col.key === "netSalary";
-                      const isDeduction = col.group === "DEDUCTIONS";
+                      const isGross = col.key === "grossSalary" || col.group === "TOTAL_EARNINGS";
+                      const isTotalDeduction = col.key === "totalDeduction" || col.group === "TOTAL_DEDUCTIONS";
+                      const isNet = col.key === "netSalary" || col.group === "NET";
+                      const isDeduction = col.group === "DEDUCTIONS" || col.group === "TOTAL_DEDUCTIONS";
+                      const isDate = col.dataType === "date";
 
                       if (isBankAcc) {
                         return (
@@ -386,10 +428,16 @@ export function PayrollFullTable({
                         <td
                           key={col.key}
                           className={`whitespace-nowrap px-3 py-2 border-b text-xs ${
-                            col.dataType === "currency" || col.dataType === "number" ? "text-right font-mono" : "text-left"
-                          } ${isGross ? "font-bold text-slate-900 dark:text-slate-100 bg-slate-50/50" : ""} ${
-                            isNet ? "font-extrabold text-teal-800 dark:text-teal-300 bg-teal-50/70" : ""
-                          } ${isDeduction && Number(val) > 0 ? "text-amber-800 dark:text-amber-300" : ""}`}
+                            col.dataType === "currency" || col.dataType === "number"
+                              ? "text-right font-mono"
+                              : isDate
+                              ? "text-center font-mono"
+                              : "text-left"
+                          } ${isGross ? "font-bold text-emerald-950 dark:text-emerald-100 bg-emerald-50/50 dark:bg-emerald-950/20" : ""} ${
+                            isTotalDeduction ? "font-bold text-amber-950 dark:text-amber-100 bg-amber-50/50 dark:bg-amber-950/20" : ""
+                          } ${
+                            isNet ? "font-extrabold text-teal-800 dark:text-teal-300 bg-teal-50/70 dark:bg-teal-950/30" : ""
+                          } ${isDeduction && !isTotalDeduction && Number(val) > 0 ? "text-amber-800 dark:text-amber-300" : ""}`}
                         >
                           {formatCell(val, col)}
                         </td>
@@ -420,16 +468,19 @@ export function PayrollFullTable({
 
                   if (col.dataType === "currency") {
                     const total = visibleRows.reduce((sum, r) => sum + (Number(r[col.key]) || 0), 0);
-                    const isGross = col.key === "grossSalary";
-                    const isNet = col.key === "netSalary";
+                    const isGross = col.key === "grossSalary" || col.group === "TOTAL_EARNINGS";
+                    const isTotalDeduction = col.key === "totalDeduction" || col.group === "TOTAL_DEDUCTIONS";
+                    const isNet = col.key === "netSalary" || col.group === "NET";
                     return (
                       <td
                         key={col.key}
                         className={`px-3 py-2 text-right font-mono text-xs ${
                           isNet
-                            ? "font-extrabold text-teal-800 dark:text-teal-300 bg-teal-100/70"
+                            ? "font-extrabold text-teal-800 dark:text-teal-300 bg-teal-100/70 dark:bg-teal-900/50"
+                            : isTotalDeduction
+                            ? "font-bold text-amber-900 dark:text-amber-200 bg-amber-100/60 dark:bg-amber-900/40"
                             : isGross
-                            ? "font-bold text-slate-900 dark:text-slate-100 bg-slate-200/50"
+                            ? "font-bold text-emerald-900 dark:text-emerald-100 bg-emerald-100/60 dark:bg-emerald-900/40"
                             : ""
                         }`}
                       >
