@@ -13,8 +13,7 @@ import type {
   PreviewRevenueResult,
 } from "./payroll-types";
 
-// Temporarily point to ngrok backend
-const API_BASE_URL = "https://claudine-footless-first.ngrok-free.dev/api";
+const API_BASE_URL = "https://api-stage-hris.greenspeed.vn/api";
 const MOCK_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJFbWFpbCI6InRvYW5odkBncmVlbnNwZWVkLnZuIiwiSWQiOiIxIiwiRW1wbG95ZWVJZCI6IjEiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiaXRhZG1pbkBncmVlbnNwZWVkLnZuIiwiRW1wbG95ZWUiOiIiLCJmdWxsTmFtZSI6IkdSU0MgQURNSU4iLCJVc2VyVHlwZSI6IkVtcGxveWVlIiwiR0lEIjoiR1JTQy1BRE1JTiIsImp0aSI6IjZmMjgyODRkLTJhYjAtNDExNy04M2MyLWMxNjliZTJmZTY1ZiIsImV4cCI6MTgxNzk1MjgxNiwiaXNzIjoiaHR0cHM6Ly90aW1ldHJhY2tpbmctYml0Zmx5LmdyZWVuc3BlZWQudm4iLCJhdWQiOiJodHRwczovL3RpbWV0cmFja2luZy1iaXRmbHkuZ3JlZW5zcGVlZC52biJ9.awS3S2rzvS5AMHrVLSR8TlhpP_mKNyF1ZCAS4dfdAz4";
 
 export class PayrollApiError extends Error {
