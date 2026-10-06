@@ -32,6 +32,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  GsDatePicker,
   GsEmployeeSelect,
   LoadingBlock,
   Modal,
@@ -343,7 +344,7 @@ export function DependentsSubtab({
 
   // ================= Form Helpers =================
   const resetDeclareForm = () => {
-    setFormEmployeeCode(projectEmployees[0]?.employeeCode || "");
+    setFormEmployeeCode("");
     setFormFullName("");
     setFormDob("");
     setFormIdentityNumber("");
@@ -382,7 +383,6 @@ export function DependentsSubtab({
             variant="secondary"
             size="sm"
             onClick={() => {
-              if (!ensureSpecificProject("import danh sách người phụ thuộc")) return;
               setImportModalOpen(true);
             }}
             className="gap-1.5 font-medium shrink-0"
@@ -393,7 +393,6 @@ export function DependentsSubtab({
             variant="primary"
             size="sm"
             onClick={() => {
-              if (!ensureSpecificProject("khai báo người phụ thuộc")) return;
               resetDeclareForm();
               setDeclareModalOpen(true);
             }}
@@ -914,7 +913,7 @@ export function DependentsSubtab({
                 employees={projectEmployees}
                 value={formEmployeeCode}
                 onChange={(code) => setFormEmployeeCode(code)}
-                placeholder="-- Chọn nhân viên trong dự án --"
+                placeholder="-- Chọn nhân viên --"
                 searchPlaceholder="Tìm theo mã, tên, chức danh..."
                 isLoading={isEmployeesLoading}
               />
@@ -963,21 +962,18 @@ export function DependentsSubtab({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Ngày sinh */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                    Ngày sinh <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={formDob}
-                    onChange={(e) => setFormDob(e.target.value)}
+                  <GsDatePicker
+                    label="Ngày sinh"
                     required
-                    className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+                    value={formDob}
+                    onChange={(d) => setFormDob(d)}
+                    placeholder="dd/mm/yyyy"
                   />
                 </div>
 
                 {/* CCCD / Mã định danh */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
                     Số CCCD / Mã định danh <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -986,14 +982,14 @@ export function DependentsSubtab({
                     onChange={(e) => setFormIdentityNumber(e.target.value)}
                     placeholder="Số CCCD hoặc Mã định danh cá nhân"
                     required
-                    className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+                    className="w-full h-[38px] px-3 py-2 text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xs hover:border-slate-400 dark:hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground transition-colors"
                   />
                 </div>
               </div>
 
               <div>
                 {/* Mã số thuế */}
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
                   Mã số thuế NPT <span className="text-slate-400 font-normal">(Nếu có)</span>
                 </label>
                 <input
@@ -1001,7 +997,7 @@ export function DependentsSubtab({
                   value={formTaxCode}
                   onChange={(e) => setFormTaxCode(e.target.value)}
                   placeholder="VD: 8092200012"
-                  className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+                  className="w-full h-[38px] px-3 py-2 text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xs hover:border-slate-400 dark:hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground transition-colors"
                 />
               </div>
             </div>
@@ -1010,28 +1006,22 @@ export function DependentsSubtab({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Hiệu lực từ */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                  Hiệu lực từ ngày <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={formEffectiveFrom}
-                  onChange={(e) => setFormEffectiveFrom(e.target.value)}
+                <GsDatePicker
+                  label="Hiệu lực từ ngày"
                   required
-                  className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+                  value={formEffectiveFrom}
+                  onChange={(d) => setFormEffectiveFrom(d)}
+                  placeholder="dd/mm/yyyy"
                 />
               </div>
 
               {/* Hiệu lực đến */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                  Hiệu lực đến ngày <span className="text-slate-400 font-normal">(Để trống nếu vô thời hạn)</span>
-                </label>
-                <input
-                  type="date"
+                <GsDatePicker
+                  label="Hiệu lực đến ngày"
                   value={formEffectiveTo}
-                  onChange={(e) => setFormEffectiveTo(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+                  onChange={(d) => setFormEffectiveTo(d)}
+                  placeholder="dd/mm/yyyy"
                 />
               </div>
             </div>
@@ -1046,17 +1036,16 @@ export function DependentsSubtab({
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
                   Loại tài liệu minh chứng
                 </label>
-                <select
+                <SearchableSelect
+                  items={masterDocTypes}
                   value={formDocType}
-                  onChange={(e) => setFormDocType(e.target.value as DocumentTypeCode)}
-                  className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
-                >
-                  {masterDocTypes.map((d) => (
-                    <option key={d.code} value={d.code}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setFormDocType(val as DocumentTypeCode)}
+                  getOptionValue={(d) => d.code}
+                  getOptionLabel={(d) => d.name}
+                  allowClear={false}
+                  searchPlaceholder="Tìm loại tài liệu minh chứng..."
+                  placeholder="-- Chọn loại tài liệu minh chứng --"
+                />
               </div>
 
               <div
@@ -1193,15 +1182,11 @@ export function DependentsSubtab({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Ngày sinh <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={editDob}
-                  onChange={(e) => setEditDob(e.target.value)}
+                <GsDatePicker
+                  label="Ngày sinh"
                   required
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={editDob}
+                  onChange={(d) => setEditDob(d)}
                 />
               </div>
             </div>
@@ -1231,29 +1216,23 @@ export function DependentsSubtab({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Hiệu lực từ ngày <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={editEffectiveFrom}
-                  onChange={(e) => setEditEffectiveFrom(e.target.value)}
+                <GsDatePicker
+                  label="Hiệu lực từ ngày"
                   required
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={editEffectiveFrom}
+                  onChange={(d) => setEditEffectiveFrom(d)}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Hiệu lực đến ngày <span className="text-slate-400 font-normal">(Để trống nếu vô thời hạn)</span>
-                </label>
-                <input
-                  type="date"
+                <GsDatePicker
+                  label="Hiệu lực đến ngày"
                   value={editEffectiveTo}
-                  onChange={(e) => setEditEffectiveTo(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  onChange={(d) => setEditEffectiveTo(d)}
+                  helperText="Để trống nếu vô thời hạn"
+                  placeholder="Để trống nếu vô thời hạn"
                 />
               </div>
             </div>
@@ -1379,17 +1358,16 @@ export function DependentsSubtab({
               <FilePlus className="w-4 h-4 text-primary" /> Tải lên tài liệu mới
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <select
+              <SearchableSelect
+                items={masterDocTypes}
                 value={uploadingDocType}
-                onChange={(e) => setUploadingDocType(e.target.value as DocumentTypeCode)}
-                className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-              >
-                {masterDocTypes.map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setUploadingDocType(val as DocumentTypeCode)}
+                getOptionValue={(d) => d.code}
+                getOptionLabel={(d) => d.name}
+                allowClear={false}
+                searchPlaceholder="Tìm loại tài liệu..."
+                placeholder="-- Chọn loại tài liệu --"
+              />
 
               <div className="sm:col-span-2 flex items-center gap-2">
                 <input

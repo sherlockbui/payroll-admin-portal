@@ -2940,7 +2940,7 @@ export const handlers = [
     const activeCount = members.filter((m) => m.status === "ACTIVE").length;
     const suspendedCount = members.filter((m) => m.status === "SUSPENDED").length;
     const stoppedCount = members.filter((m) => m.status === "STOPPED").length;
-    const totalMonthlyContribution = members.reduce((sum, m) => sum + (m.status === "ACTIVE" ? m.totalContribution : 0), 0);
+    const totalMonthlyContribution = members.reduce((sum, m) => sum + (m.status === "ACTIVE" ? (m.totalContribution ?? 0) : 0), 0);
     const pendingChangesCount = changes.filter((c) => c.status === "SUBMITTED" || c.status === "DRAFT").length;
 
     const summary: SocialInsuranceSummaryResponse = {

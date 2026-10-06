@@ -8,6 +8,7 @@ export default defineConfig({
   reporter: "list",
   use: {
     baseURL: "http://localhost:3001",
+    channel: "chrome",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     ...devices["Desktop Chrome"],

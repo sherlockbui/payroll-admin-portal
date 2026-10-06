@@ -30,6 +30,8 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  GsDatePicker,
+  GsMoneyInput,
   LoadingBlock,
   Modal,
   SearchInput,
@@ -620,32 +622,24 @@ export function UnionFeesSubtab({
       >
         <div className="space-y-4 py-1">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-              Ngày gia nhập công đoàn <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="date"
+            <GsDatePicker
+              label="Ngày gia nhập công đoàn"
+              required
               value={registerJoinDate}
-              onChange={(e) => setRegisterJoinDate(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
+              onChange={(d) => setRegisterJoinDate(d)}
+              placeholder="dd/mm/yyyy"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-              Mức đóng hàng tháng (VNĐ) <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="number"
-              step="1000"
+            <GsMoneyInput
+              label="Mức đóng hàng tháng"
+              required
               value={registerAmount}
-              onChange={(e) => setRegisterAmount(Number(e.target.value))}
-              placeholder="23400"
-              className="w-full px-3 py-2 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
+              onChange={(val) => setRegisterAmount(val)}
+              placeholder="23.400"
+              helperText="Mặc định 23.400 đ (1% lương tối thiểu vùng)"
             />
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              Mặc định 23.400 đ (1% lương tối thiểu vùng)
-            </p>
           </div>
 
           <div>
@@ -695,15 +689,12 @@ export function UnionFeesSubtab({
       >
         <div className="space-y-4 py-1">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-              Mức trích nộp mới (VNĐ) <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="number"
-              step="1000"
+            <GsMoneyInput
+              label="Mức trích nộp mới"
+              required
               value={editAmount}
-              onChange={(e) => setEditAmount(Number(e.target.value))}
-              className="w-full px-3 py-2 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-foreground"
+              onChange={(val) => setEditAmount(val)}
+              placeholder="VD: 50.000"
             />
           </div>
 

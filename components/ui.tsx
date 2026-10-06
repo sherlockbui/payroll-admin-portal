@@ -1408,16 +1408,13 @@ export function GsProjectCombobox({
               }}
             >
               <div className="gs-combo-search-wrap">
-                <span className="gs-combo-search-icon">
-                  <Search className="w-3.5 h-3.5" />
-                </span>
                 <input
                   ref={inputRef}
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Tìm kiếm mã hoặc tên dự án..."
-                  className="gs-combo-search"
+                  className="gs-combo-search !pl-3 !pr-3"
                   autoComplete="off"
                   onClick={(e) => e.stopPropagation()}
                 />
@@ -1493,5 +1490,7 @@ export function GsProjectCombobox({
 }
 
 export { ProjectSelect, type ProjectSelectProps } from "@/components/payroll/project-select";
+export { GsMoneyInput, MoneyInput, type MoneyInputProps } from "@/components/ui/money-input";
+export { GsDatePicker, type DatePickerProps as GsDatePickerProps } from "@/components/ui/date-picker";
 
 

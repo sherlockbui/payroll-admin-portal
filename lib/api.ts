@@ -27,6 +27,7 @@ import type {
   EmployeePolicyItem,
   EmployeePolicyRecord,
   ProjectEmployeeGroup,
+  ProjectEmployeeOption,
   ProjectPoliciesResponseData,
   OtherDeductionRecord,
   OtherIncomeRecord,
@@ -82,9 +83,11 @@ import type {
   InsuranceParticipantItemV3,
   InsuranceChangeItemV3,
   CreateInsuranceChangeRequest,
+  CreateInsurancePeriodRequest,
   ConfirmInsuranceChangeRequest,
   MedicalFacilityItemV3,
   InsuranceContributionPreview,
+  InsuranceEmployeeSearchItem,
   InsuranceParticipantListResponseV3,
   InsuranceChangeListResponseV3,
   InsuranceSummaryResponseV3,
@@ -125,6 +128,11 @@ import type {
   OtherIncomesSummaryResponse,
   OtherIncomesListResponseV3,
   OtherIncomesListResponse,
+  EmployeePolicyListItemDto,
+  EmployeePolicyListResponseData,
+  EmployeePolicyDetailDto,
+  SaveEmployeePolicyRequest,
+  ImportEmployeePolicyResponse,
 } from "@/lib/types";
 
 import { handlers } from "@/mocks/handlers";
@@ -145,7 +153,7 @@ export class ApiRequestError extends Error {
 export function getApiBaseUrl(): string {
   if (typeof window !== "undefined") {
     if ((window as any).API_BASE_URL) return (window as any).API_BASE_URL;
-    const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees, payroll-runs");
+    const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees, payroll-runs, payroll-dependents, payroll-insurance");
     const attrUrl = widget?.getAttribute("api-base-url");
     if (attrUrl) return attrUrl;
   }
@@ -155,7 +163,7 @@ export function getApiBaseUrl(): string {
 export function getAuthToken(): string {
   if (typeof window !== "undefined") {
     if ((window as any).__SERVER_TOKEN) return (window as any).__SERVER_TOKEN;
-    const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees, payroll-runs");
+    const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees, payroll-runs, payroll-dependents, payroll-insurance");
     const attrToken = widget?.getAttribute("auth-token");
     if (attrToken) return attrToken;
   }
@@ -932,40 +940,89 @@ export const api = {
     }
   },
 
-  getProjectEmployeesV3: async (projectId?: number | string) => {
+  getProjectEmployeesV3: async (projectId?: number | string): Promise<ProjectEmployeeOption[]> => {
     try {
+      const targetProjectId = projectId;
+      const isAll = !targetProjectId || targetProjectId === "all";
+      const endpoint = isAll
+        ? "/api/web/payroll/employees?pageSize=200"
+        : `/api/web/payroll/projects/${targetProjectId}/employees?pageSize=200`;
+
+      // 1. First try standard request
+      try {
+        const res = await request<any>(endpoint);
+        const rawData = res?.data;
+        const rawItems: any[] = Array.isArray(rawData?.items)
+          ? rawData.items
+          : Array.isArray(rawData)
+          ? rawData
+          : Array.isArray(rawData?.data)
+          ? rawData.data
+          : [];
+
+        if (rawItems.length > 0) {
+          return rawItems.map((item: any) => ({
+            employeeCode: item.employeeCode || item.code || item.EmployeeCode || "",
+            fullName: item.fullName || item.name || item.FullName || item.EmployeeName || "",
+            gender: item.gender || "Nam",
+            projectId: Number(item.projectId ?? (isAll ? 1017 : targetProjectId)),
+            projectCode: item.projectCode || "",
+            projectName: item.projectName || "",
+            positionName: item.positionName || item.position || item.PositionName || "Nhân viên",
+            taxCode: item.taxCode || item.TaxCode || "",
+            idNumber: item.idNumber || item.idCard || item.IdNumber || "",
+          }));
+        }
+      } catch {}
+
+      // 2. Direct fetch with auth headers
       const rawBaseUrl = getApiBaseUrl();
       const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
       const token = getAuthToken();
       const headers: Record<string, string> = { Accept: "*/*" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      let targetProjectId = projectId;
-      if (!targetProjectId || targetProjectId === "all") {
-        const projects = await api.getProjectsV3();
-        if (projects && projects.length > 0) {
-          targetProjectId = (projects[0] as any).projectId ?? (projects[0] as any).id;
-        }
-      }
-      if (!targetProjectId || targetProjectId === "all") return [];
-
-      const res = await fetch(`${baseUrl}/api/web/payroll/projects/${targetProjectId}/employees`, { headers });
+      const res = await fetch(`${baseUrl}${endpoint}`, { headers });
       if (res.ok) {
         const json: any = await res.json();
         const dataObj = json.data || {};
         const rawItems: any[] = Array.isArray(dataObj.items) ? dataObj.items : Array.isArray(dataObj) ? dataObj : [];
-        return rawItems.map((item: any) => ({
-          employeeCode: item.employeeCode || item.code || "",
-          fullName: item.fullName || item.name || "",
-          gender: item.gender,
-          projectId: Number(item.projectId ?? targetProjectId),
-          projectCode: item.projectCode || "",
-          projectName: item.projectName || "",
-          positionName: item.positionName || item.position || "",
-          taxCode: item.taxCode || "",
-          idNumber: item.idNumber || "",
-        }));
+        if (rawItems.length > 0) {
+          return rawItems.map((item: any) => ({
+            employeeCode: item.employeeCode || item.code || item.EmployeeCode || "",
+            fullName: item.fullName || item.name || item.FullName || item.EmployeeName || "",
+            gender: item.gender || "Nam",
+            projectId: Number(item.projectId ?? (isAll ? 1017 : targetProjectId)),
+            projectCode: item.projectCode || "",
+            projectName: item.projectName || "",
+            positionName: item.positionName || item.position || "Nhân viên",
+            taxCode: item.taxCode || "",
+            idNumber: item.idNumber || "",
+          }));
+        }
       }
+
+      // 3. Fallback: if isAll and nothing returned, try /api/employees
+      if (isAll) {
+        try {
+          const res = await request<any>("/api/employees?pageSize=100");
+          const rawItems: any[] = Array.isArray(res?.data) ? res.data : Array.isArray((res?.data as any)?.items) ? (res.data as any).items : [];
+          if (rawItems.length > 0) {
+            return rawItems.map((emp: any) => ({
+              employeeCode: emp.employeeCode || emp.code || "",
+              fullName: emp.fullName || emp.name || "",
+              gender: emp.gender || "Nam",
+              projectId: Number(emp.projectId || 1017),
+              projectCode: emp.projectCode || "",
+              projectName: emp.department || "",
+              positionName: emp.position || "Nhân viên",
+              taxCode: emp.taxCode || "",
+              idNumber: emp.nationalId || emp.idNumber || "",
+            }));
+          }
+        } catch {}
+      }
+
       return [];
     } catch {
       return [];
@@ -1935,8 +1992,16 @@ export const api = {
         else if (status === "SUSPENDED") suspendedCount++;
         else if (status === "STOPPED") stoppedCount++;
 
+        const empRate = Number(item.employeeRate ?? item.employeeContributionRate ?? 10.5);
+        const compRate = Number(item.companyRate ?? item.employerContributionRate ?? 21.5);
+        const empAmount = Number(item.employeeAmount ?? item.employeeContribution ?? Math.round(sal * (empRate / 100)));
+        const compAmount = Number(item.companyAmount ?? item.employerContribution ?? Math.round(sal * (compRate / 100)));
+        const totAmount = Number(item.totalAmount ?? item.totalContribution ?? (empAmount + compAmount));
+
         return {
           id: Number(item.id ?? item.Id ?? idx + 1),
+          employeeCode: empCode,
+          employeeName: empName,
           employee: {
             employeeCode: empCode,
             fullName: empName,
@@ -1950,23 +2015,36 @@ export const api = {
                 }
               : undefined,
           },
+          projectId: item.projectId ? Number(item.projectId) : undefined,
+          projectName: item.projectName || "",
           insuranceBookNumber: bookNumber,
           insuranceSalary: sal,
           baseSalary: sal,
           contributionSalary: sal,
+          participationDate: item.participationDate || item.effectiveFrom || null,
+          medicalFacility: item.medicalFacility || item.medicalFacilityName || item.medicalRegistrationPlace || null,
+          year: item.year ? Number(item.year) : undefined,
+          month: item.month ? Number(item.month) : undefined,
+          changeType: item.changeType || undefined,
+          isParticipating: item.isParticipating ?? (status === "ACTIVE"),
           participationStatus: status,
           status,
+          employeeRate: empRate,
+          companyRate: compRate,
+          employeeAmount: empAmount,
+          companyAmount: compAmount,
+          totalAmount: totAmount,
           medicalFacilityId: item.medicalFacilityId ?? item.MedicalFacilityId ?? null,
           medicalFacilityCode: item.medicalFacilityCode || item.MedicalFacilityCode || null,
           medicalFacilityName: item.medicalFacilityName || item.MedicalFacilityName || item.medicalRegistrationPlace || null,
           effectiveFrom: item.effectiveFrom || item.EffectiveFrom || item.effectiveMonth || null,
           effectiveMonth: item.effectiveMonth || (item.effectiveFrom ? String(item.effectiveFrom).slice(0, 7) : null),
-          employeeContributionRate: Number(item.employeeContributionRate ?? 10.5),
-          employeeContribution: Number(item.employeeContribution ?? Math.round(sal * 0.105)),
-          employerContributionRate: Number(item.employerContributionRate ?? 21.5),
-          employerContribution: Number(item.employerContribution ?? Math.round(sal * 0.215)),
-          totalContributionRate: Number(item.totalContributionRate ?? 32),
-          totalContribution: Number(item.totalContribution ?? Math.round(sal * 0.32)),
+          employeeContributionRate: empRate,
+          employeeContribution: empAmount,
+          employerContributionRate: compRate,
+          employerContribution: compAmount,
+          totalContributionRate: empRate + compRate,
+          totalContribution: totAmount,
           note: item.note || item.Note || null,
           confirmedBy: item.confirmedBy || (item.confirmedByName ? { fullName: item.confirmedByName } : undefined),
           confirmedAt: item.confirmedAt || item.ConfirmedAt || null,
@@ -2004,33 +2082,74 @@ export const api = {
     const query = new URLSearchParams(queryObj).toString();
     return request<any>(`/api/web/payroll/insurance/employees/search?${query}`).then((res) => {
       const raw = res.data || res || [];
-      return Array.isArray(raw) ? raw : raw.items || raw.data || [];
+      const list = Array.isArray(raw) ? raw : raw.items || raw.data || [];
+      return list.map((item: any) => ({
+        employeeCode: item.employeeCode || item.code || "",
+        employeeName: item.employeeName || item.fullName || item.name || "",
+        projectId: item.projectId ? Number(item.projectId) : null,
+        projectName: item.projectName || "",
+        hasInsurance: Boolean(item.hasInsurance ?? item.isParticipating ?? false),
+        insuranceBookNumber: item.insuranceBookNumber || item.socialInsuranceNumber || null,
+        baseSalary: item.baseSalary ? Number(item.baseSalary) : null,
+        medicalFacility: item.medicalFacility || item.medicalFacilityName || null,
+        year: item.year ? Number(item.year) : null,
+        month: item.month ? Number(item.month) : null,
+      })) as InsuranceEmployeeSearchItem[];
     });
   },
 
   previewInsuranceContributionV3: (params: { baseSalary: number; month?: number; year?: number }) => {
+    const now = new Date();
     const queryObj: Record<string, string> = {
       baseSalary: String(params.baseSalary || 0),
+      month: String(params.month ?? (now.getMonth() + 1)),
+      year: String(params.year ?? now.getFullYear()),
     };
-    if (params.month) queryObj.month = String(params.month);
-    if (params.year) queryObj.year = String(params.year);
     const query = new URLSearchParams(queryObj).toString();
 
     return request<any>(`/api/web/payroll/insurance/contribution-preview?${query}`)
       .then((res) => {
         const d = res.data || res || {};
         const base = Number(d.baseSalary ?? d.BaseSalary ?? params.baseSalary);
+        const empRateTotal = Number(d.employeeRateTotal ?? 10.5);
+        const compRateTotal = Number(d.companyRateTotal ?? 21.5);
+        const empAmountTotal = Number(d.employeeAmountTotal ?? Math.round(base * (empRateTotal / 100)));
+        const compAmountTotal = Number(d.companyAmountTotal ?? Math.round(base * (compRateTotal / 100)));
+        const totalAmount = Number(d.totalAmount ?? (empAmountTotal + compAmountTotal));
+
+        const items = Array.isArray(d.items)
+          ? d.items.map((it: any) => ({
+              insuranceTypeId: Number(it.insuranceTypeId || 0),
+              typeCode: it.typeCode || "",
+              typeName: it.typeName || "",
+              employeeRate: Number(it.employeeRate || 0),
+              companyRate: Number(it.companyRate || 0),
+              maxBaseAmount: it.maxBaseAmount ? Number(it.maxBaseAmount) : null,
+              appliedBaseAmount: Number(it.appliedBaseAmount || base),
+              employeeAmount: Number(it.employeeAmount || 0),
+              companyAmount: Number(it.companyAmount || 0),
+            }))
+          : undefined;
+
         return {
           baseSalary: base,
-          socialInsuranceEmployee: Number(d.socialInsuranceEmployee ?? d.SocialInsuranceEmployee ?? Math.round(base * 0.08)),
-          healthInsuranceEmployee: Number(d.healthInsuranceEmployee ?? d.HealthInsuranceEmployee ?? Math.round(base * 0.015)),
-          unemploymentInsuranceEmployee: Number(d.unemploymentInsuranceEmployee ?? d.UnemploymentInsuranceEmployee ?? Math.round(base * 0.01)),
-          totalEmployeeContribution: Number(d.totalEmployeeContribution ?? d.TotalEmployeeContribution ?? Math.round(base * 0.105)),
-          socialInsuranceEmployer: Number(d.socialInsuranceEmployer ?? d.SocialInsuranceEmployer ?? Math.round(base * 0.175)),
-          healthInsuranceEmployer: Number(d.healthInsuranceEmployer ?? d.HealthInsuranceEmployer ?? Math.round(base * 0.03)),
-          unemploymentInsuranceEmployer: Number(d.unemploymentInsuranceEmployer ?? d.UnemploymentInsuranceEmployer ?? Math.round(base * 0.01)),
-          totalEmployerContribution: Number(d.totalEmployerContribution ?? d.TotalEmployerContribution ?? Math.round(base * 0.215)),
-          totalContribution: Number(d.totalContribution ?? d.TotalContribution ?? Math.round(base * 0.32)),
+          effectiveFrom: d.effectiveFrom || null,
+          employeeRateTotal: empRateTotal,
+          companyRateTotal: compRateTotal,
+          employeeAmountTotal: empAmountTotal,
+          companyAmountTotal: compAmountTotal,
+          totalAmount: totalAmount,
+          items,
+          // Legacy fields for backward compatibility
+          socialInsuranceEmployee: Number(d.socialInsuranceEmployee ?? Math.round(base * 0.08)),
+          healthInsuranceEmployee: Number(d.healthInsuranceEmployee ?? Math.round(base * 0.015)),
+          unemploymentInsuranceEmployee: Number(d.unemploymentInsuranceEmployee ?? Math.round(base * 0.01)),
+          totalEmployeeContribution: empAmountTotal,
+          socialInsuranceEmployer: Number(d.socialInsuranceEmployer ?? Math.round(base * 0.175)),
+          healthInsuranceEmployer: Number(d.healthInsuranceEmployer ?? Math.round(base * 0.03)),
+          unemploymentInsuranceEmployer: Number(d.unemploymentInsuranceEmployer ?? Math.round(base * 0.01)),
+          totalEmployerContribution: compAmountTotal,
+          totalContribution: totalAmount,
         } as InsuranceContributionPreview;
       })
       .catch(() => {
@@ -2038,6 +2157,11 @@ export const api = {
         const base = Number(params.baseSalary || 0);
         return {
           baseSalary: base,
+          employeeRateTotal: 10.5,
+          companyRateTotal: 21.5,
+          employeeAmountTotal: Math.round(base * 0.105),
+          companyAmountTotal: Math.round(base * 0.215),
+          totalAmount: Math.round(base * 0.32),
           socialInsuranceEmployee: Math.round(base * 0.08),
           healthInsuranceEmployee: Math.round(base * 0.015),
           unemploymentInsuranceEmployee: Math.round(base * 0.01),
@@ -2051,25 +2175,41 @@ export const api = {
       });
   },
 
-  createInsuranceChangeV3: (payload: CreateInsuranceChangeRequest) =>
-    request<any>("/api/web/payroll/insurance/changes", {
+  createInsuranceChangeV3: (payload: CreateInsurancePeriodRequest) => {
+    // Standardize changeType enum
+    let normalizedChangeType = payload.changeType || "NEW_HIRE";
+    if (normalizedChangeType === "TANG_MOI") normalizedChangeType = "NEW_HIRE";
+    else if (normalizedChangeType === "DIEU_CHINH_LUONG") normalizedChangeType = "SALARY_ADJUSTMENT";
+    else if (normalizedChangeType === "GIAM_HAN") normalizedChangeType = "TERMINATED";
+    else if (normalizedChangeType === "NGHI_THAI_SAN") normalizedChangeType = "MATERNITY";
+    else if (normalizedChangeType === "NGHI_OM_DAU") normalizedChangeType = "UNPAID_LEAVE";
+
+    const effDate = payload.effectiveFrom ? new Date(payload.effectiveFrom) : new Date();
+    const year = payload.year ?? (!isNaN(effDate.getFullYear()) ? effDate.getFullYear() : new Date().getFullYear());
+    const month = payload.month ?? (!isNaN(effDate.getMonth()) ? effDate.getMonth() + 1 : new Date().getMonth() + 1);
+
+    const body: Record<string, any> = {
+      employeeCode: payload.employeeCode,
+      insuranceBookNumber: payload.insuranceBookNumber || payload.newInsuranceBookNumber || null,
+      projectId: payload.projectId ? Number(payload.projectId) : null,
+      year: Number(year),
+      month: Number(month),
+      baseSalary: payload.baseSalary ?? payload.newBaseSalary ?? null,
+      changeType: normalizedChangeType,
+      isParticipating: payload.isParticipating ?? (normalizedChangeType !== "TERMINATED" && payload.newParticipationStatus !== "STOPPED"),
+      note: payload.note || payload.reason || null,
+    };
+
+    return request<any>("/api/web/payroll/insurance/changes", {
       method: "POST",
-      body: JSON.stringify({
-        ProjectId: payload.projectId,
-        EmployeeCode: payload.employeeCode,
-        ChangeType: payload.changeType,
-        EffectiveFrom: payload.effectiveFrom,
-        NewBaseSalary: payload.newBaseSalary,
-        NewInsuranceBookNumber: payload.newInsuranceBookNumber,
-        NewParticipationStatus: payload.newParticipationStatus,
-        NewMedicalFacilityId: payload.newMedicalFacilityId,
-        Reason: payload.reason,
-        ReasonCode: payload.reasonCode,
-      }),
-    }).then((res) => res.data || res),
+      body: JSON.stringify(body),
+    }).then((res) => res.data || res);
+  },
 
   getInsuranceChangesV3: (params?: {
     projectId?: string | number;
+    year?: number;
+    month?: number;
     status?: string;
     keyword?: string;
     search?: string;
@@ -2087,6 +2227,12 @@ export const api = {
 
     if (params?.projectId && String(params.projectId) !== "all") {
       queryObj.projectId = String(params.projectId);
+    }
+    if (params?.year) {
+      queryObj.year = String(params.year);
+    }
+    if (params?.month) {
+      queryObj.month = String(params.month);
     }
     if (params?.status && String(params.status) !== "ALL" && String(params.status) !== "all") {
       queryObj.status = String(params.status);
@@ -2106,35 +2252,46 @@ export const api = {
       const items: InsuranceChangeItemV3[] = rawList.map((item: any, idx: number) => {
         const empCode = item.employeeCode || item.EmployeeCode || item.code || "";
         const empName = item.fullName || item.FullName || item.employeeName || item.EmployeeName || item.name || "";
-        const chType = item.changeType || item.ChangeType || "TANG_MOI";
+        const chType = item.changeType || item.ChangeType || "NEW_HIRE";
         const st = String(item.status || item.Status || "PENDING").toUpperCase();
 
         return {
           id: Number(item.id ?? item.Id ?? idx + 1),
+          employeeCode: empCode,
+          employeeName: empName,
           employee: {
             employeeCode: empCode,
             fullName: empName,
             department: item.departmentName || item.department || "",
             position: item.position || item.title || "",
           },
+          projectId: item.projectId ? Number(item.projectId) : null,
+          projectName: item.projectName || "",
+          year: item.year ? Number(item.year) : undefined,
+          month: item.month ? Number(item.month) : undefined,
+          baseSalary: item.baseSalary ? Number(item.baseSalary) : (item.newBaseSalary ? Number(item.newBaseSalary) : undefined),
+          isParticipating: item.isParticipating ?? true,
           changeType: chType,
           changeTypeName: item.changeTypeName || item.ChangeTypeName || chType,
-          effectiveFrom: item.effectiveFrom || item.EffectiveFrom || item.effectiveMonth || "",
-          effectiveMonth: item.effectiveMonth || (item.effectiveFrom ? String(item.effectiveFrom).slice(0, 7) : ""),
+          effectiveFrom: item.effectiveFrom || (item.year && item.month ? `${item.year}-${String(item.month).padStart(2, "0")}-01` : ""),
+          effectiveMonth: item.effectiveMonth || (item.year && item.month ? `${item.year}-${String(item.month).padStart(2, "0")}` : ""),
           oldBaseSalary: item.oldBaseSalary ?? item.OldBaseSalary ?? item.oldSalary ?? null,
-          newBaseSalary: item.newBaseSalary ?? item.NewBaseSalary ?? item.newSalary ?? null,
+          newBaseSalary: item.newBaseSalary ?? item.NewBaseSalary ?? item.baseSalary ?? null,
           oldSalary: item.oldBaseSalary ?? item.oldSalary ?? null,
-          newSalary: item.newBaseSalary ?? item.newSalary ?? null,
+          newSalary: item.newBaseSalary ?? item.baseSalary ?? null,
           oldInsuranceBookNumber: item.oldInsuranceBookNumber || item.OldInsuranceBookNumber || null,
-          newInsuranceBookNumber: item.newInsuranceBookNumber || item.NewInsuranceBookNumber || null,
+          newInsuranceBookNumber: item.newInsuranceBookNumber || item.NewInsuranceBookNumber || item.insuranceBookNumber || null,
           oldParticipationStatus: item.oldParticipationStatus || item.OldParticipationStatus || null,
           newParticipationStatus: item.newParticipationStatus || item.NewParticipationStatus || null,
           medicalFacilityId: item.medicalFacilityId ?? item.MedicalFacilityId ?? null,
-          medicalFacilityName: item.medicalFacilityName || item.MedicalFacilityName || null,
-          reason: item.reason || item.Reason || "",
+          medicalFacility: item.medicalFacility || null,
+          medicalFacilityName: item.medicalFacilityName || item.MedicalFacilityName || item.medicalFacility || null,
+          reason: item.reason || item.Reason || item.note || "",
           reasonCode: item.reasonCode || item.ReasonCode || null,
           status: st,
           statusName: st === "CONFIRMED" ? "Đã xác nhận" : st === "REJECTED" ? "Từ chối" : "Chờ xác nhận",
+          note: item.note || item.reason || null,
+          statusNote: item.statusNote || null,
           externalDossierCode: item.externalDossierCode || item.ExternalDossierCode || item.reconciliationCode || null,
           reconciliationCode: item.externalDossierCode || item.reconciliationCode || null,
           fileName: item.fileName || item.FileName || null,
@@ -2164,11 +2321,19 @@ export const api = {
   getInsuranceChangeDetailV3: (id: number | string) =>
     request<any>(`/api/web/payroll/insurance/changes/${id}`).then((res) => res.data || res),
 
-  confirmInsuranceChangeV3: (id: number | string, payload: ConfirmInsuranceChangeRequest) =>
+  confirmInsuranceChangeV3: (id: number | string, payload?: ConfirmInsuranceChangeRequest) =>
     request<any>(`/api/web/payroll/insurance/changes/${id}/confirm`, {
       method: "POST",
       body: JSON.stringify({
-        ExternalDossierCode: payload.externalDossierCode,
+        note: payload?.note || payload?.externalDossierCode || undefined,
+      }),
+    }).then((res) => res.data || res),
+
+  rejectInsuranceChangeV3: (id: number | string, payload?: { note?: string }) =>
+    request<any>(`/api/web/payroll/insurance/changes/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({
+        note: payload?.note || undefined,
       }),
     }).then((res) => res.data || res),
 
@@ -2207,16 +2372,19 @@ export const api = {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "Mau_Khai_Bao_BHXH.xlsx";
+    a.download = "Template_Import_DongBHXH.xlsx";
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   },
 
-  importInsuranceExcelV3: async (file: File): Promise<any> => {
+  importInsuranceExcelV3: async (file: File, projectId?: number | string): Promise<any> => {
     const formData = new FormData();
     formData.append("file", file);
+    if (projectId && String(projectId) !== "all") {
+      formData.append("projectId", String(projectId));
+    }
     return request<any>("/api/web/payroll/insurance/import", {
       method: "POST",
       body: formData,
@@ -3674,5 +3842,307 @@ export const api = {
       );
     }
     return true;
+  },
+
+  // ================= WebPayroll - Employee Policies (Spec 3.3.0) =================
+  getEmployeePolicies: async (params?: {
+    projectId?: string | number;
+    keyword?: string;
+    policyGroupId?: string | number;
+    pageIndex?: number;
+    pageSize?: number;
+  }): Promise<EmployeePolicyListResponseData> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    const token = getAuthToken();
+    const query = new URLSearchParams();
+
+    if (params?.projectId !== undefined && params?.projectId !== null && String(params.projectId).trim() !== "" && String(params.projectId) !== "all") {
+      query.set("projectId", String(params.projectId));
+    }
+    if (params?.keyword && params.keyword.trim()) {
+      query.set("keyword", params.keyword.trim());
+    }
+    if (params?.policyGroupId !== undefined && params?.policyGroupId !== null && String(params.policyGroupId).trim() !== "" && String(params.policyGroupId) !== "all") {
+      query.set("policyGroupId", String(params.policyGroupId));
+    }
+    query.set("pageIndex", String(params?.pageIndex || 1));
+    query.set("pageSize", String(params?.pageSize || 20));
+
+    const url = `${baseUrl}/api/web/payroll/employees/policies?${query.toString()}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể tải danh sách chế độ nhân viên (Status: ${response.status})`,
+        "FETCH_EMPLOYEE_POLICIES_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lấy danh sách chế độ nhân viên",
+        "API_ERROR",
+        response.status
+      );
+    }
+
+    const dataObj = resJson.data || {};
+    const rawItems: any[] = Array.isArray(dataObj.items)
+      ? dataObj.items
+      : Array.isArray(dataObj)
+      ? dataObj
+      : [];
+
+    const items: EmployeePolicyListItemDto[] = rawItems.map((item: any) => ({
+      employeeCode: item.employeeCode || "",
+      employeeName: item.employeeName || "",
+      policyGroupId: item.policyGroupId !== null && item.policyGroupId !== undefined ? Number(item.policyGroupId) : null,
+      policyGroupName: item.policyGroupName || null,
+      basicSalary: item.basicSalary !== null && item.basicSalary !== undefined ? Number(item.basicSalary) : null,
+      hasBasicSalaryOverride: Boolean(item.hasBasicSalaryOverride),
+      appliedCount: typeof item.appliedCount === "number" ? item.appliedCount : 0,
+      totalAllowance: typeof item.totalAllowance === "number" ? item.totalAllowance : 0,
+      effectiveFrom: item.effectiveFrom || null,
+      policies: Array.isArray(item.policies)
+        ? item.policies.map((p: any) => ({
+            policyItemId: Number(p.policyItemId || p.id || 0),
+            policyCode: p.policyCode || "",
+            policyName: p.policyName || "",
+            policyTypeCode: p.policyTypeCode || "",
+            dataType: p.dataType || "MONEY",
+            value: p.value !== null && p.value !== undefined ? Number(p.value) : null,
+            policyValue: p.policyValue ? String(p.policyValue) : null,
+            hasOverride: Boolean(p.hasOverride),
+          }))
+        : [],
+    }));
+
+    return {
+      items,
+      pageIndex: typeof dataObj.pageIndex === "number" ? dataObj.pageIndex : (params?.pageIndex || 1),
+      pageSize: typeof dataObj.pageSize === "number" ? dataObj.pageSize : (params?.pageSize || 20),
+      totalRow: typeof dataObj.totalRow === "number" ? dataObj.totalRow : items.length,
+      totalPages: typeof dataObj.totalPages === "number" ? dataObj.totalPages : Math.max(1, Math.ceil((dataObj.totalRow || items.length) / (params?.pageSize || 20))),
+    };
+  },
+
+  getEmployeePolicyDetail: async (
+    employeeCode: string,
+    projectId: string | number
+  ): Promise<EmployeePolicyDetailDto> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    const token = getAuthToken();
+
+    const query = new URLSearchParams();
+    if (projectId !== undefined && projectId !== null && String(projectId).trim() !== "" && String(projectId) !== "all") {
+      query.set("projectId", String(projectId));
+    }
+
+    const url = `${baseUrl}/api/web/payroll/employees/policies/${encodeURIComponent(employeeCode)}?${query.toString()}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `Không thể lấy chi tiết chế độ nhân sự (Status: ${response.status})`,
+        "FETCH_EMPLOYEE_POLICY_DETAIL_FAILED",
+        response.status
+      );
+    }
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lấy chi tiết chế độ nhân sự",
+        "API_ERROR",
+        response.status
+      );
+    }
+
+    const dataObj = resJson.data || {};
+    return {
+      employeeCode: dataObj.employeeCode || employeeCode,
+      employeeName: dataObj.employeeName || "",
+      policyGroupId: dataObj.policyGroupId !== null && dataObj.policyGroupId !== undefined ? Number(dataObj.policyGroupId) : null,
+      policyGroupName: dataObj.policyGroupName || null,
+      basicSalary: dataObj.basicSalary !== null && dataObj.basicSalary !== undefined ? Number(dataObj.basicSalary) : null,
+      insuranceSalary: dataObj.insuranceSalary !== null && dataObj.insuranceSalary !== undefined ? Number(dataObj.insuranceSalary) : null,
+      policies: Array.isArray(dataObj.policies)
+        ? dataObj.policies.map((p: any) => ({
+            policyItemId: Number(p.policyItemId || p.id || 0),
+            policyCode: p.policyCode || "",
+            policyName: p.policyName || "",
+            dataType: p.dataType || "MONEY",
+            groupValue: p.groupValue !== null && p.groupValue !== undefined ? String(p.groupValue) : null,
+            employeeValue: p.employeeValue !== null && p.employeeValue !== undefined ? String(p.employeeValue) : null,
+            effectiveValue: p.effectiveValue !== null && p.effectiveValue !== undefined ? String(p.effectiveValue) : null,
+            hasOverride: Boolean(p.hasOverride),
+            effectiveFrom: p.effectiveFrom || null,
+            effectiveTo: p.effectiveTo || null,
+            note: p.note || null,
+          }))
+        : [],
+    };
+  },
+
+  saveEmployeePolicy: async (
+    employeeCode: string,
+    payload: SaveEmployeePolicyRequest
+  ): Promise<any> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/api/web/payroll/employees/policies/${encodeURIComponent(employeeCode)}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const bodyData = {
+      projectId: Number(payload.projectId),
+      employeeCode: String(payload.employeeCode || employeeCode),
+      effectiveFrom: payload.effectiveFrom || null,
+      basicSalary: payload.basicSalary !== undefined ? payload.basicSalary : null,
+      insuranceSalary: payload.insuranceSalary !== undefined ? payload.insuranceSalary : null,
+      policies: Array.isArray(payload.policies)
+        ? payload.policies.map((p) => ({
+            policyItemId: Number(p.policyItemId),
+            value: String(p.value ?? ""),
+            effectiveTo: p.effectiveTo || null,
+            note: p.note || null,
+            status: p.status !== undefined ? Number(p.status) : 1,
+          }))
+        : [],
+    };
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(bodyData),
+    });
+
+    if (!response.ok) {
+      const errJson: any = await response.json().catch(() => null);
+      throw new ApiRequestError(
+        errJson?.message || `Không thể lưu thỏa thuận riêng cho nhân sự (Status: ${response.status})`,
+        errJson?.error?.code || "SAVE_EMPLOYEE_POLICY_FAILED",
+        response.status
+      );
+    }
+
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi lưu thỏa thuận riêng cho nhân sự",
+        "API_ERROR",
+        response.status
+      );
+    }
+
+    return resJson;
+  },
+
+  restoreEmployeePolicy: async (
+    employeeCode: string,
+    policyItemId: number | string,
+    projectId: number | string
+  ): Promise<any> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/api/web/payroll/employees/policies/${encodeURIComponent(employeeCode)}/${policyItemId}?projectId=${projectId}`;
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers,
+    });
+
+    if (!response.ok) {
+      const errJson: any = await response.json().catch(() => null);
+      throw new ApiRequestError(
+        errJson?.message || `Không thể khôi phục chế độ về chuẩn dự án (Status: ${response.status})`,
+        errJson?.error?.code || "RESTORE_EMPLOYEE_POLICY_FAILED",
+        response.status
+      );
+    }
+
+    const resJson: any = await response.json();
+    if (!resJson || resJson.success === false) {
+      throw new ApiRequestError(
+        resJson?.message || "Lỗi khi khôi phục chế độ về chuẩn dự án",
+        "API_ERROR",
+        response.status
+      );
+    }
+
+    return resJson.data;
+  },
+
+  importEmployeePolicies: async (file: File): Promise<ImportEmployeePolicyResponse> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    const token = getAuthToken();
+    const url = `${baseUrl}/api/web/payroll/employees/policies/import`;
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+
+    const resJson: any = await response.json().catch(() => null);
+    if (!response.ok || !resJson || resJson.success === false) {
+      const errData = resJson?.data || {};
+      const errMessage = resJson?.message || "Import danh sách thỏa thuận riêng thất bại.";
+      const customErr: any = new ApiRequestError(
+        errMessage,
+        resJson?.errorCode || "IMPORT_POLICIES_FAILED",
+        response.status
+      );
+      (customErr as any).errorData = errData;
+      throw customErr;
+    }
+
+    return resJson.data;
+  },
+
+  downloadEmployeePolicyTemplate: (): string => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    return `${baseUrl}/api/web/payroll/employees/policies/import-template`;
   },
 };

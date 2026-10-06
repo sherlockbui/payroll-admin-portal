@@ -8,6 +8,8 @@ import { AdminShell } from "@/components/admin-shell";
 import { ProjectsList } from "@/components/projects-list";
 import { ProjectDetail } from "@/components/project-detail";
 import { EmployeesTab } from "@/components/tabs/employees-tab";
+import { DependentsTab } from "@/components/tabs/dependents-tab";
+import { InsuranceTab } from "@/components/tabs/insurance-tab";
 import { PayrollWorkspacePage } from "@/components/payroll/payroll-workspace";
 import { PayrollDetailPage } from "@/components/payroll/payroll-detail-page";
 import {
@@ -84,7 +86,25 @@ function WidgetRouterView() {
     );
   }
 
-  // 4. Chi tiết cấu hình dự án: /projects/[projectId]
+  // 4. Người phụ thuộc: /dependents
+  if (pathname.startsWith("/dependents")) {
+    return (
+      <AdminShell detailLabel="Người phụ thuộc">
+        <DependentsTab />
+      </AdminShell>
+    );
+  }
+
+  // 5. Bảo hiểm xã hội: /insurance
+  if (pathname.startsWith("/insurance")) {
+    return (
+      <AdminShell detailLabel="Bảo hiểm xã hội">
+        <InsuranceTab />
+      </AdminShell>
+    );
+  }
+
+  // 6. Chi tiết cấu hình dự án: /projects/[projectId]
   if (
     (pathname.startsWith("/projects/") && pathname !== "/projects" && pathname !== "/projects/") ||
     params.projectId

@@ -38,6 +38,9 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  GsDatePicker,
+  GsEmployeeSelect,
+  GsMoneyInput,
   LoadingBlock,
   Modal,
   MonthPicker,
@@ -177,10 +180,17 @@ export function OtherDeductionsSubtab({
     return { totalAmount: sum, countByType: counts };
   }, [deductionItems]);
 
+  // Query: Project Employees for Form Modal
+  const { data: projectEmployees = [], isLoading: isEmployeesLoading } = useQuery({
+    queryKey: ["project-employees-v3", projectId],
+    queryFn: () => api.getProjectEmployeesV3(projectId),
+    enabled: formModalOpen,
+  });
+
   // Open Create Modal
   const handleOpenCreate = () => {
     setEditingRecord(null);
-    setFormEmployeeCode(employees[0]?.code || "");
+    setFormEmployeeCode("");
     setFormDeductionTypeId(deductionTypes[0]?.id);
     setFormAmount(500000);
     setFormDecisionNumber("");
@@ -208,6 +218,9 @@ export function OtherDeductionsSubtab({
   // Save Mutation (Create / Update)
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!formEmployeeCode) {
+        throw new Error("Vui lòng chọn nhân viên!");
+      }
       const payload: CreateOtherDeductionRequest = {
         employeeCode: formEmployeeCode,
         otherDeductionTypeId: formDeductionTypeId,
@@ -632,16 +645,29 @@ export function OtherDeductionsSubtab({
         size="md"
         footer={
           <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" onClick={() => setFormModalOpen(false)}>
-              Hủy
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFormModalOpen(false)}
+              className="text-xs"
+            >
+              Hủy bỏ
             </Button>
             <Button
               variant="primary"
-              loading={saveMutation.isPending}
+              size="sm"
               onClick={() => saveMutation.mutate()}
-              className="gap-1.5"
+              disabled={saveMutation.isPending || (!editingRecord && !formEmployeeCode)}
+              className="text-xs bg-primary hover:bg-primary-hover text-white gap-1.5 font-medium px-4 py-2 cursor-pointer"
             >
-              <Save className="w-4 h-4" /> {editingRecord ? "Lưu thay đổi" : "Lưu hồ sơ"}
+              <Save className="w-3.5 h-3.5 text-white" />
+              <span className="text-white">
+                {saveMutation.isPending
+                  ? "Đang lưu..."
+                  : editingRecord
+                  ? "Lưu thay đổi"
+                  : "Lưu hồ sơ"}
+              </span>
             </Button>
           </div>
         }
@@ -657,17 +683,13 @@ export function OtherDeductionsSubtab({
                 {editingRecord.employee.fullName} ({editingRecord.employee.employeeCode})
               </div>
             ) : (
-              <select
+              <GsEmployeeSelect
+                employees={projectEmployees}
                 value={formEmployeeCode}
-                onChange={(e) => setFormEmployeeCode(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
-              >
-                {employees.map((emp) => (
-                  <option key={emp.code || emp.id} value={emp.code || emp.id}>
-                    {emp.name || (emp as any).fullName || emp.code} ({emp.code || emp.id})
-                  </option>
-                ))}
-              </select>
+                onChange={(code) => setFormEmployeeCode(code)}
+                placeholder="-- Chọn người lao động --"
+                isLoading={isEmployeesLoading}
+              />
             )}
           </div>
 
@@ -676,36 +698,31 @@ export function OtherDeductionsSubtab({
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
               Loại giảm trừ <span className="text-rose-500">*</span>
             </label>
-            <select
+            <SearchableSelect
+              items={deductionTypes}
               value={formDeductionTypeId}
-              onChange={(e) => setFormDeductionTypeId(Number(e.target.value))}
-              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
-            >
-              {deductionTypes.map((t: OtherDeductionTypeItem) => (
-                <option key={t.id} value={t.id}>
-                  {t.deductionName}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Số tiền khấu trừ */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-              Số tiền khấu trừ (VNĐ) <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="number"
-              step="10000"
-              value={formAmount}
-              onChange={(e) => setFormAmount(Number(e.target.value))}
-              placeholder="VD: 500000"
-              className="w-full px-3 py-2 text-xs font-bold text-rose-600 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+              onChange={(val) => setFormDeductionTypeId(Number(val))}
+              getOptionValue={(t: OtherDeductionTypeItem) => t.id}
+              getOptionLabel={(t: OtherDeductionTypeItem) => t.deductionName || (t as any).name || t.deductionCode || `Loại #${t.id}`}
+              getOptionBadge={(t: OtherDeductionTypeItem) => t.deductionCode || ""}
+              allowClear={false}
+              searchPlaceholder="Tìm loại giảm trừ..."
+              placeholder="-- Chọn loại giảm trừ --"
             />
           </div>
 
+          {/* Số tiền khấu trừ */}
+          <GsMoneyInput
+            label="Số tiền khấu trừ"
+            required
+            value={formAmount}
+            onChange={(val) => setFormAmount(val)}
+            placeholder="Nhập số tiền khấu trừ (VD: 500.000)..."
+            inputClassName="text-rose-600 font-bold"
+          />
+
           {/* Số QĐ & Ngày QĐ */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
                 Số quyết định / Chứng từ
@@ -715,18 +732,15 @@ export function OtherDeductionsSubtab({
                 value={formDecisionNumber}
                 onChange={(e) => setFormDecisionNumber(e.target.value)}
                 placeholder="VD: QĐ-2026/09-01"
-                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full h-[38px] px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xs hover:border-slate-400 dark:hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground font-mono transition-colors"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-                Ngày quyết định
-              </label>
-              <input
-                type="date"
+              <GsDatePicker
+                label="Ngày quyết định"
                 value={formDecisionDate}
-                onChange={(e) => setFormDecisionDate(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                onChange={(d) => setFormDecisionDate(d)}
+                placeholder="dd/mm/yyyy"
               />
             </div>
           </div>

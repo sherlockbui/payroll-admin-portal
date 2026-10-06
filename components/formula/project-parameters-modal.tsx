@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/providers";
 import { Button, Modal } from "@/components/ui";
 import { api } from "@/lib/api";
+import { formatCurrency, formatNumberVN, parseCurrencyInput } from "@/lib/utils";
 import type { ProjectCustomVariable } from "@/lib/types";
 
 interface ProjectParametersModalProps {
@@ -304,15 +305,36 @@ export function ProjectParametersModal({
                 {/* Bottom: Value Input with Unit & Suggestion */}
                 <div className="space-y-1.5 pt-1">
                   <div className="inline-cell-wrap !w-full !max-w-full !min-h-[38px]">
-                    <input
-                      type="number"
-                      step="any"
-                      className="inline-cell-input no-spinner !text-sm"
-                      placeholder="0"
-                      value={draftVal}
-                      onChange={(e) => handleChangeValue(v.code, e.target.value)}
-                    />
-                    {v.unit && <span className="inline-cell-unit !text-xs">{v.unit}</span>}
+                    {v.unit === "VNĐ" || v.unit === "đ" || v.unit === "₫" ? (
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className="inline-cell-input no-spinner !text-sm font-bold font-mono text-primary"
+                        placeholder="0"
+                        value={draftVal !== "" && !isNaN(Number(draftVal)) ? formatNumberVN(draftVal) : draftVal}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (!raw.trim()) {
+                            handleChangeValue(v.code, "");
+                          } else {
+                            const parsed = parseCurrencyInput(raw);
+                            handleChangeValue(v.code, String(parsed));
+                          }
+                        }}
+                      />
+                    ) : (
+                      <input
+                        type="number"
+                        step="any"
+                        className="inline-cell-input no-spinner !text-sm"
+                        placeholder="0"
+                        value={draftVal}
+                        onChange={(e) => handleChangeValue(v.code, e.target.value)}
+                      />
+                    )}
+                    {v.unit && v.unit !== "VNĐ" && v.unit !== "đ" && v.unit !== "₫" && (
+                      <span className="inline-cell-unit !text-xs">{v.unit}</span>
+                    )}
                   </div>
 
                   {v.defaultValue !== undefined && v.defaultValue !== null && draftVal === "" && (
@@ -323,7 +345,7 @@ export function ProjectParametersModal({
                         className="text-primary hover:underline font-sans cursor-pointer text-xs"
                         title={`Gợi ý: ${v.defaultValue}`}
                       >
-                        Gợi ý: {v.defaultValue.toLocaleString("vi-VN")} {v.unit}
+                        Gợi ý: {v.unit === "VNĐ" || v.unit === "đ" || v.unit === "₫" ? formatCurrency(v.defaultValue, v.unit) : `${v.defaultValue.toLocaleString("vi-VN")} ${v.unit || ""}`}
                       </button>
                     </div>
                   )}

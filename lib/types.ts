@@ -498,6 +498,19 @@ export interface DependentDocument {
   uploadedBy?: string;
 }
 
+export interface ProjectEmployeeOption {
+  employeeCode: string;
+  fullName: string;
+  gender?: string;
+  projectId?: number;
+  projectCode?: string;
+  projectName?: string;
+  positionName?: string;
+  taxCode?: string;
+  idNumber?: string;
+  [key: string]: any;
+}
+
 export interface EmployeeSummaryV3 {
   employeeCode: string;
   fullName: string;
@@ -903,6 +916,12 @@ export type InsuranceParticipationStatus = "ALL" | "ACTIVE" | "SUSPENDED" | "STO
 export type SocialInsuranceParticipationStatus = InsuranceParticipationStatus;
 
 export type InsuranceChangeType =
+  | "ACTIVE"
+  | "NEW_HIRE"
+  | "SALARY_ADJUSTMENT"
+  | "MATERNITY"
+  | "UNPAID_LEAVE"
+  | "TERMINATED"
   | "TANG_MOI"
   | "DIEU_CHINH_LUONG"
   | "GIAM_HAN"
@@ -926,24 +945,59 @@ export interface MedicalFacilityItemV3 {
   address?: string;
 }
 
-export interface InsuranceContributionPreview {
-  baseSalary: number;
-  socialInsuranceEmployee: number; // 8%
-  healthInsuranceEmployee: number; // 1.5%
-  unemploymentInsuranceEmployee: number; // 1%
-  totalEmployeeContribution: number; // 10.5%
-  socialInsuranceEmployer: number; // 17.5%
-  healthInsuranceEmployer: number; // 3%
-  unemploymentInsuranceEmployer: number; // 1%
-  totalEmployerContribution: number; // 21.5%
-  totalContribution: number; // 32%
+export interface ImportError {
+  row: number;
+  column?: string;
+  value?: string | null;
+  message: string;
+  errorCode?: string;
 }
 
-export interface CreateInsuranceChangeRequest {
-  projectId?: number;
+export interface InsuranceContributionItem {
+  insuranceTypeId: number;
+  typeCode: string;
+  typeName: string;
+  employeeRate: number;
+  companyRate: number;
+  maxBaseAmount?: number | null;
+  appliedBaseAmount: number;
+  employeeAmount: number;
+  companyAmount: number;
+}
+
+export interface InsuranceContributionPreview {
+  baseSalary: number;
+  effectiveFrom?: string | null;
+  employeeRateTotal?: number;
+  companyRateTotal?: number;
+  employeeAmountTotal?: number;
+  companyAmountTotal?: number;
+  totalAmount?: number;
+  items?: InsuranceContributionItem[];
+  // Legacy / fallback fields
+  socialInsuranceEmployee?: number;
+  healthInsuranceEmployee?: number;
+  unemploymentInsuranceEmployee?: number;
+  totalEmployeeContribution?: number;
+  socialInsuranceEmployer?: number;
+  healthInsuranceEmployer?: number;
+  unemploymentInsuranceEmployer?: number;
+  totalEmployerContribution?: number;
+  totalContribution?: number;
+}
+
+export interface CreateInsurancePeriodRequest {
   employeeCode: string;
-  changeType: string;
-  effectiveFrom: string; // YYYY-MM-DD
+  insuranceBookNumber?: string | null;
+  projectId?: number | null;
+  year?: number | null;
+  month?: number | null;
+  baseSalary?: number | null;
+  changeType?: InsuranceChangeType | null;
+  isParticipating?: boolean | null;
+  note?: string | null;
+  // Backward compatibility fields
+  effectiveFrom?: string;
   newBaseSalary?: number;
   newInsuranceBookNumber?: string;
   newParticipationStatus?: string;
@@ -951,33 +1005,85 @@ export interface CreateInsuranceChangeRequest {
   reason?: string;
   reasonCode?: string;
 }
+export type CreateInsuranceChangeRequest = CreateInsurancePeriodRequest;
 
-export interface ConfirmInsuranceChangeRequest {
-  externalDossierCode: string;
+export interface InsurancePeriodDecisionRequest {
+  note?: string | null;
+  // Backward compatibility fields
+  externalDossierCode?: string;
+}
+export type ConfirmInsuranceChangeRequest = InsurancePeriodDecisionRequest;
+
+export interface InsuranceEmployeeSearchItem {
+  employeeCode: string;
+  employeeName: string;
+  projectId?: number | null;
+  projectName?: string | null;
+  hasInsurance: boolean;
+  insuranceBookNumber?: string | null;
+  baseSalary?: number | null;
+  medicalFacility?: string | null;
+  year?: number | null;
+  month?: number | null;
+}
+
+export interface InsurancePeriodDocument {
+  id: number;
+  periodId: number;
+  documentType?: "LABOR_CONTRACT" | "DECISION" | "MEDICAL_DOCUMENT" | "OTHER" | string | null;
+  fileName?: string | null;
+  filePath?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  createdBy?: number | null;
+  createdAt?: string | null;
+}
+
+export interface InsurancePeriodImportResult {
+  batchId?: number | null;
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  errors?: ImportError[];
 }
 
 export interface InsuranceParticipantItemV3 {
   id?: number;
   employee: EmployeeSummaryV3;
-  insuranceBookNumber?: string;
+  employeeCode?: string;
+  employeeName?: string;
+  projectId?: number | null;
+  projectName?: string | null;
+  insuranceBookNumber?: string | null;
   socialInsuranceNumber?: string;
   insuranceSalary?: number;
   baseSalary?: number;
   contributionSalary?: number;
+  participationDate?: string | null;
+  medicalFacility?: string | null;
+  year?: number | null;
+  month?: number | null;
+  changeType?: string | null;
+  isParticipating?: boolean;
   participationStatus?: InsuranceParticipationStatus;
-  status?: InsuranceParticipationStatus;
+  status?: InsuranceParticipationStatus | string | null;
+  employeeRate?: number;
+  companyRate?: number;
+  employeeAmount?: number;
+  companyAmount?: number;
+  totalAmount?: number;
   medicalFacilityId?: number | null;
   medicalFacilityCode?: string | null;
   medicalFacilityName?: string | null;
   medicalRegistrationPlace?: string | null;
   effectiveFrom?: string | null;
   effectiveMonth?: string | null;
-  employeeContributionRate: number; // 10.5
-  employeeContribution: number;
-  employerContributionRate: number; // 21.5
-  employerContribution: number;
-  totalContributionRate: number; // 32
-  totalContribution: number;
+  employeeContributionRate?: number; // 10.5
+  employeeContribution?: number;
+  employerContributionRate?: number; // 21.5
+  employerContribution?: number;
+  totalContributionRate?: number; // 32
+  totalContribution?: number;
   note?: string | null;
   confirmedBy?: { id?: number; fullName: string; roleName?: string };
   confirmedAt?: string | null;
@@ -987,6 +1093,14 @@ export type SocialInsuranceMemberV3 = InsuranceParticipantItemV3;
 export interface InsuranceChangeItemV3 {
   id: number;
   employee: EmployeeSummaryV3;
+  employeeCode?: string;
+  employeeName?: string;
+  projectId?: number | null;
+  projectName?: string | null;
+  year?: number;
+  month?: number;
+  baseSalary?: number;
+  isParticipating?: boolean;
   changeType: string;
   changeTypeName?: string;
   effectiveFrom?: string;
@@ -1000,16 +1114,19 @@ export interface InsuranceChangeItemV3 {
   oldParticipationStatus?: string | null;
   newParticipationStatus?: string | null;
   medicalFacilityId?: number | null;
+  medicalFacility?: string | null;
   medicalFacilityName?: string | null;
   reason?: string;
   reasonCode?: string | null;
   status: string;
   statusName?: string;
+  note?: string | null;
+  statusNote?: string | null;
   externalDossierCode?: string | null;
   reconciliationCode?: string | null;
   fileName?: string | null;
   filePath?: string | null;
-  documents?: DependentDocument[];
+  documents?: InsurancePeriodDocument[] | DependentDocument[];
   createdAt?: string;
   confirmedAt?: string | null;
   confirmedByName?: string | null;
@@ -1748,6 +1865,97 @@ export interface ActivityLogItem {
   changedBy: string;
   reason?: string;
   createdAt: string;
+}
+
+// --- WebPayroll Employee Policy Overrides DTOs (Spec 3.3.0) ---
+
+export interface EmployeePolicyListSummaryItemDto {
+  policyItemId: number;
+  policyCode: string;
+  policyName: string;
+  policyTypeCode?: string;
+  dataType?: string;
+  value?: number | null;
+  policyValue?: string | null;
+  hasOverride: boolean;
+}
+
+export interface EmployeePolicyListItemDto {
+  employeeCode: string;
+  employeeName: string;
+  policyGroupId?: number | null;
+  policyGroupName?: string | null;
+  basicSalary?: number | null;
+  hasBasicSalaryOverride: boolean;
+  appliedCount: number;
+  totalAllowance: number;
+  effectiveFrom?: string | null;
+  policies: EmployeePolicyListSummaryItemDto[];
+}
+
+export interface EmployeePolicyListResponseData {
+  items: EmployeePolicyListItemDto[];
+  pageIndex: number;
+  pageSize: number;
+  totalRow: number;
+  totalPages: number;
+}
+
+export interface EmployeePolicyDetailItemDto {
+  policyItemId: number;
+  policyCode: string;
+  policyName: string;
+  dataType: string;
+  groupValue?: string | null;
+  employeeValue?: string | null;
+  effectiveValue?: string | null;
+  hasOverride: boolean;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  note?: string | null;
+}
+
+export interface EmployeePolicyDetailDto {
+  employeeCode: string;
+  employeeName: string;
+  policyGroupId?: number | null;
+  policyGroupName?: string | null;
+  basicSalary?: number | null;
+  insuranceSalary?: number | null;
+  policies: EmployeePolicyDetailItemDto[];
+}
+
+export interface SaveEmployeePolicyItemDto {
+  policyItemId: number;
+  value: string;
+  effectiveTo?: string | null;
+  note?: string | null;
+  status?: number;
+}
+
+export interface SaveEmployeePolicyRequest {
+  projectId: number;
+  employeeCode: string;
+  effectiveFrom?: string | null;
+  basicSalary?: number | null;
+  insuranceSalary?: number | null;
+  policies?: SaveEmployeePolicyItemDto[];
+}
+
+export interface ImportPolicyErrorDetail {
+  row: number;
+  column: string;
+  value: string;
+  message: string;
+  errorCode: string;
+}
+
+export interface ImportEmployeePolicyResponse {
+  batchId?: number;
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  errors: ImportPolicyErrorDetail[];
 }
 
 export interface MockDatabase {

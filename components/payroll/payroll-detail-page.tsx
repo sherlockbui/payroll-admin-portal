@@ -30,7 +30,7 @@ import {
 } from "@/components/payroll/payroll-config";
 import { PayrollFullTable } from "@/components/payroll/payroll-full-table";
 import { Badge, Button, Modal, StatusBadge, TablePaginationFooter, UserAvatar } from "@/components/ui";
-import { cn, formatCurrency, formatDate, formatDateTime, formatMonthYear } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, formatDateTime, formatMonthYear, formatNumberVN } from "@/lib/utils";
 
 import {
   usePayrollDetail,
@@ -269,7 +269,7 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
       setPreviewError(null);
       return;
     }
-    const formatted = Number(raw).toLocaleString("vi-VN");
+    const formatted = formatNumberVN(raw);
     setRevenueInput(formatted);
   };
 
@@ -301,7 +301,7 @@ export function PayrollDetailPage({ payrollId }: { payrollId: string }) {
 
   const openActionDialog = (action: WorkflowAction, step?: WorkflowStep) => {
     setActionNote("");
-    const initialRev = step?.stepData?.Revenue ? Number(step.stepData.Revenue).toLocaleString("vi-VN") : "";
+    const initialRev = step?.stepData?.Revenue ? formatNumberVN(step.stepData.Revenue) : "";
     setRevenueInput(initialRev);
     setJustificationInput(step?.justification || "");
     setPreviewData(null);

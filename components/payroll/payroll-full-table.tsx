@@ -189,9 +189,7 @@ export function PayrollFullTable({
   const formatCell = (val: any, col: PayrollMatrixColumn) => {
     if (val == null || val === "") return "—";
     if (col.dataType === "currency") {
-      const num = Number(val);
-      if (num === 0) return "0 ₫";
-      return formatCurrency(num);
+      return formatCurrency(val);
     }
     if (col.dataType === "number") {
       const num = Number(val);

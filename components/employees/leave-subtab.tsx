@@ -28,6 +28,7 @@ import {
   LoadingBlock,
   Modal,
   SearchInput,
+  SearchableSelect,
   TablePaginationFooter,
 } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -618,19 +619,22 @@ export function LeaveSubtab({
             </h4>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground font-medium">Năm:</span>
-              <select
+              <SearchableSelect
+                options={[
+                  { value: "2026", label: "Năm 2026" },
+                  { value: "2025", label: "Năm 2025" },
+                  { value: "2024", label: "Năm 2024" },
+                  { value: "all", label: "Tất cả các năm" },
+                ]}
                 value={historyYear}
-                onChange={(e) => {
-                  setHistoryYear(e.target.value);
+                onChange={(val) => {
+                  setHistoryYear(val);
                   setHistoryPage(1);
                 }}
-                className="select-input text-xs py-1 px-2.5 h-8 rounded-md border border-input bg-background"
-              >
-                <option value="2026">2026</option>
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-                <option value="all">Tất cả các năm</option>
-              </select>
+                allowClear={false}
+                placeholder="Chọn năm"
+                className="w-36"
+              />
             </div>
           </div>
 

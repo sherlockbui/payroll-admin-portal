@@ -37,6 +37,7 @@ import {
   Users,
   WalletCards,
   X,
+  XCircle,
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DecisionDocumentPreviewModal } from "@/components/employees/decision-preview-modal";
@@ -46,6 +47,9 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  GsDatePicker,
+  GsEmployeeSelect,
+  GsMoneyInput,
   LoadingBlock,
   Modal,
   MonthPicker,
@@ -95,16 +99,20 @@ export function InsuranceSubtab({
   // Modals state
   const [declareModalOpen, setDeclareModalOpen] = useState(false);
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState("");
-  const [declareType, setDeclareType] = useState<string>("TANG_MOI");
+  const [declareType, setDeclareType] = useState<string>("NEW_HIRE");
   const [declareEffectiveFrom, setDeclareEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
   const [declareNewSalary, setDeclareNewSalary] = useState<number>(5000000);
   const [declareBookNumber, setDeclareBookNumber] = useState("");
   const [declareMedicalFacilityId, setDeclareMedicalFacilityId] = useState<number | undefined>(undefined);
   const [declareReason, setDeclareReason] = useState("");
 
-  // Reconcile modal (Xác nhận đối soát cơ quan BHXH)
+  // Reconcile modal (Xác nhận đối soát / Duyệt kỳ đóng BHXH)
   const [reconcileChange, setReconcileChange] = useState<InsuranceChangeItemV3 | null>(null);
   const [reconciliationCode, setReconciliationCode] = useState("");
+
+  // Reject modal (Từ chối kỳ đóng BHXH)
+  const [rejectChange, setRejectChange] = useState<InsuranceChangeItemV3 | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
 
   // History modal
   const [historyMember, setHistoryMember] = useState<InsuranceParticipantItemV3 | null>(null);
@@ -212,10 +220,17 @@ export function InsuranceSubtab({
   const changesList = changesResponse?.items ?? [];
   const totalChanges = changesResponse?.total ?? 0;
 
+  // Query: Project Employees for Form Modal
+  const { data: projectEmployees = [], isLoading: isEmployeesLoading } = useQuery({
+    queryKey: ["project-employees-v3", projectId],
+    queryFn: () => api.getProjectEmployeesV3(projectId),
+    enabled: declareModalOpen,
+  });
+
   // Open Declare Modal
   const handleOpenDeclare = () => {
-    setSelectedEmployeeCode(employees[0]?.code || "");
-    setDeclareType("TANG_MOI");
+    setSelectedEmployeeCode("");
+    setDeclareType("NEW_HIRE");
     setDeclareEffectiveFrom(new Date().toISOString().slice(0, 10));
     setDeclareNewSalary(5000000);
     setDeclareBookNumber("");
@@ -227,14 +242,30 @@ export function InsuranceSubtab({
   // Mutation: Create Insurance Change
   const createChangeMutation = useMutation({
     mutationFn: async () => {
+      if (!selectedEmployeeCode) {
+        throw new Error("Vui lòng chọn nhân viên!");
+      }
+      const emp = projectEmployees.find((item) => item.employeeCode === selectedEmployeeCode);
+      const targetProjId = projectId && projectId !== "all" ? Number(projectId) : (emp?.projectId || undefined);
+      
+      const effDate = new Date(declareEffectiveFrom);
+      const year = !isNaN(effDate.getFullYear()) ? effDate.getFullYear() : new Date().getFullYear();
+      const month = !isNaN(effDate.getMonth()) ? effDate.getMonth() + 1 : new Date().getMonth() + 1;
+
       const payload: CreateInsuranceChangeRequest = {
-        projectId: projectId && projectId !== "all" ? Number(projectId) : undefined,
+        projectId: targetProjId,
         employeeCode: selectedEmployeeCode,
         changeType: declareType,
+        year,
+        month,
+        baseSalary: declareNewSalary,
+        isParticipating: declareType !== "TERMINATED" && declareType !== "GIAM_HAN",
         effectiveFrom: declareEffectiveFrom,
         newBaseSalary: declareNewSalary,
+        insuranceBookNumber: declareBookNumber.trim() || undefined,
         newInsuranceBookNumber: declareBookNumber.trim() || undefined,
         newMedicalFacilityId: declareMedicalFacilityId,
+        note: declareReason.trim() || undefined,
         reason: declareReason.trim() || undefined,
       };
       return api.createInsuranceChangeV3(payload);
@@ -250,10 +281,13 @@ export function InsuranceSubtab({
     },
   });
 
-  // Mutation: Confirm Reconcile (Xác nhận đối soát)
+  // Mutation: Confirm Reconcile (Xác nhận đối soát / Duyệt)
   const confirmReconcileMutation = useMutation({
     mutationFn: async ({ id, code }: { id: number; code: string }) => {
-      const payload: ConfirmInsuranceChangeRequest = { externalDossierCode: code };
+      const payload: ConfirmInsuranceChangeRequest = {
+        note: code,
+        externalDossierCode: code,
+      };
       return api.confirmInsuranceChangeV3(id, payload);
     },
     onSuccess: () => {
@@ -261,17 +295,35 @@ export function InsuranceSubtab({
       queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-participants"] });
       setReconcileChange(null);
       setReconciliationCode("");
-      notify("Đã xác nhận đối soát hồ sơ cơ quan BHXH thành công!");
+      notify("Đã xác nhận kỳ đóng BHXH thành công!");
     },
     onError: (err: any) => {
-      notify(err?.message || "Lỗi khi xác nhận đối soát", "error");
+      notify(err?.message || "Lỗi khi xác nhận kỳ đóng BHXH", "error");
+    },
+  });
+
+  // Mutation: Reject Insurance Change (Từ chối)
+  const rejectChangeMutation = useMutation({
+    mutationFn: async ({ id, note }: { id: number; note: string }) => {
+      return api.rejectInsuranceChangeV3(id, { note });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-changes"] });
+      queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-participants"] });
+      setRejectChange(null);
+      setRejectNote("");
+      notify("Đã từ chối kỳ đóng BHXH!");
+    },
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi khi từ chối kỳ đóng BHXH", "error");
     },
   });
 
   // Mutation: Import Excel
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
-      return api.importInsuranceExcelV3(file);
+      const targetProjId = projectId && projectId !== "all" ? Number(projectId) : undefined;
+      return api.importInsuranceExcelV3(file, targetProjId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-participants"] });
@@ -330,7 +382,6 @@ export function InsuranceSubtab({
             variant="secondary"
             size="sm"
             onClick={() => {
-              if (!ensureSpecificProject("import dữ liệu BHXH")) return;
               setImportModalOpen(true);
             }}
             className="gap-1.5 font-medium shrink-0"
@@ -341,7 +392,6 @@ export function InsuranceSubtab({
             variant="primary"
             size="sm"
             onClick={() => {
-              if (!ensureSpecificProject("khai báo biến động BHXH")) return;
               handleOpenDeclare();
             }}
             className="gap-1.5 font-semibold shrink-0"
@@ -359,17 +409,23 @@ export function InsuranceSubtab({
   // Helper Badge Color for Change Type
   const renderChangeTypeBadge = (c: InsuranceChangeItemV3) => {
     const t = (c.changeType || "").toUpperCase();
-    if (t.includes("TANG") || t.includes("INCREASE")) {
+    if (t === "NEW_HIRE" || t.includes("TANG") || t.includes("INCREASE")) {
       return <Badge tone="success">Báo tăng mới</Badge>;
     }
-    if (t.includes("GIAM") || t.includes("DECREASE")) {
+    if (t === "TERMINATED" || t.includes("GIAM") || t.includes("DECREASE")) {
       return <Badge tone="danger">Báo giảm hẳn</Badge>;
     }
-    if (t.includes("LUONG") || t.includes("ADJUST") || t.includes("SALARY")) {
+    if (t === "SALARY_ADJUSTMENT" || t.includes("LUONG") || t.includes("ADJUST") || t.includes("SALARY")) {
       return <Badge tone="info">Điều chỉnh lương</Badge>;
     }
-    if (t.includes("THAI_SAN") || t.includes("OM_DAU")) {
-      return <Badge tone="warning">Nghỉ chế độ</Badge>;
+    if (t === "MATERNITY" || t.includes("THAI_SAN")) {
+      return <Badge tone="warning">Nghỉ thai sản</Badge>;
+    }
+    if (t === "UNPAID_LEAVE" || t.includes("OM_DAU")) {
+      return <Badge tone="warning">Nghỉ không lương</Badge>;
+    }
+    if (t === "ACTIVE") {
+      return <Badge tone="success">Đang tham gia</Badge>;
     }
     return <Badge tone="neutral">{c.changeTypeName || t}</Badge>;
   };
@@ -783,17 +839,30 @@ export function InsuranceSubtab({
                             <td className="text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 {c.status === "PENDING" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setReconcileChange(c);
-                                      setReconciliationCode(c.externalDossierCode || "");
-                                    }}
-                                    className="inline-flex items-center gap-1 h-7 px-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 rounded-md shadow-xs transition-colors cursor-pointer"
-                                    title="Xác nhận đối soát cơ quan BHXH"
-                                  >
-                                    <FileCheck className="w-3.5 h-3.5 text-emerald-600" /> Đối soát
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReconcileChange(c);
+                                        setReconciliationCode(c.note || c.externalDossierCode || "");
+                                      }}
+                                      className="inline-flex items-center gap-1 h-7 px-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 rounded-md shadow-xs transition-colors cursor-pointer"
+                                      title="Xác nhận / Duyệt kỳ đóng BHXH"
+                                    >
+                                      <FileCheck className="w-3.5 h-3.5 text-emerald-600" /> Duyệt
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRejectChange(c);
+                                        setRejectNote("");
+                                      }}
+                                      className="inline-flex items-center gap-1 h-7 px-2 text-[11px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 border border-rose-200 dark:border-rose-800 rounded-md shadow-xs transition-colors cursor-pointer"
+                                      title="Từ chối kỳ đóng BHXH"
+                                    >
+                                      <XCircle className="w-3.5 h-3.5 text-rose-600" /> Từ chối
+                                    </button>
+                                  </>
                                 )}
                                 {(c.fileName || c.filePath) && (
                                   <button
@@ -843,16 +912,24 @@ export function InsuranceSubtab({
         size="md"
         footer={
           <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" onClick={() => setDeclareModalOpen(false)}>
-              Hủy
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeclareModalOpen(false)}
+              className="text-xs"
+            >
+              Hủy bỏ
             </Button>
             <Button
               variant="primary"
+              size="sm"
               loading={createChangeMutation.isPending}
+              disabled={createChangeMutation.isPending || !selectedEmployeeCode}
               onClick={() => createChangeMutation.mutate()}
-              className="gap-1.5"
+              className="text-xs bg-primary hover:bg-primary-hover text-white gap-1.5 font-medium px-4 py-2 cursor-pointer"
             >
-              <Save className="w-4 h-4" /> Lưu hồ sơ biến động
+              <Save className="w-3.5 h-3.5 text-white" />
+              <span className="text-white">Lưu hồ sơ biến động</span>
             </Button>
           </div>
         }
@@ -863,65 +940,58 @@ export function InsuranceSubtab({
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
               Nhân viên <span className="text-rose-500">*</span>
             </label>
-            <select
+            <GsEmployeeSelect
+              employees={projectEmployees}
               value={selectedEmployeeCode}
-              onChange={(e) => setSelectedEmployeeCode(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
-            >
-              {employees.map((emp) => (
-                <option key={emp.code || emp.id} value={emp.code || emp.id}>
-                  {emp.name || (emp as any).fullName || emp.code} ({emp.code || emp.id})
-                </option>
-              ))}
-            </select>
+              onChange={(code) => setSelectedEmployeeCode(code)}
+              placeholder="-- Chọn người lao động --"
+              isLoading={isEmployeesLoading}
+            />
           </div>
 
           {/* Loại biến động & Ngày hiệu lực */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
                 Loại biến động <span className="text-rose-500">*</span>
               </label>
-              <select
+              <SearchableSelect
+                options={[
+                  { value: "NEW_HIRE", label: "Báo tăng mới (Ký HĐLĐ)" },
+                  { value: "SALARY_ADJUSTMENT", label: "Điều chỉnh mức lương đóng" },
+                  { value: "TERMINATED", label: "Báo giảm hẳn (Nghỉ việc)" },
+                  { value: "MATERNITY", label: "Nghỉ thai sản" },
+                  { value: "UNPAID_LEAVE", label: "Nghỉ không hưởng lương / Ốm đau" },
+                  { value: "ACTIVE", label: "Khôi phục / Đang tham gia" },
+                  { value: "THOAI_THU", label: "Thoái thu tiền đóng" },
+                ]}
                 value={declareType}
-                onChange={(e) => setDeclareType(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
-              >
-                <option value="TANG_MOI">Báo tăng mới (Ký HĐLĐ)</option>
-                <option value="DIEU_CHINH_LUONG">Điều chỉnh mức lương đóng</option>
-                <option value="GIAM_HAN">Báo giảm hẳn (Nghỉ việc)</option>
-                <option value="NGHI_THAI_SAN">Nghỉ thai sản</option>
-                <option value="NGHI_OM_DAU">Nghỉ ốm đau dài ngày</option>
-                <option value="THOAI_THU">Thoái thu tiền đóng</option>
-              </select>
+                onChange={(val) => setDeclareType(val)}
+                allowClear={false}
+                searchPlaceholder="Tìm loại biến động..."
+                placeholder="-- Chọn loại biến động --"
+              />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-                Ngày hiệu lực <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="date"
+              <GsDatePicker
+                label="Ngày hiệu lực"
+                required
                 value={declareEffectiveFrom}
-                onChange={(e) => setDeclareEffectiveFrom(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+                onChange={(d) => setDeclareEffectiveFrom(d)}
+                placeholder="dd/mm/yyyy"
               />
             </div>
           </div>
 
           {/* Mức lương đóng BHXH mới */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-              Mức lương đóng BHXH mới (VNĐ) <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="number"
-              step="100000"
-              value={declareNewSalary}
-              onChange={(e) => setDeclareNewSalary(Number(e.target.value))}
-              placeholder="VD: 5000000"
-              className="w-full px-3 py-2 text-xs font-bold text-primary bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
+          <GsMoneyInput
+            label="Mức lương đóng BHXH mới"
+            required
+            value={declareNewSalary}
+            onChange={(val) => setDeclareNewSalary(val)}
+            placeholder="Nhập mức lương đóng BHXH (VD: 5.000.000)..."
+            inputClassName="text-primary font-bold"
+          />
 
           {/* Live Contribution Preview Box */}
           {contributionPreview && (
@@ -929,20 +999,20 @@ export function InsuranceSubtab({
               <div className="font-semibold text-foreground flex items-center justify-between">
                 <span>Dự tính mức trích đóng hàng tháng:</span>
                 <span className="font-mono text-primary font-bold">
-                  {formatCurrency(contributionPreview.totalContribution)} (32%)
+                  {formatCurrency(contributionPreview.totalContribution || contributionPreview.totalAmount || 0)} (32%)
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-muted-foreground pt-1 border-t border-border/50">
                 <div>
                   NLĐ trích (10.5%):{" "}
                   <strong className="text-foreground font-mono">
-                    {formatCurrency(contributionPreview.totalEmployeeContribution)}
+                    {formatCurrency(contributionPreview.totalEmployeeContribution || contributionPreview.employeeAmountTotal || 0)}
                   </strong>
                 </div>
                 <div>
                   DN đóng (21.5%):{" "}
                   <strong className="text-foreground font-mono">
-                    {formatCurrency(contributionPreview.totalEmployerContribution)}
+                    {formatCurrency(contributionPreview.totalEmployerContribution || contributionPreview.companyAmountTotal || 0)}
                   </strong>
                 </div>
               </div>
@@ -967,18 +1037,17 @@ export function InsuranceSubtab({
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
                 Nơi KCB ban đầu
               </label>
-              <select
-                value={declareMedicalFacilityId}
-                onChange={(e) => setDeclareMedicalFacilityId(Number(e.target.value))}
-                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
-              >
-                <option value="">-- Chọn bệnh viện/cơ sở KCB --</option>
-                {medicalFacilities.map((f: MedicalFacilityItemV3) => (
-                  <option key={f.id} value={f.id}>
-                    {f.facilityName} {f.province ? `(${f.province})` : ""}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                items={medicalFacilities}
+                value={declareMedicalFacilityId || ""}
+                onChange={(val) => setDeclareMedicalFacilityId(val ? Number(val) : undefined)}
+                getOptionValue={(f: MedicalFacilityItemV3) => f.id}
+                getOptionLabel={(f: MedicalFacilityItemV3) => `${f.facilityName}${f.province ? ` (${f.province})` : ""}`}
+                getOptionBadge={(f: MedicalFacilityItemV3) => f.facilityCode || ""}
+                allowClear={true}
+                searchPlaceholder="Tìm bệnh viện / cơ sở KCB..."
+                placeholder="-- Chọn bệnh viện/cơ sở KCB --"
+              />
             </div>
           </div>
 
@@ -998,13 +1067,13 @@ export function InsuranceSubtab({
         </div>
       </Modal>
 
-      {/* Modal: Xác nhận đối soát mã hồ sơ BHXH */}
+      {/* Modal: Xác nhận / Duyệt kỳ đóng BHXH */}
       {reconcileChange && (
         <Modal
           open={Boolean(reconcileChange)}
           onOpenChange={(open) => !open && setReconcileChange(null)}
-          title="Xác nhận đối soát hồ sơ cơ quan BHXH"
-          description={`Nhập mã tiếp nhận / biên nhận hồ sơ điện tử trả về từ cơ quan BHXH cho nhân viên ${reconcileChange.employee.fullName}.`}
+          title="Xác nhận kỳ đóng Bảo hiểm xã hội"
+          description={`Xác nhận / duyệt hồ sơ biến động BHXH cho nhân viên ${reconcileChange.employee.fullName}.`}
           size="sm"
           footer={
             <div className="flex items-center justify-end gap-2">
@@ -1015,17 +1084,13 @@ export function InsuranceSubtab({
                 variant="primary"
                 loading={confirmReconcileMutation.isPending}
                 onClick={() => {
-                  if (!reconciliationCode.trim()) {
-                    notify("Vui lòng nhập mã tiếp nhận hồ sơ BHXH", "error");
-                    return;
-                  }
                   confirmReconcileMutation.mutate({
                     id: reconcileChange.id,
                     code: reconciliationCode.trim(),
                   });
                 }}
               >
-                Xác nhận đối soát
+                Xác nhận duyệt
               </Button>
             </div>
           }
@@ -1033,14 +1098,59 @@ export function InsuranceSubtab({
           <div className="space-y-3 py-1">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-                Mã hồ sơ điện tử cơ quan BHXH <span className="text-rose-500">*</span>
+                Ghi chú / Mã đối soát BHXH (tùy chọn)
               </label>
               <input
                 type="text"
                 value={reconciliationCode}
                 onChange={(e) => setReconciliationCode(e.target.value)}
-                placeholder="VD: BHXH-7901-202609-0012"
+                placeholder="VD: Đã duyệt hồ sơ / BHXH-7901-202609-0012"
                 className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 font-mono text-foreground"
+              />
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal: Từ chối kỳ đóng BHXH */}
+      {rejectChange && (
+        <Modal
+          open={Boolean(rejectChange)}
+          onOpenChange={(open) => !open && setRejectChange(null)}
+          title="Từ chối kỳ đóng Bảo hiểm xã hội"
+          description={`Từ chối hồ sơ biến động BHXH của nhân viên ${rejectChange.employee.fullName}.`}
+          size="sm"
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="secondary" onClick={() => setRejectChange(null)}>
+                Hủy
+              </Button>
+              <Button
+                variant="danger"
+                loading={rejectChangeMutation.isPending}
+                onClick={() => {
+                  rejectChangeMutation.mutate({
+                    id: rejectChange.id,
+                    note: rejectNote.trim(),
+                  });
+                }}
+              >
+                Xác nhận từ chối
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3 py-1">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+                Lý do từ chối (tùy chọn)
+              </label>
+              <textarea
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                rows={3}
+                placeholder="Nhập lý do từ chối hồ sơ (vd: Sai mức lương, thiếu tài liệu chứng từ đính kèm...)"
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/30 resize-none text-foreground"
               />
             </div>
           </div>

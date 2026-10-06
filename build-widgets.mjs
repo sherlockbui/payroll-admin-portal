@@ -27,10 +27,28 @@ const widgets = [
     globalName: "PayrollEmployeesWidget",
   },
   {
+    name: "payroll-dependents",
+    entry: path.resolve(__dirname, "src/widgets/dependents/index.ts"),
+    outFile: "payroll-dependents.min.js",
+    globalName: "PayrollDependentsWidget",
+  },
+  {
+    name: "payroll-insurance",
+    entry: path.resolve(__dirname, "src/widgets/insurance/index.ts"),
+    outFile: "payroll-insurance.min.js",
+    globalName: "PayrollInsuranceWidget",
+  },
+  {
     name: "payroll-runs",
     entry: path.resolve(__dirname, "src/widgets/runs/index.ts"),
     outFile: "payroll-runs.min.js",
     globalName: "PayrollRunsWidget",
+  },
+  {
+    name: "payroll-widget",
+    entry: path.resolve(__dirname, "src/widget/index.ts"),
+    outFile: "payroll-widget.min.js",
+    globalName: "PayrollWidget",
   },
 ];
 
@@ -85,7 +103,7 @@ async function buildAll() {
       console.log(`✅ Deployed ${widget.outFile} -> ${dest}`);
     }
   }
-  console.log("\n🎉 All 3 widgets built and deployed successfully!");
+  console.log("\n🎉 All 4 widgets built and deployed successfully to main-timetracking!");
 }
 
 buildAll().catch((err) => {

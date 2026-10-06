@@ -11,8 +11,10 @@ import {
   Palette,
   RotateCcw,
   Sun,
+  UserCheck,
   UserRound,
   Users,
+  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -63,9 +65,12 @@ export function AdminShell({
   };
 
   const isEmployeesPage = pathname.startsWith("/employees");
+  const isDependentsPage = pathname.startsWith("/dependents");
+  const isInsurancePage = pathname.startsWith("/insurance");
   const isPayrollPage = pathname.startsWith("/payroll");
   const isProjectsPage = pathname === "/" || pathname.startsWith("/projects");
-  const hasActivePayrollItem = isProjectsPage || isEmployeesPage || isPayrollPage;
+  const hasActivePayrollItem =
+    isProjectsPage || isEmployeesPage || isDependentsPage || isInsurancePage || isPayrollPage;
 
   return (
     <div className={`admin-layout ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -117,6 +122,26 @@ export function AdminShell({
                   </li>
                   <li>
                     <Link
+                      className={`sidebar-submenu-button ${isDependentsPage ? "is-active" : ""}`}
+                      href="/dependents"
+                      title="Người phụ thuộc"
+                    >
+                      <UserCheck className="w-4 h-4 shrink-0" />
+                      <span className="nav-label">Người phụ thuộc</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      className={`sidebar-submenu-button ${isInsurancePage ? "is-active" : ""}`}
+                      href="/insurance"
+                      title="Bảo hiểm xã hội"
+                    >
+                      <ShieldCheck className="w-4 h-4 shrink-0" />
+                      <span className="nav-label">Bảo hiểm xã hội</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
                       className={`sidebar-submenu-button ${isPayrollPage ? "is-active" : ""}`}
                       href="/payroll"
                       title="Bảng lương"
@@ -149,6 +174,26 @@ export function AdminShell({
               {isPayrollPage ? (
                 <>
                   <Link href="/payroll">Bảng lương</Link>
+                  {detailLabel && (
+                    <>
+                      <ChevronRight />
+                      <span>{detailLabel}</span>
+                    </>
+                  )}
+                </>
+              ) : isInsurancePage ? (
+                <>
+                  <Link href="/insurance">Bảo hiểm xã hội</Link>
+                  {detailLabel && (
+                    <>
+                      <ChevronRight />
+                      <span>{detailLabel}</span>
+                    </>
+                  )}
+                </>
+              ) : isDependentsPage ? (
+                <>
+                  <Link href="/dependents">Người phụ thuộc</Link>
                   {detailLabel && (
                     <>
                       <ChevronRight />

@@ -8,7 +8,7 @@ import { Badge, Button, DatePicker, EmptyState, ErrorState, LoadingBlock, Modal,
 import { api } from "@/lib/api";
 import { type PolicyDefinition, type ProjectEmployeeGroup, type ProjectPolicy, type ProjectPolicyColumn, type ProjectPolicyRow, type TargetRole } from "@/lib/types";
 import { ManageEmployeeGroupsModal } from "@/components/policies/manage-employee-groups-modal";
-import { cn, formatCurrency, formatDate, hideGsLoading, showGsLoading } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, formatNumberVN, hideGsLoading, showGsLoading } from "@/lib/utils";
 
 export function calculateAutoFillValues(
   policyId: string,
@@ -1010,9 +1010,7 @@ function RowCellEditor({
 
 function formatNumberWithDots(val: number | string | undefined | null): string {
   if (val === undefined || val === null || val === "") return "";
-  const num = typeof val === "number" ? val : Number(String(val).replace(/\D/g, ""));
-  if (isNaN(num)) return "";
-  return num.toLocaleString("vi-VN");
+  return formatNumberVN(val);
 }
 
 function PolicyCellRenderer({

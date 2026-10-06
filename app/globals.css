@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../**/*.{js,ts,jsx,tsx}";
 @variant dark (&:where(.dark, .dark *));
 
 :root, :host, .payroll-widget-root {
@@ -33,9 +34,9 @@
   --sidebar: #0e1b2b;
   --sidebar-muted: #8ca0ba;
   --sidebar-active: #163248;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-display: var(--font-sans);
-  --font-mono: var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-body: var(--font-sans);
   --font-heading: var(--font-sans);
   
@@ -64,8 +65,8 @@
   --ring: rgba(15, 139, 103, .22);
   --sidebar: #102621;
   --sidebar-active: #1a463a;
-  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-heading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-heading: "Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --radius: 12px;
   --radius-sm: 8px;
   --radius-lg: 16px;
@@ -82,8 +83,8 @@
   --ring: rgba(49, 52, 58, .18);
   --sidebar: #1e2024;
   --sidebar-active: #36393f;
-  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-heading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-heading: "Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --radius: 4px;
   --radius-sm: 3px;
   --radius-lg: 6px;
@@ -116,7 +117,7 @@
   display: block;
   width: 100%;
   box-sizing: border-box;
-  font-family: inherit !important;
+  font-family: var(--font-sans) !important;
   font-size: 13px;
   line-height: 1.5;
   color: var(--foreground);
@@ -128,7 +129,7 @@
 .payroll-widget-root *::before,
 .payroll-widget-root *::after {
   box-sizing: border-box;
-  font-family: inherit;
+  font-family: var(--font-sans);
 }
 
 .payroll-widget-root h1,
@@ -137,7 +138,7 @@
 .payroll-widget-root h4,
 .payroll-widget-root strong,
 .payroll-widget-root b {
-  font-family: inherit !important;
+  font-family: var(--font-sans) !important;
   color: var(--foreground);
 }
 
@@ -145,7 +146,7 @@
 .payroll-widget-root input,
 .payroll-widget-root select,
 .payroll-widget-root textarea {
-  font-family: inherit !important;
+  font-family: var(--font-sans) !important;
   color: var(--foreground);
 }
 
@@ -153,16 +154,16 @@
 .payroll-widget-root code,
 .payroll-widget-root kbd,
 .payroll-widget-root pre {
-  font-family: inherit !important;
+  font-family: var(--font-mono) !important;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0 !important;
+  letter-spacing: -0.01em;
 }
 
 .payroll-widget-root .font-mono *,
 .payroll-widget-root .font-mono span {
-  font-family: inherit !important;
+  font-family: var(--font-mono) !important;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0 !important;
+  letter-spacing: -0.01em;
 }
 
 @theme inline {
@@ -2948,13 +2949,14 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 /* Searchable Select Combobox (SOP Standard) */
 .searchable-select-wrap {
   position: relative;
-  display: inline-flex;
+  display: flex;
+  width: 100%;
 }
 
 .searchable-select-trigger {
   width: 100%;
-  min-height: 36px;
-  height: 36px;
+  min-height: 38px;
+  height: 38px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -3026,7 +3028,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   left: 0;
   width: 100%;
   min-width: 280px;
-  z-index: 1000;
+  z-index: 99999;
   background: #ffffff;
   border: 1px solid rgba(15, 23, 42, 0.15);
   border-radius: 10px;
@@ -7393,6 +7395,410 @@ input[type="number"].no-spinner,
   color: var(--primary, #038b8c);
   font-weight: 600;
 }
+
+/* =========================================================================
+   GS DATE PICKER STYLES (STANDALONE & ROBUST)
+   ========================================================================= */
+@keyframes gsPopSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.gs-date-picker-group {
+  width: 100%;
+}
+
+.gs-money-input-field {
+  width: 100%;
+  height: 38px;
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  padding: 0 12px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 700;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gs-money-input-field:hover:not(:disabled) {
+  border-color: #94a3b8;
+}
+
+.gs-money-input-field:focus {
+  border-color: var(--primary, #038b8c);
+  box-shadow: 0 0 0 3px rgba(3, 139, 140, 0.18);
+  outline: none;
+}
+
+.gs-money-input-field:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background-color: #f1f5f9;
+}
+
+.gs-money-input-field.has-error {
+  border-color: #f43f5e;
+}
+
+.gs-money-input-field.has-error:focus {
+  box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18);
+}
+
+.gs-date-input-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.gs-date-input-trigger {
+  width: 100%;
+  height: 38px;
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  padding: 0 32px 0 34px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  user-select: none;
+}
+
+.gs-date-input-trigger:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background-color: #f8fafc;
+}
+
+.gs-date-input-trigger:focus,
+.gs-date-input-trigger.is-open {
+  border-color: var(--primary, #038b8c);
+  box-shadow: 0 0 0 3px rgba(3, 139, 140, 0.18);
+  background-color: #ffffff;
+  outline: none;
+}
+
+.gs-date-input-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background-color: #f1f5f9;
+}
+
+.gs-date-input-trigger.has-error {
+  border-color: #f43f5e;
+}
+
+.gs-date-input-trigger.has-error:focus {
+  box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18);
+}
+
+.gs-date-leading-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: #64748b;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.gs-date-input-wrap:hover .gs-date-leading-icon,
+.gs-date-input-trigger.is-open ~ .gs-date-leading-icon {
+  color: var(--primary, #038b8c);
+}
+
+.gs-date-trailing-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+}
+
+.gs-date-clear-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.gs-date-clear-btn:hover {
+  background-color: #fee2e2;
+  color: #ef4444;
+}
+
+.gs-date-trailing-glyph {
+  color: #94a3b8;
+  opacity: 0.45;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================================================================
+   GS DATE PICKER POPOVER
+   ========================================================================= */
+.gs-date-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 99999;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px -4px rgba(15, 23, 42, 0.16), 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  animation: gsPopSlideDown 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  font-family: inherit;
+  width: 280px;
+  box-sizing: border-box;
+}
+
+.gs-date-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gs-date-nav-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.gs-date-nav-btn:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.gs-date-header-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: 0.15px;
+}
+
+.gs-date-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 8px 8px 4px;
+  gap: 2px;
+  text-align: center;
+}
+
+.gs-date-weekday-cell {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  padding: 3px 0;
+}
+
+.gs-date-weekday-cell.is-weekend {
+  color: #e11d48;
+}
+
+.gs-date-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 4px 8px 8px;
+  gap: 2px;
+}
+
+.gs-date-cell-btn {
+  height: 32px;
+  width: 32px;
+  margin: 0 auto;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  padding: 0;
+}
+
+.gs-date-cell-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.gs-date-cell-btn.is-other-month {
+  color: #94a3b8;
+  opacity: 0.45;
+}
+
+.gs-date-cell-btn.is-today {
+  border-color: var(--primary, #038b8c);
+  color: var(--primary, #038b8c);
+  font-weight: 700;
+  background: rgba(3, 139, 140, 0.08);
+}
+
+.gs-date-cell-btn.is-selected {
+  background: var(--primary, #038b8c) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 6px rgba(3, 139, 140, 0.35);
+}
+
+.gs-date-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.gs-date-quick-today {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary, #038b8c);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.gs-date-quick-today:hover {
+  background: rgba(3, 139, 140, 0.1);
+}
+
+.gs-date-close-btn {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #64748b;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.gs-date-close-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+/* Dark Mode Overrides */
+:root.dark .gs-date-input-trigger,
+.dark .gs-date-input-trigger {
+  border-color: #334155;
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+:root.dark .gs-date-input-trigger:hover:not(:disabled),
+.dark .gs-date-input-trigger:hover:not(:disabled) {
+  border-color: #475569;
+  background-color: #1e293b;
+}
+
+:root.dark .gs-date-popover,
+.dark .gs-date-popover {
+  border-color: #334155;
+  background: #0f172a;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.5);
+}
+
+:root.dark .gs-date-popover-header,
+.dark .gs-date-popover-header {
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border-bottom-color: #334155;
+}
+
+:root.dark .gs-date-header-title,
+.dark .gs-date-header-title {
+  color: #f8fafc;
+}
+
+:root.dark .gs-date-nav-btn,
+.dark .gs-date-nav-btn {
+  color: #94a3b8;
+}
+
+:root.dark .gs-date-nav-btn:hover,
+.dark .gs-date-nav-btn:hover {
+  background: #334155;
+  border-color: #475569;
+  color: #ffffff;
+}
+
+:root.dark .gs-date-cell-btn,
+.dark .gs-date-cell-btn {
+  color: #f1f5f9;
+}
+
+:root.dark .gs-date-cell-btn:hover,
+.dark .gs-date-cell-btn:hover {
+  background: #1e293b;
+  color: #ffffff;
+}
+
+:root.dark .gs-date-popover-footer,
+.dark .gs-date-popover-footer {
+  background: #0f172a;
+  border-top-color: #334155;
+}
+
 
 
 

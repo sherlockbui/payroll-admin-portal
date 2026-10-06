@@ -713,7 +713,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       return;
     }
     const maxOrder = formulas.reduce((max, f) => Math.max(max, f.order || 0), 0);
-    const formulaId = `new-line-${Date.now()}-${uid()}`;
+    const formulaId = `new-line-${Date.now()}-${uid("item")}`;
     const newOrder = maxOrder + 1;
     const defaultText = item.defaultFormulaText
       ? codeExpressionToFriendlyExpression(item.defaultFormulaText, variableNameMap)

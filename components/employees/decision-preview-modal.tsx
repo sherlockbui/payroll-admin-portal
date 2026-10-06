@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Badge, Button, Modal } from "@/components/ui";
-import { formatCurrency, formatDate, formatFullDateVN, formatMonthYear } from "@/lib/utils";
+import { formatCurrency, formatDate, formatFullDateVN, formatMonthYear, readVietnameseMoneyNumber } from "@/lib/utils";
 
 export interface DecisionPreviewData {
   type: "deduction" | "income" | "insurance";
@@ -275,6 +275,11 @@ export function DecisionDocumentPreviewModal({
                       <strong className={`font-mono font-bold ${isDeduction ? "text-danger" : "text-emerald-600 dark:text-emerald-400"}`}>
                         {formatCurrency(data.amount)}
                       </strong>
+                      {data.amount ? (
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 italic block mt-0.5">
+                          (Bằng chữ: {readVietnameseMoneyNumber(data.amount)})
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </div>

@@ -58,4 +58,25 @@ lib/                  Types, API client, formula engine, seed/mock database
 mocks/                MSW browser worker và request handlers
 tests/                Unit, component và API contract tests
 e2e/                  Playwright acceptance tests
+src/widgets/          Entrypoints cho các standalone web component widgets
 ```
+
+## Đóng gói & Triển khai Widget sang Time-Tracking (HRIS)
+
+> **QUY TẮC BẮT BUỘC:** Sau mỗi lần thay đổi logic/giao diện, phải chạy lệnh sau để build và deploy toàn bộ các widget bundle sang `C:\Hris\main-timetracking\UI\Contents\js`:
+
+```bash
+npm run build:widgets
+```
+
+Lệnh này sẽ tự động đóng gói và sao chép 6 widget bundles:
+- `payroll-projects.min.js` (Dùng cho `PayrollProjects.aspx` - Cấu hình Dự án & Chính sách)
+- `payroll-employees.min.js` (Dùng cho `PayrollEmployees.aspx` - Hồ sơ lương & Phụ cấp nhân viên)
+- `payroll-dependents.min.js` (Dùng cho `PayrollDependents.aspx` - Người phụ thuộc & Gia cảnh)
+- `payroll-insurance.min.js` (Dùng cho `PayrollInsurance.aspx` - Bảo hiểm xã hội & D02-LT)
+- `payroll-runs.min.js` (Dùng cho `PayrollRuns.aspx` - Bảng tính lương & Kỳ lương)
+- `payroll-widget.min.js` (Dùng cho `PayrollPortal.aspx` - Cổng Bảng lương All-in-One)
+
+📖 **Xem tài liệu hướng dẫn tích hợp chi tiết:** [Hướng dẫn Tích hợp Bảng lương sang Main Time-Tracking](docs/HUONG_DAN_TICH_HOP_BANG_LUONG_SANG_MAIN_TIMETRACKING.md)
+
+
