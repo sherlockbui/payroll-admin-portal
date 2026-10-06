@@ -14,6 +14,7 @@ import type {
   PreviewRevenueResult,
 } from "./payroll-types";
 
+
 export class PayrollApiError extends Error {
   constructor(
     message: string,
@@ -71,11 +72,27 @@ export const payrollApi = {
     const qs = query.toString() ? `?${query.toString()}` : "";
     return payrollRequest<any>(`/projects${qs}`).then((res) => {
       const raw = res.data;
-      if (Array.isArray(raw)) return raw as ProjectItem[];
-      if (Array.isArray(raw?.items)) return raw.items as ProjectItem[];
-      if (Array.isArray(raw?.data)) return raw.data as ProjectItem[];
-      if (Array.isArray(raw?.rows)) return raw.rows as ProjectItem[];
-      return [] as ProjectItem[];
+      const list: any[] = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.items)
+          ? raw.items
+          : Array.isArray(raw?.data)
+            ? raw.data
+            : Array.isArray(raw?.rows)
+              ? raw.rows
+              : [];
+      return list.map((p) => ({
+        id: p.id ?? p.projectId,
+        projectId: p.projectId ?? p.id,
+        projectCode: p.projectCode ?? "",
+        projectName: p.projectName ?? "",
+        ownerName: p.ownerName ?? null,
+        ownerPhone: p.ownerPhone ?? null,
+        ownerEmail: p.ownerEmail ?? null,
+        totalActiveEmployees: p.totalActiveEmployees ?? 0,
+        payrollCycleStartDate: p.payrollCycleStartDate ?? null,
+        payrollCycleEndDate: p.payrollCycleEndDate ?? null,
+      })) as ProjectItem[];
     });
   },
 
@@ -184,11 +201,23 @@ export const payrollApi = {
     if (!response.ok) {
       throw new PayrollApiError("Không thể tải file Excel", "EXPORT_FAILED", response.status);
     }
+
+    // Prioritize filename from Content-Disposition header returned by Backend
+    let resolvedFilename = filename;
+    const disposition = response.headers.get("content-disposition");
+    if (disposition) {
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+      const serverFilename = match ? decodeURIComponent(match[1] || match[2]) : null;
+      if (serverFilename) {
+        resolvedFilename = serverFilename;
+      }
+    }
+
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename || `BANG_LUONG_KY_${id}.xlsx`;
+    a.download = resolvedFilename || `BANG_LUONG_KY_${id}.xlsx`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);

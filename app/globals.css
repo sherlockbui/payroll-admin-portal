@@ -6267,12 +6267,24 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .payroll-unified-table thead tr.payroll-unified-section-row th.payroll-line-employee-sticky,
 .payroll-unified-table thead th.payroll-line-action-sticky,
 .payroll-unified-table thead tr.payroll-unified-section-row th.payroll-line-action-sticky { z-index: 60; top: 0; height: 98px; min-height: 98px; }
-.payroll-unified-table .payroll-unified-section.section-employee { color: #0f766e; background: color-mix(in srgb, #5eead4 22%, var(--card)); }
+.payroll-unified-table .payroll-unified-section { background: color-mix(in srgb, var(--secondary) 40%, var(--card)); color: var(--foreground); }
+.payroll-unified-table .payroll-unified-section.section-employee,
+.payroll-unified-table .payroll-unified-section.section-info { color: #0f766e; background: color-mix(in srgb, #5eead4 22%, var(--card)); }
+.payroll-unified-table .payroll-unified-section.section-reference { color: #4338ca; background: color-mix(in srgb, #a5b4fc 24%, var(--card)); }
 .payroll-unified-table .payroll-unified-section.section-bank { color: #6d28d9; background: color-mix(in srgb, #c4b5fd 24%, var(--card)); }
 .payroll-unified-table .payroll-unified-section.section-daily,
-.payroll-unified-table .payroll-unified-section.section-attendance { color: #0369a1; background: color-mix(in srgb, #7dd3fc 24%, var(--card)); }
-.payroll-unified-table .payroll-unified-section.section-income { color: #047857; background: color-mix(in srgb, #6ee7b7 24%, var(--card)); }
-.payroll-unified-table .payroll-unified-section.section-deduction { color: #b45309; background: color-mix(in srgb, #fcd34d 24%, var(--card)); }
+.payroll-unified-table .payroll-unified-section.section-daily-timesheet,
+.payroll-unified-table .payroll-unified-section.section-attendance,
+.payroll-unified-table .payroll-unified-section.section-workdays { color: #0369a1; background: color-mix(in srgb, #7dd3fc 24%, var(--card)); }
+.payroll-unified-table .payroll-unified-section.section-income,
+.payroll-unified-table .payroll-unified-section.section-earnings { color: #047857; background: color-mix(in srgb, #6ee7b7 24%, var(--card)); }
+.payroll-unified-table .payroll-unified-section.section-total-income,
+.payroll-unified-table .payroll-unified-section.section-total-earnings { color: #065f46; background: color-mix(in srgb, #34d399 28%, var(--card)); font-weight: 800; }
+.payroll-unified-table .payroll-unified-section.section-deduction,
+.payroll-unified-table .payroll-unified-section.section-deductions { color: #b45309; background: color-mix(in srgb, #fcd34d 24%, var(--card)); }
+.payroll-unified-table .payroll-unified-section.section-total-deduction,
+.payroll-unified-table .payroll-unified-section.section-total-deductions { color: #9a3412; background: color-mix(in srgb, #fb923c 28%, var(--card)); font-weight: 800; }
+.payroll-unified-table .payroll-unified-section.section-net { color: #0f766e; background: color-mix(in srgb, #2dd4bf 32%, var(--card)); font-weight: 850; }
 .payroll-unified-table .payroll-line-group.group-employee { color: #0f766e; background: color-mix(in srgb, #99f6e4 20%, var(--card)); }
 .payroll-unified-table th.payroll-day-col { width: 54px; min-width: 54px; max-width: 54px; padding-inline: 2px; text-align: center; }
 .payroll-unified-table th.payroll-day-col > span, .payroll-unified-table th.payroll-day-col > small { display: block; }
