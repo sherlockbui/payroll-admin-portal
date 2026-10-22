@@ -57,6 +57,7 @@ import {
   SearchableSelect,
   TablePaginationFooter,
 } from "@/components/ui";
+import { InsuranceAdjustmentsSubtab } from "@/components/employees/insurance-adjustments-subtab";
 import { api } from "@/lib/api";
 import type {
   ConfirmInsuranceChangeRequest,
@@ -66,6 +67,7 @@ import type {
   InsuranceChangeStatus,
   InsuranceChangeType,
   InsuranceContributionPreview,
+  InsuranceImportErrorItem,
   InsuranceParticipantItemV3,
   InsuranceParticipationStatus,
   InsurancePeriodHistoryItem,
@@ -86,14 +88,15 @@ export function InsuranceSubtab({
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
-  // Active view: "members" (Sổ BHXH) | "changes" (Biến động D02-LT)
-  const [activeView, setActiveView] = useState<"members" | "changes">("members");
+  // Active view: "members" (Sổ BHXH) | "changes" (Biến động D02-LT) | "adjustments" (Điều chỉnh BHXH & Thẻ BHYT)
+  const [activeView, setActiveView] = useState<"members" | "changes" | "adjustments">("members");
 
   // Filters
   const [periodFilter, setPeriodFilter] = useState<string>(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
+  const [importErrors, setImportErrors] = useState<InsuranceImportErrorItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [memberStatusFilter, setMemberStatusFilter] = useState<string>("ALL");
   const [changeStatusFilter, setChangeStatusFilter] = useState<string>("ALL");
@@ -257,6 +260,19 @@ export function InsuranceSubtab({
   const changesList = changesResponse?.items ?? [];
   const totalChanges = changesResponse?.total ?? 0;
 
+  // Query: Adjustments count for switcher badge
+  const { data: adjustmentsData } = useQuery({
+    queryKey: ["insurance-adjustments-count", projectId, selectedYear, selectedMonth],
+    queryFn: () =>
+      api.getInsuranceAdjustments({
+        projectId: projectId === "all" ? undefined : projectId,
+        year: selectedYear,
+        month: selectedMonth,
+        pageSize: 1,
+      }),
+  });
+  const totalAdjustments = adjustmentsData?.totalCount || adjustmentsData?.total || 0;
+
   // Query: Project Employees for Form Modal
   const { data: projectEmployees = [], isLoading: isEmployeesLoading } = useQuery({
     queryKey: ["project-employees-v3", projectId],
@@ -352,18 +368,41 @@ export function InsuranceSubtab({
     },
   });
 
-  // Mutation: Import Excel
+  // Mutation: Import Excel (2-Sheet transaction support)
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
+      setImportErrors([]);
       const targetProjId = projectId && projectId !== "all" ? Number(projectId) : undefined;
-      return api.importInsuranceExcelV3(file, targetProjId);
+      try {
+        const res = await api.importInsurancePeriodsV3(file, targetProjId);
+        if (res && res.errors && res.errors.length > 0) {
+          setImportErrors(res.errors);
+          throw new Error(`Dữ liệu import có ${res.errors.length} lỗi cần kiểm tra lại.`);
+        }
+        return res;
+      } catch (err: any) {
+        if (err?.data?.errors && Array.isArray(err.data.errors)) {
+          setImportErrors(err.data.errors);
+        } else if (err?.errors && Array.isArray(err.errors)) {
+          setImportErrors(err.errors);
+        }
+        throw err;
+      }
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-participants"] });
       queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-changes"] });
+      queryClient.invalidateQueries({ queryKey: ["insurance-adjustments"] });
+      queryClient.invalidateQueries({ queryKey: ["insurance-adjustments-count"] });
       setImportModalOpen(false);
       setImportFile(null);
-      notify("Nhập dữ liệu BHXH từ Excel thành công!");
+      setImportErrors([]);
+      const successRows = res?.data?.successRows ?? res?.successRows;
+      notify(
+        successRows
+          ? `Import thành công ${successRows} dòng dữ liệu bảo hiểm!`
+          : "Nhập dữ liệu BHXH từ Excel thành công!"
+      );
     },
     onError: (err: any) => {
       notify(err?.message || "Lỗi khi import file Excel", "error");
@@ -402,6 +441,10 @@ export function InsuranceSubtab({
 
   // Sync Header Actions
   useEffect(() => {
+    if (activeView === "adjustments") {
+      // Subtab Điều chỉnh BHXH tự quản lý Header Actions
+      return;
+    }
     if (setHeaderAction) {
       setHeaderAction(
         <div className="flex items-center gap-2">
@@ -529,10 +572,26 @@ export function InsuranceSubtab({
           </span>
           {activeView === "changes" && <span className="tab-indicator" />}
         </button>
+        <button
+          type="button"
+          className={cn("subtab-view-btn", activeView === "adjustments" && "active")}
+          onClick={() => {
+            setActiveView("adjustments");
+            setCurrentPage(1);
+          }}
+        >
+          <RotateCcw />
+          <span>Điều chỉnh BHXH & Thẻ BHYT</span>
+          <span className="ml-1 px-1.5 py-0.5 text-[11px] font-semibold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            {totalAdjustments}
+          </span>
+          {activeView === "adjustments" && <span className="tab-indicator" />}
+        </button>
       </nav>
 
-      {/* Main Integrated Table Card */}
-      <div className="integrated-table-card">
+      {/* Main Content Area */}
+      {activeView !== "adjustments" ? (
+        <div className="integrated-table-card">
         {/* Table Toolbar */}
         <div className="table-card-toolbar">
           <div className="flex items-center justify-between gap-3 w-full">
@@ -880,6 +939,16 @@ export function InsuranceSubtab({
           </div>
         )}
       </div>
+      ) : (
+        <InsuranceAdjustmentsSubtab
+          projectId={projectId}
+          isAccountant={isAccountant}
+          periodFilter={periodFilter}
+          onPeriodChange={setPeriodFilter}
+          setHeaderAction={setHeaderAction}
+          onOpenImport={() => setImportModalOpen(true)}
+        />
+      )}
 
       {/* Modal: Khai báo biến động BHXH D02-LT */}
       <Modal
@@ -1208,7 +1277,7 @@ export function InsuranceSubtab({
         </Modal>
       )}
 
-      {/* ================= Modal: Import Excel Wizard ================= */}
+      {/* ================= Modal: Import Excel Wizard (2-Sheet Transaction) ================= */}
       <Modal
         open={importModalOpen}
         onOpenChange={(open) => {
@@ -1216,19 +1285,20 @@ export function InsuranceSubtab({
           if (!open) {
             setImportFile(null);
             setIsDragging(false);
+            setImportErrors([]);
           }
         }}
-        title="Import Danh sách BHXH từ Excel"
-        description="Tải lên tệp danh sách BHXH hoặc biến động D02-LT theo biểu mẫu chuẩn để cập nhật hàng loạt."
+        title="Import Danh sách & Điều chỉnh BHXH từ Excel"
+        description="Tải lên tệp biểu mẫu chuẩn gồm 2 Sheet (Đóng BHXH định kỳ & Điều chỉnh BHXH) để cập nhật đồng thời."
         size="lg"
       >
         <div className="space-y-4 text-xs">
           {/* Step 1: Download Template */}
           <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between">
             <div>
-              <div className="font-semibold text-slate-800 dark:text-slate-100">1. Tải biểu mẫu Excel chuẩn</div>
+              <div className="font-semibold text-slate-800 dark:text-slate-100">1. Tải biểu mẫu Excel chuẩn (2 Sheet)</div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Sử dụng tệp mẫu để đảm bảo đúng định dạng các cột dữ liệu hồ sơ BHXH.
+                Gồm Sheet <b>DongBHXH</b> (định kỳ) và Sheet <b>DieuChinhBH</b> (kỳ trước, trừ/thối thẻ BHYT).
               </p>
             </div>
             <Button
@@ -1255,20 +1325,25 @@ export function InsuranceSubtab({
               onDrop={(e) => {
                 e.preventDefault();
                 setIsDragging(false);
+                setImportErrors([]);
                 const file = e.dataTransfer.files?.[0];
                 if (file) setImportFile(file);
               }}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                isDragging
                   ? "border-primary bg-primary/5"
                   : importFile
-                    ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
-                    : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                }`}
+                  ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                  : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              }`}
             >
               <input
                 type="file"
                 ref={importFileInputRef}
-                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  setImportFile(e.target.files?.[0] || null);
+                  setImportErrors([]);
+                }}
                 accept=".xlsx,.xls,.csv"
                 className="hidden"
               />
@@ -1285,12 +1360,44 @@ export function InsuranceSubtab({
               ) : (
                 <div>
                   <UploadCloud className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-                  <p className="font-semibold text-slate-700 dark:text-slate-200">Kéo thả tệp Excel vào đây hoặc bấm để chọn</p>
+                  <p className="font-semibold text-slate-700 dark:text-slate-200">
+                    Kéo thả tệp Excel vào đây hoặc bấm để chọn
+                  </p>
                   <p className="text-[11px] text-slate-400 mt-1">Chấp nhận .xlsx, .xls tối đa 10MB</p>
                 </div>
               )}
             </div>
           </div>
+
+          {/* Step 3: Hiển thị bảng lỗi chi tiết khi bị Rollback */}
+          {importErrors.length > 0 && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-xl space-y-2">
+              <div className="flex items-center gap-2 text-rose-800 dark:text-rose-300 font-semibold">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Giao dịch đã được Rollback. Phát hiện {importErrors.length} lỗi cần sửa:</span>
+              </div>
+              <div className="max-h-48 overflow-y-auto border border-rose-200 dark:border-rose-900 rounded-lg">
+                <table className="w-full text-[11px] bg-white dark:bg-slate-900">
+                  <thead className="bg-rose-100/60 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200 sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1 text-center w-14">DÒNG</th>
+                      <th className="px-2 py-1 text-left w-36">VỊ TRÍ / CỘT</th>
+                      <th className="px-2 py-1 text-left">CHI TIẾT LỖI & HƯỚNG DẪN KHẮC PHỤC</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-rose-100 dark:divide-rose-950">
+                    {importErrors.map((err, idx) => (
+                      <tr key={idx} className="hover:bg-rose-50/50">
+                        <td className="px-2 py-1 text-center font-mono font-bold text-rose-700">{err.row}</td>
+                        <td className="px-2 py-1 text-rose-800 dark:text-rose-300 font-medium">{err.column}</td>
+                        <td className="px-2 py-1 text-rose-900 dark:text-rose-200">{err.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2.5">
@@ -1300,6 +1407,7 @@ export function InsuranceSubtab({
               onClick={() => {
                 setImportModalOpen(false);
                 setImportFile(null);
+                setImportErrors([]);
               }}
             >
               Hủy

@@ -80,6 +80,17 @@ import type {
   UpdateStandardWorkdayRequestV3,
   StandardWorkdaySummaryResponse,
   StandardWorkdayListResponse,
+  InsuranceAdjustmentItem,
+  InsuranceAdjustmentType,
+  InsuranceAdjustmentStatus,
+  InsuranceAdjustmentDocumentItem,
+  CreateInsuranceAdjustmentRequest,
+  UpdateInsuranceAdjustmentRequest,
+  ConfirmInsuranceAdjustmentRequest,
+  RejectInsuranceAdjustmentRequest,
+  InsuranceAdjustmentListResponse,
+  InsuranceImportPeriodsResponse,
+  InsuranceImportErrorItem,
   InsuranceParticipantItemV3,
   InsuranceChangeItemV3,
   CreateInsuranceChangeRequest,
@@ -2534,6 +2545,184 @@ export const api = {
     api.confirmInsuranceChangeV3(changeId, { note: payload.reconciliationCode || payload.note }),
   downloadSocialInsuranceImportTemplateV3: () => api.downloadInsuranceImportTemplateV3(),
   importSocialInsuranceExcelV3: (file: File, projectId?: any) => api.importInsuranceExcelV3(file, projectId),
+
+  // ================= 05.1 Điều chỉnh BHXH (WebPayroll - Insurance Adjustments) Methods =================
+  getInsuranceAdjustments: (params?: {
+    projectId?: string | number;
+    year?: number;
+    month?: number;
+    adjustmentType?: InsuranceAdjustmentType | string;
+    status?: InsuranceAdjustmentStatus | string;
+    keyword?: string;
+    pageIndex?: number;
+    pageSize?: number;
+  }): Promise<InsuranceAdjustmentListResponse> => {
+    const pageIndex = Number(params?.pageIndex ?? 1);
+    const pageSize = Number(params?.pageSize ?? 20);
+    const queryObj: Record<string, string> = {
+      pageIndex: String(pageIndex),
+      pageSize: String(pageSize),
+    };
+
+    if (params?.projectId && String(params.projectId) !== "all") {
+      queryObj.projectId = String(params.projectId);
+    }
+    if (params?.year) {
+      queryObj.year = String(params.year);
+    }
+    if (params?.month) {
+      queryObj.month = String(params.month);
+    }
+    if (params?.adjustmentType && String(params.adjustmentType) !== "ALL" && String(params.adjustmentType) !== "all") {
+      queryObj.adjustmentType = String(params.adjustmentType);
+    }
+    if (params?.status && String(params.status) !== "ALL" && String(params.status) !== "all") {
+      queryObj.status = String(params.status).toLowerCase();
+    }
+    if (params?.keyword && params.keyword.trim()) {
+      queryObj.keyword = params.keyword.trim();
+    }
+
+    const query = new URLSearchParams(queryObj).toString();
+    return request<any>(`/api/web/payroll/insurance/adjustments?${query}`).then((res) => {
+      const rawData = res.data || res || {};
+      const rawList = Array.isArray(rawData)
+        ? rawData
+        : rawData.items || rawData.Items || rawData.data || rawData.rows || [];
+
+      const items: InsuranceAdjustmentItem[] = rawList.map((item: any, idx: number) => {
+        const empCode = item.employeeCode || item.EmployeeCode || item.code || "";
+        const empName = item.employeeName || item.FullName || item.fullName || item.name || "";
+        const type = (item.adjustmentType || item.AdjustmentType || "PREV_PERIOD_ADJ") as InsuranceAdjustmentType;
+        const st = (item.status || item.Status || "pending").toLowerCase() as InsuranceAdjustmentStatus;
+
+        let typeName = item.adjustmentTypeName || item.AdjustmentTypeName;
+        if (!typeName) {
+          if (type === "PREV_PERIOD_ADJ") typeName = "Điều chỉnh kỳ trước trừ chi phí NLĐ";
+          else if (type === "HI_CARD_DEDUCTION") typeName = "Trừ thẻ BHYT";
+          else if (type === "HI_CARD_REFUND") typeName = "Thối thu lại tiền thẻ cho NLĐ";
+          else typeName = type;
+        }
+
+        let statusName = item.statusName;
+        if (!statusName) {
+          if (st === "confirmed") statusName = "Đã duyệt";
+          else if (st === "rejected") statusName = "Từ chối";
+          else statusName = "Chờ duyệt";
+        }
+
+        return {
+          id: Number(item.id ?? item.Id ?? idx + 1),
+          employeeCode: empCode,
+          employeeName: empName,
+          employee: {
+            employeeCode: empCode,
+            fullName: empName,
+            department: item.departmentName || item.department || "",
+            position: item.position || item.title || "",
+          },
+          projectId: item.projectId ? Number(item.projectId) : null,
+          projectName: item.projectName || "",
+          adjustmentType: type,
+          adjustmentTypeName: typeName,
+          applyYear: Number(item.applyYear ?? item.ApplyYear ?? new Date().getFullYear()),
+          applyMonth: Number(item.applyMonth ?? item.ApplyMonth ?? 1),
+          refYear: item.refYear ?? item.RefYear ?? null,
+          refMonth: item.refMonth ?? item.RefMonth ?? null,
+          amount: Number(item.amount ?? item.Amount ?? 0),
+          status: st,
+          statusName,
+          note: item.note || item.Note || null,
+          statusNote: item.statusNote || item.StatusNote || null,
+          decisionNumber: item.decisionNumber || item.DecisionNumber || null,
+          decisionDate: item.decisionDate || item.DecisionDate || null,
+          importBatchId: item.importBatchId ?? item.ImportBatchId ?? null,
+          documentCount: Number(item.documentCount ?? (item.documents?.length || 0)),
+          documents: item.documents || [],
+          createdAt: item.createdAt || item.CreatedAt || "",
+          createdBy: item.createdBy ? Number(item.createdBy) : null,
+          updatedAt: item.updatedAt || null,
+          updatedBy: item.updatedBy ? Number(item.updatedBy) : null,
+        };
+      });
+
+      const total = Number(rawData.totalCount ?? rawData.totalRow ?? rawData.total ?? rawData.Total ?? items.length);
+      const page = Number(rawData.pageIndex ?? rawData.page ?? rawData.Page ?? pageIndex);
+      const pSize = Number(rawData.pageSize ?? rawData.PageSize ?? pageSize);
+
+      return {
+        items,
+        totalCount: total,
+        total,
+        pageIndex: page,
+        pageSize: pSize,
+        totalPages: Math.ceil(total / pSize) || 1,
+      };
+    });
+  },
+
+  getInsuranceAdjustmentDetail: (id: number | string): Promise<InsuranceAdjustmentItem> =>
+    request<any>(`/api/web/payroll/insurance/adjustments/${id}`).then((res) => res.data || res),
+
+  createInsuranceAdjustment: (payload: CreateInsuranceAdjustmentRequest) =>
+    request<any>("/api/web/payroll/insurance/adjustments", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data || res),
+
+  updateInsuranceAdjustment: (id: number | string, payload: UpdateInsuranceAdjustmentRequest) =>
+    request<any>(`/api/web/payroll/insurance/adjustments/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data || res),
+
+  deleteInsuranceAdjustment: (id: number | string) =>
+    request<any>(`/api/web/payroll/insurance/adjustments/${id}`, {
+      method: "DELETE",
+    }).then((res) => res.data || res),
+
+  confirmInsuranceAdjustment: (id: number | string, payload?: ConfirmInsuranceAdjustmentRequest) =>
+    request<any>(`/api/web/payroll/insurance/adjustments/${id}/confirm`, {
+      method: "POST",
+      body: JSON.stringify(payload || {}),
+    }).then((res) => res.data || res),
+
+  rejectInsuranceAdjustment: (id: number | string, payload: RejectInsuranceAdjustmentRequest) =>
+    request<any>(`/api/web/payroll/insurance/adjustments/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data || res),
+
+  uploadInsuranceAdjustmentDocument: async (
+    id: number | string,
+    file: File,
+    documentType: string = "DECISION"
+  ): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("documentType", documentType);
+    return request<any>(`/api/web/payroll/insurance/adjustments/${id}/documents`, {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data || res);
+  },
+
+  deleteInsuranceAdjustmentDocument: (documentId: number | string) =>
+    request<any>(`/api/web/payroll/insurance/adjustments/documents/${documentId}`, {
+      method: "DELETE",
+    }).then((res) => res.data || res),
+
+  importInsurancePeriodsV3: async (file: File, projectId?: number | string): Promise<InsuranceImportPeriodsResponse> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (projectId && String(projectId) !== "all") {
+      formData.append("projectId", String(projectId));
+    }
+    return request<any>("/api/web/payroll/insurance/import-periods", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data || res);
+  },
 
   // ================= 06. Chế độ phụ cấp (Benefits & Allowances) OpenAPI 3.0 Methods =================
   getBenefitsAllowanceSummaryV3: (projectId?: string | number) => {

@@ -1202,6 +1202,117 @@ export interface InsuranceChangeListResponseV3 {
 }
 export type SocialInsuranceChangeListResponse = InsuranceChangeListResponseV3;
 
+// ================= Insurance Adjustments (Điều chỉnh BHXH) Types =================
+export type InsuranceAdjustmentType = "PREV_PERIOD_ADJ" | "HI_CARD_DEDUCTION" | "HI_CARD_REFUND";
+export type InsuranceAdjustmentStatus = "pending" | "confirmed" | "rejected";
+
+export interface InsuranceAdjustmentDocumentItem {
+  id: number;
+  insuranceAdjustmentId?: number;
+  documentType?: "DECISION" | "MINUTES" | "REPORT" | "OTHER" | string | null;
+  fileName: string;
+  filePath: string;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  createdAt?: string;
+  createdBy?: number | null;
+}
+
+export interface InsuranceAdjustmentItem {
+  id: number;
+  employeeCode: string;
+  employeeName?: string;
+  employee?: {
+    employeeCode: string;
+    fullName: string;
+    department?: string;
+    position?: string;
+  };
+  projectId?: number | null;
+  projectName?: string | null;
+  adjustmentType: InsuranceAdjustmentType;
+  adjustmentTypeName?: string;
+  applyYear: number;
+  applyMonth: number;
+  refYear?: number | null;
+  refMonth?: number | null;
+  amount: number;
+  status: InsuranceAdjustmentStatus;
+  statusName?: string;
+  note?: string | null;
+  statusNote?: string | null;
+  decisionNumber?: string | null;
+  decisionDate?: string | null;
+  importBatchId?: number | null;
+  documentCount?: number;
+  documents?: InsuranceAdjustmentDocumentItem[];
+  createdAt?: string;
+  createdBy?: number | null;
+  updatedAt?: string | null;
+  updatedBy?: number | null;
+}
+
+export interface CreateInsuranceAdjustmentRequest {
+  employeeCode: string;
+  adjustmentType: InsuranceAdjustmentType;
+  projectId?: number | null;
+  applyYear: number;
+  applyMonth: number;
+  refYear?: number | null;
+  refMonth?: number | null;
+  amount: number;
+  note?: string | null;
+  decisionNumber?: string | null;
+  decisionDate?: string | null;
+}
+
+export interface UpdateInsuranceAdjustmentRequest {
+  employeeCode?: string;
+  adjustmentType?: InsuranceAdjustmentType;
+  projectId?: number | null;
+  applyYear?: number;
+  applyMonth?: number;
+  refYear?: number | null;
+  refMonth?: number | null;
+  amount?: number;
+  note?: string | null;
+  decisionNumber?: string | null;
+  decisionDate?: string | null;
+}
+
+export interface ConfirmInsuranceAdjustmentRequest {
+  note?: string;
+}
+
+export interface RejectInsuranceAdjustmentRequest {
+  note: string;
+}
+
+export interface InsuranceAdjustmentListResponse {
+  items: InsuranceAdjustmentItem[];
+  totalCount: number;
+  total?: number;
+  pageIndex: number;
+  pageSize: number;
+  totalPages?: number;
+}
+
+export interface InsuranceImportErrorItem {
+  row: number;
+  column: string;
+  value?: string;
+  message: string;
+  errorCode?: string;
+}
+
+export interface InsuranceImportPeriodsResponse {
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  batchCode?: string;
+  errors?: InsuranceImportErrorItem[];
+}
+
 // ================= OpenAPI 3.0 (06-che-do-phu-cap.yaml) Types =================
 export type BenefitsAllowanceMode = "ALL" | "CUSTOM" | "PROJECT_DEFAULT";
 
