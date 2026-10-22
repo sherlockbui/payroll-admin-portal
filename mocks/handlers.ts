@@ -2408,6 +2408,26 @@ export const handlers = [
     return okV3(emp);
   }),
 
+  // 6. Download Annual Leave Import Template
+  http.get("/api/web/payroll/leave-balance/import-template", async () => {
+    await delay(100);
+    return okV3({
+      templateUrl: "https://example.com/templates/Template_Import_PhepNam.xlsx",
+      fileName: "Template_Import_PhepNam.xlsx",
+    }, "Tải mẫu import phép năm thành công.");
+  }),
+
+  // 7. Import Annual Leave Balance Excel
+  http.post("/api/web/payroll/leave-balance/import", async () => {
+    await delay(250);
+    return okV3({
+      totalRows: 5,
+      successRows: 5,
+      errorRows: 0,
+      errors: [],
+    }, "Import danh sách phép năm thành công.");
+  }),
+
   // ================= 03. Công đoàn phí (Union Dues) OpenAPI 3.0 Handlers =================
   // 1. Union Dues Summary
   http.get("/api/web/payroll/union-dues/summary", async ({ request }) => {
@@ -2952,9 +2972,9 @@ export const handlers = [
       pendingChangesCount,
       counts: [
         { status: "ALL", count: total, label: "Tất cả" },
-        { status: "ACTIVE", count: activeCount, label: "Đang tham gia" },
-        { status: "SUSPENDED", count: suspendedCount, label: "Tạm hoãn" },
-        { status: "STOPPED", count: stoppedCount, label: "Đã báo giảm" },
+        { status: "ACTIVE", count: activeCount, label: "Đang đóng" },
+        { status: "SUSPENDED", count: suspendedCount, label: "Tạm dừng đóng" },
+        { status: "STOPPED", count: stoppedCount, label: "Đã ngừng đóng" },
       ],
     };
     return okV3(summary, "Lấy tổng quan bảo hiểm xã hội thành công.");
@@ -2985,6 +3005,58 @@ export const handlers = [
       errorRows: 0,
       errors: [],
     }, "Import danh sách BHXH thành công.");
+  }),
+
+  http.get("/api/web/payroll/insurance/:id/history", async ({ params }) => {
+    await delay(150);
+    const id = Number(params.id);
+    const database = readMockDatabase();
+    const members = database.socialInsuranceMembersV3 ?? initialSocialInsuranceMembersV3;
+    const member = members.find((m) => m.id === id);
+    const changes = (database.socialInsuranceChangesV3 ?? initialSocialInsuranceChangesV3).filter(
+      (c) => member && c.employee.employeeCode === member.employee.employeeCode
+    );
+
+    const historyItems = changes.map((c, idx) => ({
+      id: c.id,
+      year: c.year || 2026,
+      month: c.month || 8,
+      employeeCode: c.employee.employeeCode,
+      employeeName: c.employee.fullName,
+      projectName: c.projectName || member?.projectName || "Dự án chính",
+      baseSalary: c.newBaseSalary || c.baseSalary || 5000000,
+      type: c.changeType || "ACTIVE",
+      isParticipating: c.isParticipating ?? true,
+      status: c.status || "confirmed",
+      note: c.reason || c.note || "Kỳ đóng chuẩn",
+      statusNote: c.statusNote || null,
+      createdAt: c.createdAt || new Date().toISOString(),
+    }));
+
+    if (historyItems.length === 0 && member) {
+      historyItems.push({
+        id: 1,
+        year: 2026,
+        month: 8,
+        employeeCode: member.employee.employeeCode,
+        employeeName: member.employee.fullName,
+        projectName: member.projectName || "Dự án",
+        baseSalary: member.insuranceSalary || 5000000,
+        type: "ACTIVE",
+        isParticipating: true,
+        status: "confirmed",
+        note: "Khai báo ban đầu",
+        statusNote: null,
+        createdAt: "2026-08-01T08:00:00Z",
+      });
+    }
+
+    return okV3({
+      items: historyItems,
+      totalRow: historyItems.length,
+      pageIndex: 1,
+      pageSize: 20,
+    }, "Lấy lịch sử đóng BHXH thành công.");
   }),
 
   http.get("/api/web/payroll/social-insurance/audit-logs", async () => {

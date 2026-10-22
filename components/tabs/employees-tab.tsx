@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  Award,
   CalendarDays,
   Coins,
   Filter,
@@ -13,6 +14,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { EvaluationsSubtab } from "@/components/employees/evaluations-subtab";
 import { LeaveSubtab } from "@/components/employees/leave-subtab";
 import { OtherDeductionsSubtab } from "@/components/employees/other-deductions-subtab";
 import { OtherIncomesSubtab } from "@/components/employees/other-incomes-subtab";
@@ -29,14 +31,16 @@ type EmployeeSubtab =
   | "workdays"
   | "policies"
   | "deductions"
-  | "incomes";
+  | "incomes"
+  | "evaluations";
 
 const SUBTABS: { id: EmployeeSubtab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "leave", label: "Phép năm", icon: Palmtree },
-  { id: "union", label: "Công đoàn phí", icon: Coins },
+  // { id: "union", label: "Công đoàn phí", icon: Coins },
   { id: "policies", label: "Chế độ & Lương", icon: SlidersHorizontal },
   { id: "deductions", label: "Khoản trừ khác", icon: ReceiptText },
   { id: "incomes", label: "Thu nhập khác", icon: WalletCards },
+  { id: "evaluations", label: "Đánh giá KPI", icon: Award },
 ];
 
 export function EmployeesTab({
@@ -119,13 +123,13 @@ export function EmployeesTab({
             setHeaderAction={setHeaderAction}
           />
         )}
-        {activeSubtab === "union" && (
+        {/* {activeSubtab === "union" && (
           <UnionFeesSubtab
             projectId={effectiveProjectId}
             employees={[]}
             setHeaderAction={setHeaderAction}
           />
-        )}
+        )} */}
         {/* {activeSubtab === "workdays" && (
           <StandardWorkdaysSubtab
             projectId={effectiveProjectId}
@@ -151,6 +155,12 @@ export function EmployeesTab({
           <OtherIncomesSubtab
             projectId={effectiveProjectId}
             employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
+        )}
+        {activeSubtab === "evaluations" && (
+          <EvaluationsSubtab
+            projectId={effectiveProjectId}
             setHeaderAction={setHeaderAction}
           />
         )}

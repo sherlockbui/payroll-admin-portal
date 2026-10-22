@@ -80,13 +80,37 @@ export function Modal({
         <Dialog.Content
           className={`dialog-content dialog-${size}`}
           onWheelCapture={(e) => e.stopPropagation()}
-          onInteractOutside={(e) => {
+          onInteractOutside={(e: any) => {
+            const originalTarget = (e?.detail?.originalEvent?.target || e?.target) as HTMLElement | null;
+            if (
+              originalTarget?.closest?.(
+                ".gs-dash-date-modal, .gs-date-popover, .month-picker-popover, .dropdown-portal-menu, [data-radix-popper-content-wrapper]"
+              )
+            ) {
+              return;
+            }
             e.preventDefault();
           }}
-          onPointerDownOutside={(e) => {
+          onPointerDownOutside={(e: any) => {
+            const originalTarget = (e?.detail?.originalEvent?.target || e?.target) as HTMLElement | null;
+            if (
+              originalTarget?.closest?.(
+                ".gs-dash-date-modal, .gs-date-popover, .month-picker-popover, .dropdown-portal-menu, [data-radix-popper-content-wrapper]"
+              )
+            ) {
+              return;
+            }
             e.preventDefault();
           }}
-          onFocusOutside={(e) => {
+          onFocusOutside={(e: any) => {
+            const originalTarget = (e?.detail?.originalEvent?.target || e?.target) as HTMLElement | null;
+            if (
+              originalTarget?.closest?.(
+                ".gs-dash-date-modal, .gs-date-popover, .month-picker-popover, .dropdown-portal-menu, [data-radix-popper-content-wrapper]"
+              )
+            ) {
+              return;
+            }
             e.preventDefault();
           }}
         >
@@ -573,134 +597,140 @@ export function DatePickerModal({
 
   if (!open) return null;
 
-  const content = (
-    <div
-      className="gs-dash-date-modal open"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onOpenChange(false);
-      }}
-    >
-      <div
-        className="gs-dash-date-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="gs-dash-date-head">
-          <h3 className="gs-dash-date-title">{title}</h3>
-          <button
-            type="button"
-            className="gs-dash-date-close"
-            onClick={() => onOpenChange(false)}
-            aria-label="Đóng"
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal container={targetContainer ?? undefined}>
+        <div
+          className="gs-dash-date-modal open"
+          style={{ zIndex: 999999 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onOpenChange(false);
+          }}
+        >
+          <Dialog.Content
+            className="gs-dash-date-panel"
+            aria-label={title}
+            aria-describedby={undefined}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDownOutside={(e: any) => {
+              const originalTarget = (e?.detail?.originalEvent?.target || e?.target) as HTMLElement | null;
+              if (originalTarget?.classList?.contains("gs-dash-date-modal")) {
+                onOpenChange(false);
+              }
+            }}
           >
-            &times;
-          </button>
-        </div>
-
-        <div className="gs-dash-date-body">
-          <div className="gs-dash-date-fields">
-            <div className="gs-dash-date-box" style={{ gridColumn: "1 / -1" }}>
-              <label htmlFor="gsDashDateModalValue">Ngày đã chọn</label>
-              <input
-                id="gsDashDateModalValue"
-                className="gs-dash-date-value"
-                type="text"
-                readOnly
-                value={draftFormatted}
-              />
+            <Dialog.Title className="sr-only">{title}</Dialog.Title>
+            <div className="gs-dash-date-head">
+              <h3 className="gs-dash-date-title">{title}</h3>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="gs-dash-date-close"
+                  aria-label="Đóng"
+                >
+                  &times;
+                </button>
+              </Dialog.Close>
             </div>
-          </div>
 
-          <div className="gs-dash-calendars">
-            <div className="gs-dash-cal">
-              <div className="gs-dash-cal-nav">
-                <button
-                  type="button"
-                  className="gs-dash-cal-arrow"
-                  onClick={handlePrevMonth}
-                  aria-label="Tháng trước"
-                >
-                  &lsaquo;
-                </button>
-                <div className="gs-dash-cal-title">{monthTitle}</div>
-                <button
-                  type="button"
-                  className="gs-dash-cal-arrow"
-                  onClick={handleNextMonth}
-                  aria-label="Tháng sau"
-                >
-                  &rsaquo;
-                </button>
-              </div>
-
-              <div className="gs-dash-week-head">
-                {weekdays.map((w) => (
-                  <div key={w}>{w}</div>
-                ))}
-              </div>
-
-              <div className="gs-dash-days">
-                {Array.from({ length: firstDayOfWeek }).map((_, idx) => (
-                  <button
-                    key={`blank-${idx}`}
-                    type="button"
-                    className="gs-dash-day blank"
-                    tabIndex={-1}
-                    disabled
+            <div className="gs-dash-date-body">
+              <div className="gs-dash-date-fields">
+                <div className="gs-dash-date-box" style={{ gridColumn: "1 / -1" }}>
+                  <label htmlFor="gsDashDateModalValue">Ngày đã chọn</label>
+                  <input
+                    id="gsDashDateModalValue"
+                    className="gs-dash-date-value"
+                    type="text"
+                    readOnly
+                    value={draftFormatted}
                   />
-                ))}
+                </div>
+              </div>
 
-                {Array.from({ length: daysInMonth }).map((_, idx) => {
-                  const dayNum = idx + 1;
-                  const current = new Date(year, month, dayNum);
-                  const isSelected = isSameDay(current, draftDate);
-
-                  return (
+              <div className="gs-dash-calendars">
+                <div className="gs-dash-cal">
+                  <div className="gs-dash-cal-nav">
                     <button
-                      key={`day-${dayNum}`}
                       type="button"
-                      className={cn(
-                        "gs-dash-day",
-                        isSelected && "is-start is-end in-range"
-                      )}
-                      onClick={() => handleSelectDay(dayNum)}
+                      className="gs-dash-cal-arrow"
+                      onClick={handlePrevMonth}
+                      aria-label="Tháng trước"
                     >
-                      {dayNum}
+                      &lsaquo;
                     </button>
-                  );
-                })}
+                    <div className="gs-dash-cal-title">{monthTitle}</div>
+                    <button
+                      type="button"
+                      className="gs-dash-cal-arrow"
+                      onClick={handleNextMonth}
+                      aria-label="Tháng sau"
+                    >
+                      &rsaquo;
+                    </button>
+                  </div>
+
+                  <div className="gs-dash-week-head">
+                    {weekdays.map((w) => (
+                      <div key={w}>{w}</div>
+                    ))}
+                  </div>
+
+                  <div className="gs-dash-days">
+                    {Array.from({ length: firstDayOfWeek }).map((_, idx) => (
+                      <button
+                        key={`blank-${idx}`}
+                        type="button"
+                        className="gs-dash-day blank"
+                        tabIndex={-1}
+                        disabled
+                      />
+                    ))}
+
+                    {Array.from({ length: daysInMonth }).map((_, idx) => {
+                      const dayNum = idx + 1;
+                      const current = new Date(year, month, dayNum);
+                      const isSelected = isSameDay(current, draftDate);
+
+                      return (
+                        <button
+                          key={`day-${dayNum}`}
+                          type="button"
+                          className={cn(
+                            "gs-dash-day",
+                            isSelected && "is-start is-end in-range"
+                          )}
+                          onClick={() => handleSelectDay(dayNum)}
+                        >
+                          {dayNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <div className="gs-dash-date-actions">
-          <button
-            type="button"
-            className="gs-dash-date-btn reset"
-            onClick={handleToday}
-          >
-            Hôm nay
-          </button>
-          <button
-            type="button"
-            className="gs-dash-date-btn save"
-            onClick={handleSave}
-          >
-            Lưu
-          </button>
+            <div className="gs-dash-date-actions">
+              <button
+                type="button"
+                className="gs-dash-date-btn reset"
+                onClick={handleToday}
+              >
+                Hôm nay
+              </button>
+              <button
+                type="button"
+                className="gs-dash-date-btn save"
+                onClick={handleSave}
+              >
+                Lưu
+              </button>
+            </div>
+          </Dialog.Content>
         </div>
-      </div>
-    </div>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
-
-  if (typeof document !== "undefined" && targetContainer) {
-    return createPortal(content, targetContainer);
-  }
-
-  return content;
 }
 
 export interface MonthPickerProps {
@@ -728,6 +758,10 @@ export function MonthPicker({
 }: MonthPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const portalContainer = usePortalContainer();
 
   // Parse YYYY-MM
   const [parsedYear, parsedMonth] = useMemo(() => {
@@ -745,16 +779,38 @@ export function MonthPicker({
     setViewYear(parsedYear);
   }, [parsedYear]);
 
+  const updatePosition = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const dropdownWidth = 260;
+    const dropdownHeight = 240;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const showAbove = spaceBelow < dropdownHeight && rect.top > dropdownHeight;
+
+    const isRightHalf = rect.left + rect.width / 2 > window.innerWidth / 2;
+    const targetLeft = isRightHalf ? rect.right - dropdownWidth : rect.left;
+    const clampedLeft = Math.max(10, Math.min(targetLeft, window.innerWidth - dropdownWidth - 16));
+
+    setCoords({
+      top: showAbove ? rect.top - dropdownHeight - 6 : rect.bottom + 6,
+      left: clampedLeft,
+    });
+  };
+
   // Click outside to close (with Web Component / Shadow DOM composedPath support)
   useEffect(() => {
     if (!isOpen) return;
 
+    updatePosition();
+
     function handleClickOutside(event: MouseEvent | TouchEvent) {
-      if (!containerRef.current) return;
       const path = (event as any).composedPath ? (event as any).composedPath() : [];
+      const target = event.target as Node;
       const isInside =
-        containerRef.current.contains(event.target as Node) ||
-        (path.length > 0 && path.includes(containerRef.current));
+        (containerRef.current && (containerRef.current.contains(target) || path.includes(containerRef.current))) ||
+        (popoverRef.current && (popoverRef.current.contains(target) || path.includes(popoverRef.current))) ||
+        (triggerRef.current && (triggerRef.current.contains(target) || path.includes(triggerRef.current)));
+
       if (!isInside) {
         setIsOpen(false);
       }
@@ -766,14 +822,31 @@ export function MonthPicker({
       }
     }
 
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
-    document.addEventListener("keydown", handleKeyDown);
+    function handleScroll(e: Event) {
+      const path = (e as any).composedPath ? (e as any).composedPath() : [];
+      const target = e.target as Node;
+      if (popoverRef.current && (path.includes(popoverRef.current) || popoverRef.current.contains(target))) {
+        return;
+      }
+      updatePosition();
+    }
+
+    function handleResize() {
+      updatePosition();
+    }
+
+    document.addEventListener("mousedown", handleClickOutside, true);
+    document.addEventListener("touchstart", handleClickOutside, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", handleResize, true);
 
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside, true);
+      document.removeEventListener("touchstart", handleClickOutside, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", handleResize, true);
     };
   }, [isOpen]);
 
@@ -827,11 +900,15 @@ export function MonthPicker({
       {label && <span className="month-picker-label">{label}</span>}
 
       <button
+        ref={triggerRef}
         type="button"
         className={cn("month-picker-trigger", isOpen && "open")}
         onClick={(e) => {
           e.stopPropagation();
-          if (!disabled) setIsOpen(!isOpen);
+          if (!disabled) {
+            if (!isOpen) updatePosition();
+            setIsOpen(!isOpen);
+          }
         }}
         disabled={disabled}
       >
@@ -842,118 +919,130 @@ export function MonthPicker({
         <ChevronDown className="month-picker-chevron" />
       </button>
 
-      {isOpen && (
-        <div
-          className="month-picker-popover"
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="month-picker-header">
-            <button
-              type="button"
-              className="month-picker-nav-btn"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setViewYear((prev) => prev - 1);
-              }}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setViewYear((prev) => prev - 1);
-              }}
-              title="Năm trước"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="month-picker-year-title">Năm {viewYear}</span>
-            <button
-              type="button"
-              className="month-picker-nav-btn"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setViewYear((prev) => prev + 1);
-              }}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setViewYear((prev) => prev + 1);
-              }}
-              title="Năm sau"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="month-picker-grid">
-            {months.map((mName, idx) => {
-              const monthNum = idx + 1;
-              const isSelected =
-                value !== "all" && Boolean(value) && viewYear === parsedYear && monthNum === parsedMonth;
-              return (
-                <button
-                  key={monthNum}
-                  type="button"
-                  className={cn(
-                    "month-picker-month-btn",
-                    isSelected && "selected"
-                  )}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleSelectMonth(monthNum);
-                  }}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleSelectMonth(monthNum);
-                  }}
-                >
-                  {mName}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="month-picker-footer flex items-center justify-between gap-2">
-            {allowClear ? (
+      {isOpen &&
+        coords &&
+        typeof document !== "undefined" &&
+        portalContainer &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="month-picker-popover"
+            style={{
+              position: "fixed",
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              zIndex: 100050,
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="month-picker-header">
               <button
                 type="button"
-                className="month-picker-today-btn text-muted hover:text-foreground font-normal"
+                className="month-picker-nav-btn"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  handleClear();
+                  setViewYear((prev) => prev - 1);
                 }}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  handleClear();
+                  setViewYear((prev) => prev - 1);
+                }}
+                title="Năm trước"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="month-picker-year-title">Năm {viewYear}</span>
+              <button
+                type="button"
+                className="month-picker-nav-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setViewYear((prev) => prev + 1);
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setViewYear((prev) => prev + 1);
+                }}
+                title="Năm sau"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="month-picker-grid">
+              {months.map((mName, idx) => {
+                const monthNum = idx + 1;
+                const isSelected =
+                  value !== "all" && Boolean(value) && viewYear === parsedYear && monthNum === parsedMonth;
+                return (
+                  <button
+                    key={monthNum}
+                    type="button"
+                    className={cn(
+                      "month-picker-month-btn",
+                      isSelected && "selected"
+                    )}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSelectMonth(monthNum);
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSelectMonth(monthNum);
+                    }}
+                  >
+                    {mName}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="month-picker-footer flex items-center justify-between gap-2">
+              {allowClear ? (
+                <button
+                  type="button"
+                  className="month-picker-today-btn text-muted hover:text-foreground font-normal"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleClear();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleClear();
+                  }}
+                >
+                  {clearLabel}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="month-picker-today-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleCurrentMonth();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleCurrentMonth();
                 }}
               >
-                {clearLabel}
+                Tháng hiện tại
               </button>
-            ) : null}
-            <button
-              type="button"
-              className="month-picker-today-btn"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleCurrentMonth();
-              }}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleCurrentMonth();
-              }}
-            >
-              Tháng hiện tại
-            </button>
-          </div>
-        </div>
-      )}
+            </div>
+          </div>,
+          portalContainer
+        )}
     </div>
   );
 }
@@ -977,7 +1066,7 @@ export function SearchInput({
   ...props
 }: SearchInputProps) {
   return (
-    <div className={cn("relative min-w-[180px] max-w-[300px]", containerClassName)}>
+    <div className={cn("relative min-w-[180px] max-w-[300px] flex items-center", containerClassName)}>
       <Search className="search-icon-fixed text-muted-foreground" />
       <input
         type="text"
@@ -998,7 +1087,8 @@ export function SearchInput({
             onChange("");
             onClear?.();
           }}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+          style={{ transform: "translateY(-50%)" }}
+          className="search-input-clear-btn absolute right-2.5 top-1/2 flex items-center justify-center w-5 h-5 p-0 m-0 border-0 bg-transparent text-muted-foreground hover:text-foreground cursor-pointer rounded transition-colors"
           title="Xóa tìm kiếm"
           aria-label="Xóa tìm kiếm"
         >
@@ -1178,6 +1268,243 @@ export {
   type SearchableSelectProps,
   type GsEmployeeOption,
 } from "@/components/ui/searchable-select";
+
+export interface GsSelectOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  badge?: string;
+}
+
+export interface GsSelectProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: GsSelectOption[];
+  placeholder?: string;
+  className?: string;
+  style?: React.CSSProperties;
+  disabled?: boolean;
+  size?: "default" | "sm";
+  searchable?: boolean;
+  searchPlaceholder?: string;
+}
+
+export function GsSelect({
+  value,
+  onChange,
+  options = [],
+  placeholder = "-- Chọn --",
+  className,
+  style,
+  disabled = false,
+  size = "default",
+  searchable = false,
+  searchPlaceholder = "Tìm kiếm...",
+}: GsSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const portalContainer = usePortalContainer();
+
+  const selectedOption = useMemo(() => {
+    return options.find((opt) => String(opt.value) === String(value)) ?? null;
+  }, [options, value]);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchable || !query.trim()) return options;
+    const q = query.toLowerCase().trim();
+    return options.filter(
+      (opt) =>
+        opt.label.toLowerCase().includes(q) ||
+        String(opt.value).toLowerCase().includes(q) ||
+        (opt.badge && opt.badge.toLowerCase().includes(q))
+    );
+  }, [options, query, searchable]);
+
+  const updatePosition = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const dropdownWidth = Math.max(rect.width, 160);
+    const estimatedHeight = Math.min(options.length * 36 + (searchable ? 48 : 12), 280);
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const showAbove = spaceBelow < estimatedHeight && rect.top > estimatedHeight;
+
+    const isRightHalf = rect.left + rect.width / 2 > window.innerWidth / 2;
+    const targetLeft = isRightHalf ? rect.right - dropdownWidth : rect.left;
+    const clampedLeft = Math.max(10, Math.min(targetLeft, window.innerWidth - dropdownWidth - 16));
+
+    setCoords({
+      top: showAbove ? rect.top - estimatedHeight - 4 : rect.bottom + 4,
+      left: clampedLeft,
+      width: dropdownWidth,
+    });
+  };
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (disabled) return;
+    if (!open) {
+      updatePosition();
+      setQuery("");
+      setOpen(true);
+      if (searchable) {
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+    } else {
+      setOpen(false);
+    }
+  };
+
+  const handleSelect = (optVal: string) => {
+    onChange(optVal);
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      const path = (event as any).composedPath ? (event as any).composedPath() : [];
+      const target = event.target as Node;
+      const isInside =
+        (triggerRef.current && (triggerRef.current.contains(target) || path.includes(triggerRef.current))) ||
+        (popoverRef.current && (popoverRef.current.contains(target) || path.includes(popoverRef.current)));
+
+      if (!isInside) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    function handleScroll(e: Event) {
+      const path = (e as any).composedPath ? (e as any).composedPath() : [];
+      const target = e.target as Node;
+      if (popoverRef.current && (path.includes(popoverRef.current) || popoverRef.current.contains(target))) {
+        return;
+      }
+      updatePosition();
+    }
+
+    document.addEventListener("mousedown", handleClickOutside, true);
+    document.addEventListener("touchstart", handleClickOutside, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", updatePosition, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside, true);
+      document.removeEventListener("touchstart", handleClickOutside, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", updatePosition, true);
+    };
+  }, [open]);
+
+  return (
+    <div style={style} className={cn("relative inline-block w-full", className)}>
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        onClick={handleToggle}
+        className={cn(
+          "w-full flex items-center justify-between gap-2 px-3 text-xs font-semibold rounded-lg transition-all duration-150 cursor-pointer shadow-xs border text-left outline-none",
+          size === "sm" ? "h-8" : "h-[36px]",
+          open
+            ? "border-primary ring-2 ring-primary/20 bg-white dark:bg-slate-900 text-foreground"
+            : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-foreground hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/60",
+          disabled && "opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+        )}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="truncate flex-1 min-w-0">
+          {selectedOption ? selectedOption.label : <span className="text-muted-foreground font-normal">{placeholder}</span>}
+        </span>
+        <ChevronDown
+          className={cn(
+            "w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0 transition-transform duration-200",
+            open && "transform rotate-180 text-primary"
+          )}
+        />
+      </button>
+
+      {open &&
+        coords &&
+        typeof document !== "undefined" &&
+        portalContainer &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            style={{
+              position: "fixed",
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              width: `${coords.width}px`,
+              zIndex: 100050,
+            }}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl p-1 overflow-hidden flex flex-col text-xs"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {searchable && (
+              <div className="p-1.5 border-b border-slate-100 dark:border-slate-800 mb-1">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="w-full h-7 px-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            )}
+
+            <div className="max-h-56 overflow-y-auto space-y-0.5">
+              {filteredOptions.length === 0 ? (
+                <div className="py-3 text-center text-xs text-muted-foreground italic">
+                  Không có lựa chọn phù hợp
+                </div>
+              ) : (
+                filteredOptions.map((opt) => {
+                  const isSelected = String(opt.value) === String(value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={opt.disabled}
+                      onClick={() => !opt.disabled && handleSelect(opt.value)}
+                      className={cn(
+                        "w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer",
+                        isSelected
+                          ? "bg-primary/10 text-primary font-bold"
+                          : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800",
+                        opt.disabled && "opacity-40 cursor-not-allowed hover:bg-transparent"
+                      )}
+                    >
+                      <span className="truncate flex-1 min-w-0">{opt.label}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>,
+          portalContainer
+        )}
+    </div>
+  );
+}
+
 
 
 export interface GsProjectOption {

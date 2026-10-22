@@ -7,6 +7,7 @@ import {
   ChevronDown,
   FolderPlus,
   Layers,
+  Loader2,
   Pencil,
   Plus,
   RotateCcw,
@@ -18,9 +19,10 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/providers";
-import { Badge, Button, LoadingBlock, Modal, TablePaginationFooter } from "@/components/ui";
+import { Badge, Button, LoadingBlock, Modal, TablePaginationFooter, usePortalContainer } from "@/components/ui";
 import { api } from "@/lib/api";
 import { resetMockDatabase } from "@/lib/mock-db";
 import type { Employee, ProjectEmployeeGroup } from "@/lib/types";
@@ -30,6 +32,249 @@ interface ManageEmployeeGroupsModalProps {
   projectId: string;
   isOpen: boolean;
   onClose: () => void;
+}
+
+function RowGroupSelect({
+  currentGroupId,
+  groups,
+  isPending,
+  onChange,
+}: {
+  currentGroupId?: string | null;
+  groups: ProjectEmployeeGroup[];
+  isPending?: boolean;
+  onChange: (groupId: string) => void;
+}) {
+  const portalContainer = usePortalContainer();
+  const isAssigned = Boolean(currentGroupId && currentGroupId !== "0");
+  const currentGroup = groups.find(
+    (g) => String(g.id) === String(currentGroupId) || g.code === currentGroupId
+  );
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild disabled={isPending}>
+        <button
+          type="button"
+          disabled={isPending}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer shadow-2xs hover:shadow-xs outline-none focus:ring-1 focus:ring-primary ${
+            isAssigned
+              ? "bg-primary/10 text-primary border-primary/25 hover:bg-primary/20"
+              : "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20"
+          } ${isPending ? "opacity-50 cursor-not-allowed" : ""}`}
+          title="Nhấp để đổi nhóm cho nhân sự này ngay lập tức"
+        >
+          {isAssigned ? (
+            <Layers className="w-3 h-3 text-primary shrink-0" />
+          ) : (
+            <UserMinus className="w-3 h-3 text-amber-500 shrink-0" />
+          )}
+          <span className="truncate max-w-[110px]">
+            {isAssigned ? currentGroup?.name || "Đã phân nhóm" : "Chưa phân nhóm"}
+          </span>
+          {isPending ? (
+            <Loader2 className="w-3 h-3 animate-spin shrink-0 text-muted" />
+          ) : (
+            <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+          )}
+        </button>
+      </DropdownMenu.Trigger>
+
+      <DropdownMenu.Portal container={portalContainer ?? undefined}>
+        <DropdownMenu.Content
+          align="end"
+          side="bottom"
+          sideOffset={6}
+          className="z-[99999] w-64 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-2xl p-1.5 animate-in fade-in-50 zoom-in-95 duration-100 focus:outline-none"
+        >
+          <div className="px-2.5 py-1.5 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-border/50 mb-1 flex items-center justify-between">
+            <span>Đổi nhóm lao động</span>
+            <span className="font-mono text-muted text-[10px] font-normal">{groups.length} nhóm</span>
+          </div>
+
+          <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-0.5">
+            {/* Option: Chưa phân nhóm */}
+            <DropdownMenu.Item
+              onSelect={() => onChange("0")}
+              className={`w-full px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer outline-none ${
+                !isAssigned
+                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold"
+                  : "hover:bg-amber-500/10 hover:text-amber-600 text-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <UserMinus className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="block truncate font-medium">Chưa phân nhóm</span>
+                </div>
+              </div>
+              {!isAssigned && <Check className="w-3.5 h-3.5 text-amber-500 shrink-0 ml-1.5" />}
+            </DropdownMenu.Item>
+
+            <div className="h-px bg-border/50 my-1" />
+
+            {/* Groups */}
+            {groups.map((g) => {
+              const isSelected = String(g.id) === String(currentGroupId) || g.code === currentGroupId;
+              return (
+                <DropdownMenu.Item
+                  key={g.id}
+                  onSelect={() => onChange(String(g.id))}
+                  className={`w-full px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer outline-none ${
+                    isSelected
+                      ? "bg-primary/10 text-primary font-bold"
+                      : "hover:bg-secondary/80 text-foreground"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <Layers className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="block truncate font-medium">{g.name}</span>
+                      {g.description && (
+                        <span className="block text-[10px] text-muted truncate">{g.description}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-1.5">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-secondary border border-border/50 text-muted">
+                      {g.employeeCount ?? 0} NS
+                    </span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                  </div>
+                </DropdownMenu.Item>
+              );
+            })}
+          </div>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function BulkTargetGroupSelect({
+  selectedGroupId,
+  groups,
+  onSelectGroup,
+}: {
+  selectedGroupId: string;
+  groups: ProjectEmployeeGroup[];
+  onSelectGroup: (groupId: string) => void;
+}) {
+  const portalContainer = usePortalContainer();
+  const selectedGroup = groups.find(
+    (g) => String(g.id) === String(selectedGroupId) || g.code === selectedGroupId
+  );
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          className="h-8 pl-3 pr-2.5 text-xs font-semibold rounded-xl border border-border/80 bg-card hover:bg-secondary/60 text-foreground hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer shadow-2xs flex items-center justify-between gap-2.5 min-w-[220px] max-w-[280px] transition-all"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {selectedGroupId === "0" ? (
+              <>
+                <UserMinus className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span className="truncate text-amber-600 dark:text-amber-400 font-bold">Chưa phân nhóm</span>
+              </>
+            ) : selectedGroup ? (
+              <>
+                <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span className="truncate text-foreground font-bold">{selectedGroup.name}</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+                  {selectedGroup.employeeCount ?? 0} NS
+                </span>
+              </>
+            ) : (
+              <>
+                <Layers className="w-3.5 h-3.5 text-muted shrink-0" />
+                <span className="truncate text-muted font-normal">-- Chọn nhóm đích chuyển vào --</span>
+              </>
+            )}
+          </div>
+          <ChevronDown className="w-3.5 h-3.5 text-muted shrink-0 transition-transform duration-200" />
+        </button>
+      </DropdownMenu.Trigger>
+
+      <DropdownMenu.Portal container={portalContainer ?? undefined}>
+        <DropdownMenu.Content
+          side="top"
+          align="end"
+          sideOffset={8}
+          className="z-[99999] w-72 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-2xl p-1.5 animate-in fade-in-50 zoom-in-95 duration-100 focus:outline-none"
+        >
+          <div className="px-3 py-2 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-border/50 mb-1 flex items-center justify-between">
+            <span>Chọn nhóm đích chuyển vào</span>
+            <span className="font-mono font-normal text-muted">{groups.length} nhóm</span>
+          </div>
+
+          <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-0.5">
+            {/* Option: Chưa phân nhóm */}
+            <DropdownMenu.Item
+              onSelect={() => onSelectGroup("0")}
+              className={`w-full px-2.5 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer outline-none ${
+                selectedGroupId === "0"
+                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold"
+                  : "hover:bg-amber-500/10 hover:text-amber-600 text-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <UserMinus className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="block truncate font-semibold">Chưa phân nhóm</span>
+                  <span className="block text-[10px] text-muted truncate">Hủy phân nhóm của nhân sự</span>
+                </div>
+              </div>
+              {selectedGroupId === "0" && <Check className="w-4 h-4 text-amber-500 shrink-0 ml-2" />}
+            </DropdownMenu.Item>
+
+            <div className="h-px bg-border/50 my-1" />
+
+            {/* List Groups */}
+            {groups.map((g) => {
+              const isSelected = selectedGroupId === String(g.id) || selectedGroupId === g.code;
+              return (
+                <DropdownMenu.Item
+                  key={g.id}
+                  onSelect={() => onSelectGroup(String(g.id))}
+                  className={`w-full px-2.5 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer outline-none ${
+                    isSelected
+                      ? "bg-primary/10 text-primary font-bold"
+                      : "hover:bg-secondary/80 text-foreground"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <Layers className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="block truncate font-semibold">{g.name}</span>
+                      {g.description && (
+                        <span className="block text-[10px] text-muted truncate">{g.description}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-secondary border border-border/50 text-muted">
+                      {g.employeeCount ?? 0} NS
+                    </span>
+                    {isSelected && <Check className="w-4 h-4 text-primary shrink-0" />}
+                  </div>
+                </DropdownMenu.Item>
+              );
+            })}
+          </div>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
 }
 
 export function ManageEmployeeGroupsModal({
@@ -45,33 +290,25 @@ export function ManageEmployeeGroupsModal({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  // Multi-select state for bulk actions
-  const [selectedEmpIds, setSelectedEmpIds] = useState<Set<string>>(new Set());
+  // Multi-select state for bulk actions (retained across searches and pagination)
+  const [selectedEmployees, setSelectedEmployees] = useState<
+    Map<string, { id: string; code: string; name: string }>
+  >(new Map());
   const [bulkTargetGroupId, setBulkTargetGroupId] = useState<string>("");
-  const [isBulkDropdownOpen, setIsBulkDropdownOpen] = useState(false);
-  const bulkDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close bulk dropdown when clicking outside
-  useEffect(() => {
-    if (!isBulkDropdownOpen) return;
-    function handleBulkOutside(e: MouseEvent | TouchEvent) {
-      const path = e.composedPath ? e.composedPath() : [];
-      const target = e.target as Node;
-      if (bulkDropdownRef.current && (path.includes(bulkDropdownRef.current) || bulkDropdownRef.current.contains(target))) {
-        return;
-      }
-      setIsBulkDropdownOpen(false);
-    }
-    document.addEventListener("mousedown", handleBulkOutside, true);
-    document.addEventListener("touchstart", handleBulkOutside, true);
-    return () => {
-      document.removeEventListener("mousedown", handleBulkOutside, true);
-      document.removeEventListener("touchstart", handleBulkOutside, true);
-    };
-  }, [isBulkDropdownOpen]);
+  const [pendingEmpCode, setPendingEmpCode] = useState<string | null>(null);
 
   // Table search
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   // Inline Group Create/Edit Form State (Left Sidebar)
   const [isInlineGroupFormOpen, setIsInlineGroupFormOpen] = useState(false);
@@ -102,14 +339,14 @@ export function ManageEmployeeGroupsModal({
   }, [selectedCategory]);
 
   const employeesQuery = useQuery({
-    queryKey: ["project-employees", projectId, isAssignedParam, groupIdParam, page, pageSize, searchQuery],
+    queryKey: ["project-employees", projectId, isAssignedParam, groupIdParam, page, pageSize, debouncedSearch],
     queryFn: () =>
       api.getProjectEmployees(projectId, {
         pageIndex: page,
         pageSize: pageSize,
         isAssigned: isAssignedParam,
         groupId: groupIdParam,
-        search: searchQuery.trim() || undefined,
+        search: debouncedSearch || undefined,
       }),
     enabled: isOpen && !!projectId,
     placeholderData: (previousData) => previousData,
@@ -198,7 +435,7 @@ export function ManageEmployeeGroupsModal({
       queryClient.invalidateQueries({ queryKey: ["project-employees", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-employees-unassigned-count", projectId] });
       queryClient.invalidateQueries({ queryKey: ["employees", projectId] });
-      setSelectedEmpIds(new Set());
+      setSelectedEmployees(new Map());
       setBulkTargetGroupId("");
 
       if (vars.groupId === "0") {
@@ -216,12 +453,9 @@ export function ManageEmployeeGroupsModal({
     if (
       createGroupMutation.isPending ||
       updateGroupMutation.isPending ||
-      deleteGroupMutation.isPending ||
-      assignMutation.isPending
+      deleteGroupMutation.isPending
     ) {
       showGsLoading("Đang xử lý phân bổ nhóm...");
-    } else if (employeesQuery.isFetching && Boolean(employeesQuery.data)) {
-      showGsLoading("Đang tải danh sách nhân sự...");
     } else {
       hideGsLoading();
     }
@@ -231,9 +465,6 @@ export function ManageEmployeeGroupsModal({
     createGroupMutation.isPending,
     updateGroupMutation.isPending,
     deleteGroupMutation.isPending,
-    assignMutation.isPending,
-    employeesQuery.isFetching,
-    Boolean(employeesQuery.data),
   ]);
 
   // Action Handlers
@@ -277,33 +508,69 @@ export function ManageEmployeeGroupsModal({
     }
   };
 
-  // Bulk Transfer Handler
+  // Bulk Transfer Handler: retains all selected across multiple searches & pages
   const handleExecuteBulkTransfer = () => {
-    if (!bulkTargetGroupId || selectedEmpIds.size === 0) return;
-    const codes = employees
-      .filter((e) => selectedEmpIds.has(e.id) || selectedEmpIds.has(e.code))
-      .map((e) => e.code || e.id);
+    if (!bulkTargetGroupId || selectedEmployees.size === 0) return;
+    const codes = Array.from(selectedEmployees.values()).map((e) => e.code || e.id);
     assignMutation.mutate({
       groupId: bulkTargetGroupId,
-      employeeIds: codes.length > 0 ? codes : Array.from(selectedEmpIds),
+      employeeIds: codes,
     });
   };
 
-  const toggleSelectEmp = (id: string) => {
-    setSelectedEmpIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  const isEmpSelected = (emp: Employee) => {
+    const code = emp.code || emp.id;
+    return selectedEmployees.has(code) || selectedEmployees.has(emp.id);
+  };
+
+  const toggleSelectEmp = (emp: Employee) => {
+    setSelectedEmployees((prev) => {
+      const next = new Map(prev);
+      const key = emp.code || emp.id;
+      if (next.has(key)) {
+        next.delete(key);
+      } else if (next.has(emp.id)) {
+        next.delete(emp.id);
+      } else {
+        next.set(key, { id: emp.id, code: key, name: emp.name });
+      }
       return next;
     });
   };
 
+  const areAllCurrentPageSelected =
+    employees.length > 0 && employees.every((e) => isEmpSelected(e));
+
   const toggleSelectAll = () => {
-    if (selectedEmpIds.size === employees.length && employees.length > 0) {
-      setSelectedEmpIds(new Set());
-    } else {
-      setSelectedEmpIds(new Set(employees.map((e) => e.id)));
-    }
+    setSelectedEmployees((prev) => {
+      const next = new Map(prev);
+      if (areAllCurrentPageSelected) {
+        employees.forEach((e) => {
+          next.delete(e.code || e.id);
+          next.delete(e.id);
+        });
+      } else {
+        employees.forEach((e) => {
+          const key = e.code || e.id;
+          next.set(key, { id: e.id, code: key, name: e.name });
+        });
+      }
+      return next;
+    });
+  };
+
+  // 1-Click Row Group Switcher
+  const handleRowGroupChange = (emp: Employee, targetGroupId: string) => {
+    const code = emp.code || emp.id;
+    setPendingEmpCode(code);
+    assignMutation.mutate(
+      { groupId: targetGroupId, employeeIds: [code] },
+      {
+        onSettled: () => {
+          setPendingEmpCode(null);
+        },
+      }
+    );
   };
 
   const getEmployeeAvatar = (gender?: string) => {
@@ -340,13 +607,13 @@ export function ManageEmployeeGroupsModal({
         onOpenChange={(open) => !open && onClose()}
         title="Quản lý Nhóm người lao động"
         description="Tổ chức danh mục nhóm và điều chuyển phân bổ nhân sự áp dụng chính sách lương phù hợp"
-        size="lg"
+        size="xl"
       >
         <div className="space-y-3.5">
           {groupsQuery.isLoading && !groupsQuery.data ? (
             <LoadingBlock rows={8} />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 min-h-[480px]">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 h-[530px]">
               {/* ================= LEFT COLUMN: DANH MỤC NHÓM (4 Cols) ================= */}
               <aside className="md:col-span-4 flex flex-col h-full rounded-2xl bg-secondary/35 border border-border/70 p-3 overflow-hidden">
                 {/* Header */}
@@ -449,14 +716,13 @@ export function ManageEmployeeGroupsModal({
                       type="button"
                       onClick={() => {
                         setSelectedCategory("all");
-                        setSelectedEmpIds(new Set());
+                        setSelectedEmployees(new Map());
                         setPage(1);
                       }}
-                      className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border ${
-                        selectedCategory === "all"
+                      className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border ${selectedCategory === "all"
                           ? "bg-card border-primary/50 text-primary shadow-xs font-bold"
                           : "bg-transparent border-transparent text-muted hover:bg-card/70 hover:text-foreground"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         <Users className="w-3.5 h-3.5 shrink-0" />
@@ -472,25 +738,23 @@ export function ManageEmployeeGroupsModal({
                       type="button"
                       onClick={() => {
                         setSelectedCategory("unassigned");
-                        setSelectedEmpIds(new Set());
+                        setSelectedEmployees(new Map());
                         setPage(1);
                       }}
-                      className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border ${
-                        selectedCategory === "unassigned"
+                      className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer border ${selectedCategory === "unassigned"
                           ? "bg-card border-primary/50 text-primary shadow-xs font-bold"
                           : "bg-transparent border-transparent text-muted hover:bg-card/70 hover:text-foreground"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         <UserMinus className="w-3.5 h-3.5 shrink-0" />
                         <span>Chưa phân nhóm</span>
                       </div>
                       <span
-                        className={`text-[11px] font-mono px-1.5 py-0.2 rounded-full border ${
-                          totalUnassignedCount > 0
+                        className={`text-[11px] font-mono px-1.5 py-0.2 rounded-full border ${totalUnassignedCount > 0
                             ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 font-bold"
                             : "text-muted border-transparent"
-                        }`}
+                          }`}
                       >
                         {totalUnassignedCount} nhân sự
                       </span>
@@ -515,14 +779,13 @@ export function ManageEmployeeGroupsModal({
                             key={group.id}
                             onClick={() => {
                               setSelectedCategory(group.id);
-                              setSelectedEmpIds(new Set());
+                              setSelectedEmployees(new Map());
                               setPage(1);
                             }}
-                            className={`group/item relative px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${
-                              isSelected
+                            className={`group/item relative px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${isSelected
                                 ? "bg-card border-primary/50 text-foreground shadow-xs"
                                 : "bg-transparent border-transparent hover:bg-card/70 hover:border-border/60 text-muted hover:text-foreground"
-                            }`}
+                              }`}
                           >
                             {isSelected && (
                               <span className="absolute left-0 top-2 bottom-2 w-1 bg-primary rounded-r-full" />
@@ -530,9 +793,8 @@ export function ManageEmployeeGroupsModal({
 
                             <div className="min-w-0 flex-1 pr-1.5">
                               <span
-                                className={`text-xs truncate block ${
-                                   isSelected ? "font-bold text-primary" : "font-semibold text-foreground"
-                                }`}
+                                className={`text-xs truncate block ${isSelected ? "font-bold text-primary" : "font-semibold text-foreground"
+                                  }`}
                               >
                                 {group.name}
                               </span>
@@ -545,11 +807,10 @@ export function ManageEmployeeGroupsModal({
 
                             <div className="flex items-center gap-1 shrink-0">
                               <span
-                                className={`text-[11px] font-mono px-1.5 py-0.5 rounded-full border ${
-                                  isSelected
+                                className={`text-[11px] font-mono px-1.5 py-0.5 rounded-full border ${isSelected
                                     ? "bg-primary/10 text-primary border-primary/25 font-bold"
                                     : "bg-secondary text-muted border-border/50"
-                                }`}
+                                  }`}
                               >
                                 {count} nhân sự
                               </span>
@@ -581,17 +842,17 @@ export function ManageEmployeeGroupsModal({
               </aside>
 
               {/* ================= RIGHT MAIN AREA: BẢNG NHÂN SỰ & ĐIỀU CHUYỂN (8 Cols) ================= */}
-              <main className="md:col-span-8 flex flex-col h-full space-y-3 min-w-0">
+              <main className="md:col-span-8 flex flex-col h-full space-y-2.5 min-w-0 overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center justify-between pb-2.5 border-b border-border/60">
+                <div className="flex items-center justify-between pb-2 border-b border-border/60 shrink-0">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-base text-foreground tracking-tight">
                         {selectedCategory === "all"
                           ? "Tất cả nhân sự dự án"
                           : selectedCategory === "unassigned"
-                          ? "Nhân sự chưa phân nhóm"
-                          : `Nhóm: ${activeGroup?.name || "Danh sách nhân sự"}`}
+                            ? "Nhân sự chưa phân nhóm"
+                            : `Nhóm: ${activeGroup?.name || "Danh sách nhân sự"}`}
                       </h4>
                       <Badge tone={selectedCategory === "unassigned" && totalUnassignedCount > 0 ? "warning" : "info"}>
                         {employeesQuery.data?.totalRow ?? employees.length} nhân sự
@@ -601,8 +862,8 @@ export function ManageEmployeeGroupsModal({
                       {selectedCategory === "all"
                         ? "Xem toàn bộ nhân sự và thay đổi nhóm phân bổ tức thì ở cột Nhóm lao động."
                         : selectedCategory === "unassigned"
-                        ? "Danh sách nhân sự cần được chỉ định vào nhóm để áp dụng chính sách lương tương ứng."
-                        : activeGroup?.description || "Các nhân sự thuộc nhóm này được áp dụng cùng chính sách lương."}
+                          ? "Danh sách nhân sự cần được chỉ định vào nhóm để áp dụng chính sách lương tương ứng."
+                          : activeGroup?.description || "Các nhân sự thuộc nhóm này được áp dụng cùng chính sách lương."}
                     </p>
                   </div>
 
@@ -618,149 +879,68 @@ export function ManageEmployeeGroupsModal({
                   )}
                 </div>
 
-                {/* Toolbar & Search */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <label className="search-field search-field-full flex-1">
-                      <Search />
-                      <input
-                        type="text"
-                        placeholder="Tìm theo tên, mã nhân viên, vị trí, xưởng..."
-                        value={searchQuery}
-                        onChange={(e) => {
-                          setSearchQuery(e.target.value);
+                {/* Toolbar & Search & Selected Counter */}
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <label className="search-field search-field-full flex-1">
+                    <Search />
+                    <input
+                      type="text"
+                      placeholder="Tìm theo tên, mã nhân viên, vị trí, xưởng..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                      }}
+                    />
+                    {employeesQuery.isFetching && !employeesQuery.isLoading && (
+                      <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />
+                    )}
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery("");
+                          setDebouncedSearch("");
                           setPage(1);
                         }}
-                      />
-                      {searchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSearchQuery("");
-                            setPage(1);
-                          }}
-                          className="text-muted hover:text-foreground p-0.5 rounded-full hover:bg-secondary shrink-0"
-                          title="Xóa tìm kiếm"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </label>
-                  </div>
+                        className="text-muted hover:text-foreground p-0.5 rounded-full hover:bg-secondary shrink-0"
+                        title="Xóa tìm kiếm"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </label>
 
-                  {/* PROMINENT BULK ACTION BAR */}
-                  {selectedEmpIds.size > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-2.5 p-2 rounded-xl bg-primary/10 border border-primary/25 shadow-xs animate-in fade-in duration-150">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-primary flex items-center gap-1.5">
-                          <UserCheck className="w-4 h-4" /> Đã chọn {selectedEmpIds.size} nhân sự
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 px-2 text-[11px] text-muted hover:text-foreground"
-                          onClick={() => setSelectedEmpIds(new Set())}
-                        >
-                          Bỏ chọn
-                        </Button>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {/* CUSTOM BULK GROUP DROPDOWN */}
-                        <div className="relative" ref={bulkDropdownRef}>
-                          <button
-                            type="button"
-                            onClick={() => setIsBulkDropdownOpen(!isBulkDropdownOpen)}
-                            className="h-7 pl-2.5 pr-2 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:border-primary/50 focus:outline-none focus:border-primary cursor-pointer shadow-2xs flex items-center justify-between gap-2 min-w-[190px]"
-                          >
-                            <span className="truncate">
-                              {!bulkTargetGroupId
-                                ? "-- Chọn nhóm chuyển vào --"
-                                : `Chuyển vào: ${groupMap.get(bulkTargetGroupId)?.name || "Nhóm"}`}
-                            </span>
-                            <ChevronDown
-                              className={`w-3.5 h-3.5 text-muted shrink-0 transition-transform ${
-                                isBulkDropdownOpen ? "rotate-180" : ""
-                              }`}
-                            />
-                          </button>
-
-                          {isBulkDropdownOpen && (
-                            <div className="absolute right-0 top-full mt-1.5 w-60 rounded-xl border border-border bg-card shadow-xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-                              <div className="px-2 py-1 text-[10px] font-bold text-muted uppercase tracking-wider">
-                                Chọn nhóm đích
-                              </div>
-
-                              <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-0.5">
-                                {groups.map((g) => {
-                                  const isSelected = bulkTargetGroupId === String(g.id) || bulkTargetGroupId === g.code;
-                                  return (
-                                    <button
-                                      key={g.id}
-                                      type="button"
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setBulkTargetGroupId(String(g.id));
-                                        setIsBulkDropdownOpen(false);
-                                      }}
-                                      onClick={() => {
-                                        setBulkTargetGroupId(String(g.id));
-                                        setIsBulkDropdownOpen(false);
-                                      }}
-                                      className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-left flex items-center justify-between transition-colors cursor-pointer ${
-                                        isSelected
-                                          ? "bg-primary/10 text-primary font-bold"
-                                          : "hover:bg-secondary text-foreground"
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
-                                        <span className="truncate">Nhóm: {g.name}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <span className="text-[10px] text-muted font-mono">
-                                          ({g.employeeCount ?? 0})
-                                        </span>
-                                        {isSelected && <Check className="w-3.5 h-3.5 text-primary" />}
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          className="h-7 text-xs font-semibold shadow-2xs gap-1.5"
-                          onClick={handleExecuteBulkTransfer}
-                          disabled={!bulkTargetGroupId || assignMutation.isPending}
-                        >
-                          <ArrowRight className="w-3.5 h-3.5" /> Chuyển nhóm
-                        </Button>
-                      </div>
+                  {selectedEmployees.size > 0 && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-primary/10 text-primary border border-primary/25 text-xs font-semibold shrink-0 animate-in fade-in">
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>{selectedEmployees.size} đã chọn</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmployees(new Map())}
+                        className="p-0.5 ml-0.5 rounded hover:bg-primary/20 text-muted hover:text-foreground transition-colors cursor-pointer"
+                        title="Bỏ chọn tất cả"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </div>
                   )}
                 </div>
 
-                {/* Employees Table */}
+                {/* Employees Table Container (Fixed Flex Height) */}
                 {employeesQuery.isFetching && employees.length === 0 ? (
-                  <div className="py-16 px-4 flex flex-col items-center justify-center text-center rounded-2xl bg-secondary/30 border border-border/70 space-y-2 flex-1">
+                  <div className="py-16 px-4 flex flex-col items-center justify-center text-center rounded-2xl bg-secondary/30 border border-border/70 space-y-2 flex-1 min-h-0">
                     <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
                     <span className="text-xs text-muted font-medium">Đang tải danh sách nhân sự...</span>
                   </div>
                 ) : employees.length === 0 ? (
-                  <div className="py-14 px-4 flex flex-col items-center justify-center text-center rounded-2xl bg-secondary/30 border border-border/70 space-y-2 flex-1">
+                  <div className="py-14 px-4 flex flex-col items-center justify-center text-center rounded-2xl bg-secondary/30 border border-border/70 space-y-2 flex-1 min-h-0">
                     <Users className="w-8 h-8 text-muted mx-auto" />
                     <h5 className="text-xs font-semibold text-foreground text-center">
                       {searchQuery
                         ? "Không tìm thấy nhân sự phù hợp"
                         : selectedCategory === "unassigned"
-                        ? "Tuyệt vời! Toàn bộ nhân sự dự án đã được phân vào nhóm."
-                        : `Chưa có nhân sự nào trong nhóm này.`}
+                          ? "Tuyệt vời! Toàn bộ nhân sự dự án đã được phân vào nhóm."
+                          : `Chưa có nhân sự nào trong nhóm này.`}
                     </h5>
                     <p className="text-[11px] text-muted max-w-md mx-auto text-center leading-relaxed">
                       {selectedCategory === "unassigned"
@@ -769,42 +949,39 @@ export function ManageEmployeeGroupsModal({
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-border/80 bg-card shadow-2xs flex-1 flex flex-col overflow-hidden">
-                    <div className="overflow-y-auto overflow-x-hidden flex-1 max-h-[340px] custom-scrollbar">
+                  <div className="rounded-xl border border-border/80 bg-card shadow-2xs flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 custom-scrollbar">
                       <table className="w-full border-collapse text-left !min-w-0 table-auto">
                         <thead>
-                          <tr className="border-b border-border/60 bg-secondary/40 text-[11px] font-bold text-muted uppercase tracking-wider">
+                          <tr className="border-b border-border/60 bg-secondary/70 backdrop-blur-xs sticky top-0 z-10 text-[11px] font-bold text-muted uppercase tracking-wider">
                             <th className="w-9 px-2.5 py-2 text-center">
                               <input
                                 type="checkbox"
-                                checked={
-                                  employees.length > 0 &&
-                                  selectedEmpIds.size === employees.length
-                                }
+                                checked={areAllCurrentPageSelected}
                                 onChange={toggleSelectAll}
                                 className="w-3.5 h-3.5 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
                               />
                             </th>
                             <th className="px-3 py-2">NHÂN SỰ</th>
-                            <th className="w-44 px-3 py-2 text-right">NHÓM LAO ĐỘNG</th>
+                            <th className="w-48 px-3 py-2 text-right">NHÓM LAO ĐỘNG</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/40">
                           {employees.map((emp) => {
-                            const isSelected = selectedEmpIds.has(emp.id);
+                            const isSelected = isEmpSelected(emp);
+                            const isPending = pendingEmpCode === (emp.code || emp.id);
 
                             return (
                               <tr
                                 key={emp.id}
-                                className={`transition-colors hover:bg-secondary/30 ${
-                                  isSelected ? "bg-primary/5 dark:bg-primary/10" : ""
-                                }`}
+                                className={`transition-colors hover:bg-secondary/30 ${isSelected ? "bg-primary/5 dark:bg-primary/10" : ""
+                                  }`}
                               >
                                 <td className="px-2.5 py-2 text-center">
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
-                                    onChange={() => toggleSelectEmp(emp.id)}
+                                    onChange={() => toggleSelectEmp(emp)}
                                     className="w-3.5 h-3.5 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
                                   />
                                 </td>
@@ -829,15 +1006,12 @@ export function ManageEmployeeGroupsModal({
                                   </div>
                                 </td>
                                 <td className="px-3 py-2 text-right">
-                                  {emp.groupId && emp.groupId !== "0" && groupMap.get(String(emp.groupId)) ? (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20">
-                                      {groupMap.get(String(emp.groupId))?.name}
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
-                                      Chưa phân nhóm
-                                    </span>
-                                  )}
+                                  <RowGroupSelect
+                                    currentGroupId={emp.groupId}
+                                    groups={groups}
+                                    isPending={isPending}
+                                    onChange={(targetGroupId) => handleRowGroupChange(emp, targetGroupId)}
+                                  />
                                 </td>
                               </tr>
                             );
@@ -850,7 +1024,7 @@ export function ManageEmployeeGroupsModal({
 
                 {/* Table Pagination */}
                 {employeesQuery.data && (
-                  <div className="mt-auto pt-1">
+                  <div className="mt-auto pt-1 shrink-0">
                     <TablePaginationFooter
                       totalItems={employeesQuery.data.totalRow}
                       currentPage={page}
@@ -867,25 +1041,68 @@ export function ManageEmployeeGroupsModal({
             </div>
           )}
 
-          {/* Modal Footer */}
+          {/* Modal Footer (Transforms seamlessly into Bulk Transfer Action Bar when items selected) */}
           <div className="flex items-center justify-between pt-3 border-t border-border/60">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-xs text-muted hover:text-foreground gap-1.5"
-              onClick={() => {
-                resetMockDatabase();
-                queryClient.invalidateQueries();
-                notify("Đã làm mới và nạp lại toàn bộ dữ liệu mẫu thành công!");
-              }}
-              title="Khôi phục toàn bộ nhóm và nhân sự mẫu về mặc định"
-            >
-              <RotateCcw className="w-3.5 h-3.5" /> Nạp lại dữ liệu mẫu
-            </Button>
-            <Button variant="secondary" onClick={onClose}>
-              Đóng
-            </Button>
+            {selectedEmployees.size > 0 ? (
+              <div className="flex flex-wrap items-center justify-between w-full gap-2.5 p-2 rounded-xl bg-primary/10 border border-primary/25 shadow-2xs animate-in fade-in duration-150">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4" /> Đã chọn {selectedEmployees.size} nhân sự
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[11px] text-muted hover:text-foreground cursor-pointer"
+                    onClick={() => setSelectedEmployees(new Map())}
+                  >
+                    Bỏ chọn
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <BulkTargetGroupSelect
+                    selectedGroupId={bulkTargetGroupId}
+                    groups={groups}
+                    onSelectGroup={setBulkTargetGroupId}
+                  />
+
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="h-8 text-xs font-semibold shadow-2xs gap-1.5 px-3"
+                    onClick={handleExecuteBulkTransfer}
+                    disabled={!bulkTargetGroupId || assignMutation.isPending}
+                  >
+                    {assignMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    )}
+                    Chuyển {selectedEmployees.size} nhân sự
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted hover:text-foreground gap-1.5"
+                  onClick={() => {
+                    resetMockDatabase();
+                    queryClient.invalidateQueries();
+                    notify("Đã làm mới và nạp lại toàn bộ dữ liệu mẫu thành công!");
+                  }}
+                  title="Khôi phục toàn bộ nhóm và nhân sự mẫu về mặc định"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Nạp lại dữ liệu mẫu
+                </Button>
+                <Button variant="secondary" onClick={onClose}>
+                  Đóng
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </Modal>

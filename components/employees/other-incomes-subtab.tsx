@@ -324,6 +324,7 @@ export function OtherIncomesSubtab({
           >
             <UploadCloud className="w-3.5 h-3.5" /> Import Excel
           </Button>
+          {/* Tam an button Them khoan thu nhap
           <Button
             variant="primary"
             size="sm"
@@ -335,6 +336,7 @@ export function OtherIncomesSubtab({
           >
             <Plus className="w-3.5 h-3.5" /> Thêm khoản thu nhập
           </Button>
+          */}
         </div>
       );
     }
@@ -365,84 +367,6 @@ export function OtherIncomesSubtab({
 
   return (
     <div className="other-incomes-subtab space-y-4">
-      {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Card 1: Tổng số khoản thu nhập */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Tổng số khoản thu nhập
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center">
-              <ReceiptText className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-foreground font-mono">
-              {isListLoading ? "—" : totalItems}
-            </span>
-            <span className="text-xs text-muted-foreground">khoản</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">
-            Trong kỳ {formatMonthYear(periodFilter)}
-          </p>
-        </div>
-
-        {/* Card 2: Tổng tiền thu nhập */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-              Tổng tiền thu nhập
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 font-mono">
-              {isListLoading ? "—" : formatCurrency(totalAmount)}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Cộng trực tiếp vào tiền lương</p>
-        </div>
-
-        {/* Card 3: Thưởng & Đãi ngộ */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-              Thưởng & Đãi ngộ
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <Gift className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400 font-mono">
-              {isListLoading ? "—" : formatCurrency(bonusAmount)}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Thưởng nóng, năng suất, lễ tết</p>
-        </div>
-
-        {/* Card 4: Thu nhập khác */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-              Thu nhập khác
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <Sparkles className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400 font-mono">
-              {isListLoading ? "—" : formatCurrency(otherAmount)}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Hỗ trợ dự án & thu nhập bổ sung</p>
-        </div>
-      </div>
-
       {/* Main Integrated Table Card */}
       <div className="integrated-table-card">
         {/* Table Toolbar */}
@@ -456,43 +380,49 @@ export function OtherIncomesSubtab({
             {/* Right: Filters & Search on a single horizontal line */}
             <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-nowrap shrink-0">
               {/* Month Picker */}
-              <MonthPicker
-                value={periodFilter}
-                onChange={setPeriodFilter}
-                className="w-[155px] sm:w-[165px] shrink-0"
-              />
+              <div style={{ width: "165px", minWidth: "150px", flexShrink: 0 }}>
+                <MonthPicker
+                  value={periodFilter}
+                  onChange={setPeriodFilter}
+                  className="w-full"
+                />
+              </div>
 
               {/* Income Type Select */}
               {incomeTypes.length > 0 && (
-                <SearchableSelect
-                  value={typeFilter}
-                  onChange={(val) => {
-                    setTypeFilter(val || "all");
-                    setCurrentPage(1);
-                  }}
-                  options={[
-                    { value: "all", label: "Tất cả loại thu nhập" },
-                    ...incomeTypes.map((t: OtherIncomeTypeItem) => ({
-                      value: String(t.id),
-                      label: t.incomeName || t.name || t.incomeCode || `Loại #${t.id}`,
-                    })),
-                  ]}
-                  placeholder="Tất cả loại thu nhập"
-                  className="w-[190px] sm:w-[205px] shrink-0"
-                  allowClear={false}
-                />
+                <div style={{ width: "195px", minWidth: "160px", flexShrink: 0 }}>
+                  <SearchableSelect
+                    value={typeFilter}
+                    onChange={(val) => {
+                      setTypeFilter(val || "all");
+                      setCurrentPage(1);
+                    }}
+                    options={[
+                      { value: "all", label: "Tất cả loại thu nhập" },
+                      ...incomeTypes.map((t: OtherIncomeTypeItem) => ({
+                        value: String(t.id),
+                        label: t.incomeName || t.name || t.incomeCode || `Loại #${t.id}`,
+                      })),
+                    ]}
+                    placeholder="Tất cả loại thu nhập"
+                    style={{ width: "100%" }}
+                    allowClear={false}
+                  />
+                </div>
               )}
 
               {/* Search Box */}
-              <SearchInput
-                value={searchTerm}
-                onChange={(val) => {
-                  setSearchTerm(val);
-                  setCurrentPage(1);
-                }}
-                placeholder="Tìm mã NV, tên, số QĐ..."
-                containerClassName="w-[180px] sm:w-[220px] lg:w-[250px] shrink min-w-[140px]"
-              />
+              <div style={{ width: "240px", minWidth: "180px", flexShrink: 1 }}>
+                <SearchInput
+                  value={searchTerm}
+                  onChange={(val) => {
+                    setSearchTerm(val);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Tìm mã NV, tên, số QĐ..."
+                  containerClassName="w-full"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -798,7 +728,7 @@ export function OtherIncomesSubtab({
         footer={
           <div className="flex items-center justify-end gap-2">
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => setDeleteModalOpen(false)}
               className="text-xs"
@@ -806,13 +736,14 @@ export function OtherIncomesSubtab({
               Hủy
             </Button>
             <Button
+              variant="danger"
               size="sm"
+              loading={deleteMutation.isPending}
               onClick={() => targetDeleteRecord && deleteMutation.mutate(targetDeleteRecord.id)}
-              disabled={deleteMutation.isPending}
-              className="text-xs bg-rose-600 hover:bg-rose-700 text-white gap-1.5 !text-white"
+              className="text-xs gap-1.5 font-medium"
             >
-              <Trash2 className="w-3.5 h-3.5 text-white" />
-              <span className="!text-white">{deleteMutation.isPending ? "Đang xóa..." : "Xác nhận xóa"}</span>
+              {!deleteMutation.isPending && <Trash2 className="w-3.5 h-3.5 text-white" />}
+              <span>{deleteMutation.isPending ? "Đang xóa..." : "Xác nhận xóa"}</span>
             </Button>
           </div>
         }
@@ -904,13 +835,12 @@ export function OtherIncomesSubtab({
                 const file = e.dataTransfer.files?.[0];
                 if (file) setImportFile(file);
               }}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                isDragging
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging
                   ? "border-primary bg-primary/5"
                   : importFile
-                  ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
-                  : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
-              }`}
+                    ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                    : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                }`}
             >
               <input
                 type="file"

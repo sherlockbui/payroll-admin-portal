@@ -1069,450 +1069,447 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
 
           {/* Main Workspace Layout Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left Column: Components Library Sidebar (Compact Width, Sticky & Matching Chip Size) */}
-        <aside className="lg:col-span-4 content-card p-3.5 space-y-3.5 lg:sticky lg:top-4 lg:max-h-[calc(100vh-32px)] lg:overflow-y-auto">
-          <div className="flex items-center justify-between pb-2.5 border-b border-border">
-            <strong className="text-xs font-bold text-foreground flex items-center gap-1.5">
-              <Layers className="w-4 h-4 text-primary" /> Thư viện Thành phần Lương
-            </strong>
-          </div>
-
-          {/* Search Filter */}
-          <label className="search-field w-full !max-w-full shrink-0 h-8 min-h-[32px] gap-2 px-2.5">
-            <Search className="w-3.5 h-3.5 text-muted shrink-0" />
-            <input
-              placeholder="Tìm kiếm thành phần lương..."
-              value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
-              className="text-xs"
-            />
-            {filterSearch && (
-              <button
-                type="button"
-                onClick={() => setFilterSearch("")}
-                className="p-0.5 rounded text-muted hover:text-foreground shrink-0"
-                title="Xóa tìm kiếm"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </label>
-
-          {/* Group 1: EARNINGS */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] font-extrabold tracking-wider text-muted uppercase pb-0.5">
-              <span>1. THU NHẬP ({earningsLibrary.length})</span>
-            </div>
-
-            <div className="space-y-1.5">
-              {earningsLibrary.map((item) => {
-                const isAdded = existingOutputCodes.has(item.outputVariable.toUpperCase());
-
-                return (
-                  <div
-                    key={item.id}
-                    draggable={!isAdded}
-                    onDragStart={() => setDraggedItem(item)}
-                    onDragEnd={() => setDraggedItem(null)}
-                    title={item.description}
-                    className={`w-full min-h-[34px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center justify-between gap-2 transition-all group ${
-                      isAdded
-                        ? "bg-secondary/40 border-border/30 text-muted-foreground opacity-50 cursor-not-allowed shadow-none"
-                        : "bg-card border-border/50 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-foreground shadow-2xs cursor-grab active:scale-[0.99]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <GripVertical className="w-3.5 h-3.5 text-muted/60 shrink-0 cursor-grab" />
-                      <span className="truncate py-0.5 leading-normal">{item.name}</span>
-                    </div>
-
-                    {isAdded ? (
-                      <span className="h-6 text-[11px] font-medium text-muted shrink-0 flex items-center">
-                        Đã thêm
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          addComponentToStructure(item);
-                        }}
-                        title={`Thêm "${item.name}" vào cấu trúc`}
-                        className="h-6 w-6 rounded-md text-primary hover:bg-primary-soft flex items-center justify-center transition-colors shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Group 2: DEDUCTIONS */}
-          <div className="space-y-1.5 pt-2.5 border-t border-border">
-            <div className="flex items-center justify-between text-[11px] font-extrabold tracking-wider text-muted uppercase pb-0.5">
-              <span>2. KHẤU TRỪ ({deductionsLibrary.length})</span>
-            </div>
-
-            <div className="space-y-1.5">
-              {deductionsLibrary.map((item) => {
-                const isAdded = existingOutputCodes.has(item.outputVariable.toUpperCase());
-
-                return (
-                  <div
-                    key={item.id}
-                    draggable={!isAdded}
-                    onDragStart={() => setDraggedItem(item)}
-                    onDragEnd={() => setDraggedItem(null)}
-                    title={item.description}
-                    className={`w-full min-h-[34px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center justify-between gap-2 transition-all group ${
-                      isAdded
-                        ? "bg-secondary/40 border-border/30 text-muted-foreground opacity-50 cursor-not-allowed shadow-none"
-                        : "bg-card border-border/50 hover:border-rose-500/50 hover:bg-rose-500/5 text-foreground shadow-2xs cursor-grab active:scale-[0.99]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <GripVertical className="w-3.5 h-3.5 text-muted/60 shrink-0 cursor-grab" />
-                      <span className="truncate py-0.5 leading-normal">{item.name}</span>
-                    </div>
-
-                    {isAdded ? (
-                      <span className="h-6 text-[11px] font-medium text-muted shrink-0 flex items-center">
-                        Đã thêm
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          addComponentToStructure(item);
-                        }}
-                        title={`Thêm "${item.name}" vào cấu trúc`}
-                        className="h-6 w-6 rounded-md text-primary hover:bg-primary-soft flex items-center justify-center transition-colors shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Group 3: PROJECT CUSTOM PARAMETERS */}
-          {customVariables.length > 0 && (
-            <div className="space-y-1.5 pt-2.5 border-t border-border">
-              <div className="flex items-center justify-between text-[11px] font-extrabold tracking-wider text-muted uppercase pb-0.5">
-                <span>3. THAM SỐ DỰ ÁN ({customVariables.length})</span>
-                <button
-                  type="button"
-                  onClick={() => setIsParamsModalOpen(true)}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium text-primary hover:bg-primary/10 transition-colors cursor-pointer"
-                  title="Cấu hình giá trị tham số dự án"
-                >
-                  <SlidersHorizontal className="w-3 h-3" />
-                  <span>Cài đặt</span>
-                </button>
+            {/* Left Column: Components Library Sidebar (Compact Width, Sticky & Matching Chip Size) */}
+            <aside className="lg:col-span-4 content-card p-3.5 space-y-3.5 lg:sticky lg:top-4 lg:max-h-[calc(100vh-32px)] lg:overflow-y-auto">
+              <div className="flex items-center justify-between pb-2.5 border-b border-border">
+                <strong className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-primary" /> Thư viện Thành phần Lương
+                </strong>
               </div>
 
-              <div className="space-y-1.5">
-                {customVariables.map((param) => {
-                  const hasValue = param.value !== null && param.value !== undefined;
+              {/* Search Filter */}
+              <label className="search-field w-full !max-w-full shrink-0 h-8 min-h-[32px] gap-2 px-2.5">
+                <Search className="w-3.5 h-3.5 text-muted shrink-0" />
+                <input
+                  placeholder="Tìm kiếm thành phần lương..."
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  className="text-xs"
+                />
+                {filterSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterSearch("")}
+                    className="p-0.5 rounded text-muted hover:text-foreground shrink-0"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </label>
 
-                  return (
+              {/* Group 1: EARNINGS */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-extrabold tracking-wider text-muted uppercase pb-0.5">
+                  <span>1. THU NHẬP ({earningsLibrary.length})</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {earningsLibrary.map((item) => {
+                    const isAdded = existingOutputCodes.has(item.outputVariable.toUpperCase());
+
+                    return (
+                      <div
+                        key={item.id}
+                        draggable={!isAdded}
+                        onDragStart={() => setDraggedItem(item)}
+                        onDragEnd={() => setDraggedItem(null)}
+                        title={item.description}
+                        className={`w-full min-h-[34px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center justify-between gap-2 transition-all group ${isAdded
+                            ? "bg-secondary/40 border-border/30 text-muted-foreground opacity-50 cursor-not-allowed shadow-none"
+                            : "bg-card border-border/50 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-foreground shadow-2xs cursor-grab active:scale-[0.99]"
+                          }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <GripVertical className="w-3.5 h-3.5 text-muted/60 shrink-0 cursor-grab" />
+                          <span className="truncate py-0.5 leading-normal">{item.name}</span>
+                        </div>
+
+                        {isAdded ? (
+                          <span className="h-6 text-[11px] font-medium text-muted shrink-0 flex items-center">
+                            Đã thêm
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addComponentToStructure(item);
+                            }}
+                            title={`Thêm "${item.name}" vào cấu trúc`}
+                            className="h-6 w-6 rounded-md text-primary hover:bg-primary-soft flex items-center justify-center transition-colors shrink-0"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Group 2: DEDUCTIONS */}
+              <div className="space-y-1.5 pt-2.5 border-t border-border">
+                <div className="flex items-center justify-between text-[11px] font-extrabold tracking-wider text-muted uppercase pb-0.5">
+                  <span>2. KHẤU TRỪ ({deductionsLibrary.length})</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {deductionsLibrary.map((item) => {
+                    const isAdded = existingOutputCodes.has(item.outputVariable.toUpperCase());
+
+                    return (
+                      <div
+                        key={item.id}
+                        draggable={!isAdded}
+                        onDragStart={() => setDraggedItem(item)}
+                        onDragEnd={() => setDraggedItem(null)}
+                        title={item.description}
+                        className={`w-full min-h-[34px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center justify-between gap-2 transition-all group ${isAdded
+                            ? "bg-secondary/40 border-border/30 text-muted-foreground opacity-50 cursor-not-allowed shadow-none"
+                            : "bg-card border-border/50 hover:border-rose-500/50 hover:bg-rose-500/5 text-foreground shadow-2xs cursor-grab active:scale-[0.99]"
+                          }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <GripVertical className="w-3.5 h-3.5 text-muted/60 shrink-0 cursor-grab" />
+                          <span className="truncate py-0.5 leading-normal">{item.name}</span>
+                        </div>
+
+                        {isAdded ? (
+                          <span className="h-6 text-[11px] font-medium text-muted shrink-0 flex items-center">
+                            Đã thêm
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addComponentToStructure(item);
+                            }}
+                            title={`Thêm "${item.name}" vào cấu trúc`}
+                            className="h-6 w-6 rounded-md text-primary hover:bg-primary-soft flex items-center justify-center transition-colors shrink-0"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Group 3: PROJECT CUSTOM PARAMETERS */}
+              {customVariables.length > 0 && (
+                <div className="space-y-1.5 pt-2.5 border-t border-border">
+                  <div className="flex items-center justify-between text-[11px] font-extrabold tracking-wider text-muted uppercase pb-0.5">
+                    <span>3. THAM SỐ DỰ ÁN ({customVariables.length})</span>
                     <button
                       type="button"
-                      key={param.id || param.code}
                       onClick={() => setIsParamsModalOpen(true)}
-                      className="w-full min-h-[34px] px-2.5 py-1.5 rounded-lg border border-border/70 bg-card text-left text-xs font-semibold flex items-center justify-between gap-2 shadow-2xs group hover:border-primary/40 cursor-pointer transition-all"
-                      title={`${param.description || param.name} - Bấm để chỉnh sửa`}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                      title="Cấu hình giá trị tham số dự án"
                     >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            hasValue ? "bg-emerald-500" : "bg-amber-500 animate-pulse"
-                          }`}
-                        />
-                        <span className="truncate py-0.5 leading-normal text-foreground group-hover:text-primary transition-colors">
-                          {param.name}
+                      <SlidersHorizontal className="w-3 h-3" />
+                      <span>Cài đặt</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {customVariables.map((param) => {
+                      const hasValue = param.value !== null && param.value !== undefined;
+
+                      return (
+                        <button
+                          type="button"
+                          key={param.id || param.code}
+                          onClick={() => setIsParamsModalOpen(true)}
+                          className="w-full min-h-[34px] px-2.5 py-1.5 rounded-lg border border-border/70 bg-card text-left text-xs font-semibold flex items-center justify-between gap-2 shadow-2xs group hover:border-primary/40 cursor-pointer transition-all"
+                          title={`${param.description || param.name} - Bấm để chỉnh sửa`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${hasValue ? "bg-emerald-500" : "bg-amber-500 animate-pulse"
+                                }`}
+                            />
+                            <span className="truncate py-0.5 leading-normal text-foreground group-hover:text-primary transition-colors">
+                              {param.name}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {hasValue ? (
+                              <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold">
+                                {typeof param.value === "number"
+                                  ? param.value.toLocaleString("vi-VN")
+                                  : param.value}{" "}
+                                {param.unit}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/15 border border-amber-500/25 px-1.5 py-0.5 rounded">
+                                Chưa nhập
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </aside>
+
+            {/* Right Column: Flow Canvas & Detailed Formula Cards */}
+            <section className="lg:col-span-8 space-y-5">
+              {/* 1. Unified Payroll Flow Architecture Pipeline (Balanced 2-Column Format) */}
+              <div className="content-card overflow-hidden !p-0 border border-border shadow-xs">
+                {/* Header with Title and Pipeline Equation Badge */}
+                <div className="px-4 py-3 bg-secondary/30 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                      <Calculator className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <strong className="text-sm font-bold text-foreground block">
+                        Cấu trúc Dòng tiền Lương
+                      </strong>
+                      <span className="text-[11px] text-muted-foreground">
+                        Kéo thả các thành phần từ thư viện bên trái vào từng nhóm tương ứng
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Interactive Workspace: Inputs (Earnings - Deductions) -> Result (Net Payable) */}
+                <div className="p-4 space-y-3">
+                  {/* Row 1: 2-Column Inputs (Thu Nhập - Khấu Trừ) */}
+                  <div className="flex flex-col md:flex-row items-stretch gap-3">
+                    {/* Left Box: Gross Earnings (Thu Nhập) */}
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => {
+                        if (draggedItem && draggedItem.category === "income") {
+                          addComponentToStructure(draggedItem);
+                        }
+                      }}
+                      className="flex-1 rounded-xl border border-emerald-500/25 bg-emerald-500/5 dark:bg-emerald-500/10 p-3.5 flex flex-col space-y-2.5 transition-all hover:border-emerald-500/40"
+                    >
+                      <div className="flex items-center justify-between">
+                        <strong className="text-xs font-bold text-foreground uppercase tracking-wide">
+                          Các khoản Thu nhập
+                        </strong>
+                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                          {grossComponents.length} khoản
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        {hasValue ? (
-                          <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold">
-                            {typeof param.value === "number"
-                              ? param.value.toLocaleString("vi-VN")
-                              : param.value}{" "}
-                            {param.unit}
-                          </span>
+                      <div className="border border-dashed border-emerald-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
+                        {grossComponents.length === 0 ? (
+                          <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
+                            <Plus className="w-4 h-4 text-emerald-500/60" />
+                            <span>Kéo thả hoặc bấm (+) từ thư viện</span>
+                          </div>
                         ) : (
-                          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/15 border border-amber-500/25 px-1.5 py-0.5 rounded">
-                            Chưa nhập
-                          </span>
+                          grossComponents.map((item) => (
+                            <div
+                              key={item.id}
+                              className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-emerald-500 transition-all max-w-full group"
+                            >
+                              <GripVertical className="w-3 h-3 text-emerald-500/70 shrink-0 cursor-grab" />
+                              <span className="truncate py-0.5 leading-normal">{item.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeComponentFromStructure(item.id)}
+                                className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5"
+                                title={`Gỡ bỏ ${item.name}`}
+                                aria-label={`Gỡ bỏ ${item.name}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))
                         )}
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </aside>
-
-        {/* Right Column: Flow Canvas & Detailed Formula Cards */}
-        <section className="lg:col-span-8 space-y-5">
-          {/* 1. Unified Payroll Flow Architecture Pipeline (Balanced 2-Column Format) */}
-          <div className="content-card overflow-hidden !p-0 border border-border shadow-xs">
-            {/* Header with Title and Pipeline Equation Badge */}
-            <div className="px-4 py-3 bg-secondary/30 border-b border-border flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                  <Calculator className="w-4 h-4" />
-                </div>
-                <div>
-                  <strong className="text-sm font-bold text-foreground block">
-                    Cấu trúc Dòng tiền Lương
-                  </strong>
-                  <span className="text-[11px] text-muted-foreground">
-                    Kéo thả các thành phần từ thư viện bên trái vào từng nhóm tương ứng
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Interactive Workspace: Inputs (Earnings - Deductions) -> Result (Net Payable) */}
-            <div className="p-4 space-y-3">
-              {/* Row 1: 2-Column Inputs (Thu Nhập - Khấu Trừ) */}
-              <div className="flex flex-col md:flex-row items-stretch gap-3">
-                {/* Left Box: Gross Earnings (Thu Nhập) */}
-                <div
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => {
-                    if (draggedItem && draggedItem.category === "income") {
-                      addComponentToStructure(draggedItem);
-                    }
-                  }}
-                  className="flex-1 rounded-xl border border-emerald-500/25 bg-emerald-500/5 dark:bg-emerald-500/10 p-3.5 flex flex-col space-y-2.5 transition-all hover:border-emerald-500/40"
-                >
-                  <div className="flex items-center justify-between">
-                    <strong className="text-xs font-bold text-foreground uppercase tracking-wide">
-                      Các khoản Thu nhập
-                    </strong>
-                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                      {grossComponents.length} khoản
-                    </span>
-                  </div>
-
-                  <div className="border border-dashed border-emerald-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
-                    {grossComponents.length === 0 ? (
-                      <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
-                        <Plus className="w-4 h-4 text-emerald-500/60" />
-                        <span>Kéo thả hoặc bấm (+) từ thư viện</span>
-                      </div>
-                    ) : (
-                      grossComponents.map((item) => (
-                        <div
-                          key={item.id}
-                          className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-emerald-500 transition-all max-w-full group"
-                        >
-                          <GripVertical className="w-3 h-3 text-emerald-500/70 shrink-0 cursor-grab" />
-                          <span className="truncate py-0.5 leading-normal">{item.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeComponentFromStructure(item.id)}
-                            className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5"
-                            title={`Gỡ bỏ ${item.name}`}
-                            aria-label={`Gỡ bỏ ${item.name}`}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Dedicated Center Operator Bridge (Never overlaps card borders) */}
-                <div className="flex md:flex-col items-center justify-center shrink-0 self-center py-0.5 md:py-0 px-1">
-                  <div
-                    className="w-7 h-7 rounded-full bg-card border border-border shadow-2xs flex items-center justify-center text-muted-foreground hover:border-primary/40 transition-colors select-none"
-                    title="Trừ đi các khoản khấu trừ"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-
-                {/* Right Box: Deductions (Khấu Trừ) */}
-                <div
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => {
-                    if (draggedItem && draggedItem.category === "deduction") {
-                      addComponentToStructure(draggedItem);
-                    }
-                  }}
-                  className="flex-1 rounded-xl border border-rose-500/25 bg-rose-500/5 dark:bg-rose-500/10 p-3.5 flex flex-col space-y-2.5 transition-all hover:border-rose-500/40"
-                >
-                  <div className="flex items-center justify-between">
-                    <strong className="text-xs font-bold text-foreground uppercase tracking-wide">
-                      Các khoản Khấu trừ
-                    </strong>
-                    <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
-                      {deductionComponents.length} khoản
-                    </span>
-                  </div>
-
-                  <div className="border border-dashed border-rose-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
-                    {deductionComponents.length === 0 ? (
-                      <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
-                        <Plus className="w-4 h-4 text-rose-500/60" />
-                        <span>Kéo thả hoặc bấm (+) từ thư viện</span>
-                      </div>
-                    ) : (
-                      deductionComponents.map((item) => (
-                        <div
-                          key={item.id}
-                          className="px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-rose-500 transition-all max-w-full group"
-                        >
-                          <GripVertical className="w-3 h-3 text-rose-500/70 shrink-0 cursor-grab" />
-                          <span className="truncate py-0.5 leading-normal">{item.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeComponentFromStructure(item.id)}
-                            className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5"
-                            title={`Gỡ bỏ ${item.name}`}
-                            aria-label={`Gỡ bỏ ${item.name}`}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-          {/* 4. Cấu hình công thức chi tiết từng mục (Gộp tất cả items vào cùng 1 card duy nhất) */}
-          <div className="content-card">
-            <div className="card-heading">
-              <div>
-                <h3 className="flex items-center gap-2">
-                  <Wand2 className="w-4 h-4 text-primary" /> Cấu hình công thức chi tiết từng mục trong cấu trúc
-                </h3>
-                <p>Thiết lập hoặc tùy chỉnh chuỗi công thức tính toán cho từng thành phần lương đã kéo thả ở trên.</p>
-              </div>
-            </div>
-
-            <div className="p-4 space-y-3.5 bg-secondary/30">
-              {formulas.length === 0 ? (
-                <div className="p-8 text-center text-xs text-muted bg-card border border-border rounded-xl">
-                  Chưa có mục nào trong cấu trúc lương. Hãy chọn/kéo thả các mục từ Thư viện Thành phần Lương ở bên trái.
-                </div>
-              ) : (
-                formulas.map((formula, idx) => {
-                  const isIncome = formula.category === "income";
-                  const isEditing = editingFormulaIds.has(formula.id);
-                  const isModified = modifiedFormulaIds.has(formula.id);
-
-                  return (
-                    <div
-                      key={formula.id}
-                      className={`rounded-xl border transition-all p-4 space-y-3.5 bg-card ${isModified
-                        ? "border-amber-500/80 dark:border-amber-400/80 shadow-xs ring-1 ring-amber-500/20"
-                        : isEditing
-                          ? "border-primary/80 shadow-sm"
-                          : "border-border shadow-2xs hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5"
-                        }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary border border-primary/20 font-mono text-xs font-bold flex items-center justify-center shrink-0">
-                            {String(idx + 1).padStart(2, "0")}
-                          </span>
-                          <div className="min-w-0">
-                            <strong className="text-sm font-bold text-foreground truncate py-0.5 leading-normal">{formula.name}</strong>
-                          </div>
-                          <Badge tone={isIncome ? "success" : formula.category === "deduction" ? "danger" : "info"}>
-                            {categoryLabels[formula.category]}
-                          </Badge>
-                          {isModified && (
-                            <Badge tone="warning">
-                              Chưa lưu
-                            </Badge>
-                          )}
-                          {(() => {
-                            const missingParams = getMissingCustomParams(formula);
-                            if (missingParams.length === 0) return null;
-                            return (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25">
-                                <AlertCircle className="w-3 h-3" /> Cần nhập: {missingParams.map((m) => m.name).join(", ")}
-                              </span>
-                            );
-                          })()}
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleEditFormula(formula.id)}
-                            title={isEditing ? "Thu gọn" : "Chỉnh sửa công thức"}
-                          >
-                            {isEditing ? <ChevronUp className="w-4 h-4 text-muted" /> : <Pencil className="w-4 h-4 text-primary" />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeComponentFromStructure(formula.id)}
-                            title="Gỡ khỏi cấu trúc"
-                            className="text-muted hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* VIEW MODE SUMMARY WITH GUARANTEED HIGH CONTRAST OPERATOR BADGES */}
-                      {!isEditing && (
-                        <div className="p-3 rounded-xl bg-secondary/40 border border-border/60 flex flex-wrap items-center gap-2 text-xs">
-                          <span className="text-xs font-bold text-muted-foreground shrink-0 mr-1">
-                            Biểu thức tính toán:
-                          </span>
-                          <FormulaVisualExpression
-                            formula={formula}
-                            rawText={getFormulaRawText(formula)}
-                            variableNameMap={variableNameMap}
-                          />
-                        </div>
-                      )}
-
-                      {/* EDIT MODE PANEL */}
-                      {isEditing && (
-                        <div className="pt-3 border-t border-border space-y-3">
-                          <SmartFormulaEditor
-                            formula={formula}
-                            rawText={getFormulaRawText(formula)}
-                            variables={variables}
-                            variableNameMap={variableNameMap}
-                            onChange={(nextText) => updateFormulaText(formula.id, nextText)}
-                          />
-                          <span className="text-[11px] text-muted opacity-80 block pt-0.5">
-                            * Thay đổi được áp dụng tạm thời. Nhấn nút <strong>Lưu cấu hình</strong> ở phía trên để lưu chính thức vào hệ thống.
-                          </span>
-                        </div>
-                      )}
                     </div>
-                  );
-                })
-              )}
-            </div>
+
+                    {/* Dedicated Center Operator Bridge (Never overlaps card borders) */}
+                    <div className="flex md:flex-col items-center justify-center shrink-0 self-center py-0.5 md:py-0 px-1">
+                      <div
+                        className="w-7 h-7 rounded-full bg-card border border-border shadow-2xs flex items-center justify-center text-muted-foreground hover:border-primary/40 transition-colors select-none"
+                        title="Trừ đi các khoản khấu trừ"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+
+                    {/* Right Box: Deductions (Khấu Trừ) */}
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => {
+                        if (draggedItem && draggedItem.category === "deduction") {
+                          addComponentToStructure(draggedItem);
+                        }
+                      }}
+                      className="flex-1 rounded-xl border border-rose-500/25 bg-rose-500/5 dark:bg-rose-500/10 p-3.5 flex flex-col space-y-2.5 transition-all hover:border-rose-500/40"
+                    >
+                      <div className="flex items-center justify-between">
+                        <strong className="text-xs font-bold text-foreground uppercase tracking-wide">
+                          Các khoản Khấu trừ
+                        </strong>
+                        <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                          {deductionComponents.length} khoản
+                        </span>
+                      </div>
+
+                      <div className="border border-dashed border-rose-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
+                        {deductionComponents.length === 0 ? (
+                          <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
+                            <Plus className="w-4 h-4 text-rose-500/60" />
+                            <span>Kéo thả hoặc bấm (+) từ thư viện</span>
+                          </div>
+                        ) : (
+                          deductionComponents.map((item) => (
+                            <div
+                              key={item.id}
+                              className="px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-rose-500 transition-all max-w-full group"
+                            >
+                              <GripVertical className="w-3 h-3 text-rose-500/70 shrink-0 cursor-grab" />
+                              <span className="truncate py-0.5 leading-normal">{item.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeComponentFromStructure(item.id)}
+                                className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5"
+                                title={`Gỡ bỏ ${item.name}`}
+                                aria-label={`Gỡ bỏ ${item.name}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* 4. Cấu hình công thức chi tiết từng mục (Gộp tất cả items vào cùng 1 card duy nhất) */}
+              <div className="content-card">
+                <div className="card-heading">
+                  <div>
+                    <h3 className="flex items-center gap-2">
+                      <Wand2 className="w-4 h-4 text-primary" /> Cấu hình công thức chi tiết từng mục trong cấu trúc
+                    </h3>
+                    <p>Thiết lập hoặc tùy chỉnh chuỗi công thức tính toán cho từng thành phần lương đã kéo thả ở trên.</p>
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-3.5 bg-secondary/30">
+                  {formulas.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-muted bg-card border border-border rounded-xl">
+                      Chưa có mục nào trong cấu trúc lương. Hãy chọn/kéo thả các mục từ Thư viện Thành phần Lương ở bên trái.
+                    </div>
+                  ) : (
+                    formulas.map((formula, idx) => {
+                      const isIncome = formula.category === "income";
+                      const isEditing = editingFormulaIds.has(formula.id);
+                      const isModified = modifiedFormulaIds.has(formula.id);
+
+                      return (
+                        <div
+                          key={formula.id}
+                          className={`rounded-xl border transition-all p-4 space-y-3.5 bg-card ${isModified
+                            ? "border-amber-500/80 dark:border-amber-400/80 shadow-xs ring-1 ring-amber-500/20"
+                            : isEditing
+                              ? "border-primary/80 shadow-sm"
+                              : "border-border shadow-2xs hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5"
+                            }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary border border-primary/20 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                                {String(idx + 1).padStart(2, "0")}
+                              </span>
+                              <div className="min-w-0">
+                                <strong className="text-sm font-bold text-foreground truncate py-0.5 leading-normal">{formula.name}</strong>
+                              </div>
+                              <Badge tone={isIncome ? "success" : formula.category === "deduction" ? "danger" : "info"}>
+                                {categoryLabels[formula.category]}
+                              </Badge>
+                              {isModified && (
+                                <Badge tone="warning">
+                                  Chưa lưu
+                                </Badge>
+                              )}
+                              {(() => {
+                                const missingParams = getMissingCustomParams(formula);
+                                if (missingParams.length === 0) return null;
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25">
+                                    <AlertCircle className="w-3 h-3" /> Cần nhập: {missingParams.map((m) => m.name).join(", ")}
+                                  </span>
+                                );
+                              })()}
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleEditFormula(formula.id)}
+                                title={isEditing ? "Thu gọn" : "Chỉnh sửa công thức"}
+                              >
+                                {isEditing ? <ChevronUp className="w-4 h-4 text-muted" /> : <Pencil className="w-4 h-4 text-primary" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeComponentFromStructure(formula.id)}
+                                title="Gỡ khỏi cấu trúc"
+                                className="text-muted hover:text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* VIEW MODE SUMMARY WITH GUARANTEED HIGH CONTRAST OPERATOR BADGES */}
+                          {!isEditing && (
+                            <div className="p-3 rounded-xl bg-secondary/40 border border-border/60 flex flex-wrap items-center gap-2 text-xs">
+                              <span className="text-xs font-bold text-muted-foreground shrink-0 mr-1">
+                                Biểu thức tính toán:
+                              </span>
+                              <FormulaVisualExpression
+                                formula={formula}
+                                rawText={getFormulaRawText(formula)}
+                                variableNameMap={variableNameMap}
+                              />
+                            </div>
+                          )}
+
+                          {/* EDIT MODE PANEL */}
+                          {isEditing && (
+                            <div className="pt-3 border-t border-border space-y-3">
+                              <SmartFormulaEditor
+                                formula={formula}
+                                rawText={getFormulaRawText(formula)}
+                                variables={variables}
+                                variableNameMap={variableNameMap}
+                                onChange={(nextText) => updateFormulaText(formula.id, nextText)}
+                              />
+                              <span className="text-[11px] text-muted opacity-80 block pt-0.5">
+                                * Thay đổi được áp dụng tạm thời. Nhấn nút <strong>Lưu cấu hình</strong> ở phía trên để lưu chính thức vào hệ thống.
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
-      </div>
         </>
       )}
 

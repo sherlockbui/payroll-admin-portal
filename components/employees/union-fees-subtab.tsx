@@ -329,96 +329,6 @@ export function UnionFeesSubtab({
 
   return (
     <div className="union-fees-subtab space-y-4">
-      {/* 3 KPI Summary Cards (Interactive Filter Selectors) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {/* Card 1: Tổng nhân sự */}
-        <div
-          onClick={() => {
-            setStatusFilter("ALL");
-            setCurrentPage(1);
-          }}
-          className={`group cursor-pointer rounded-xl border p-4 transition-all duration-200 hover:shadow-md ${
-            statusFilter === "ALL"
-              ? "border-primary bg-primary/5 dark:bg-primary/10 ring-2 ring-primary/20"
-              : "border-border bg-card hover:border-border/80"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Tổng nhân sự
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform">
-              <Users className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-foreground">
-              {isListLoading && statusFilter === "ALL" ? "—" : totalCount}
-            </span>
-            <span className="text-xs text-muted-foreground">người</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Toàn bộ nhân sự trong dự án</p>
-        </div>
-
-        {/* Card 2: Đang tham gia Công đoàn */}
-        <div
-          onClick={() => {
-            setStatusFilter("PARTICIPATING");
-            setCurrentPage(1);
-          }}
-          className={`group cursor-pointer rounded-xl border p-4 transition-all duration-200 hover:shadow-md ${
-            statusFilter === "PARTICIPATING"
-              ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 ring-2 ring-emerald-500/20"
-              : "border-border bg-card hover:border-emerald-500/30"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-              Đang trích nộp (1%)
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-              {isListLoading && statusFilter === "PARTICIPATING" ? "—" : participatingCount}
-            </span>
-            <span className="text-xs text-muted-foreground">đoàn viên</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Trích nộp 1% lương tối thiểu vùng</p>
-        </div>
-
-        {/* Card 3: Không tham gia */}
-        <div
-          onClick={() => {
-            setStatusFilter("NOT_PARTICIPATING");
-            setCurrentPage(1);
-          }}
-          className={`group cursor-pointer rounded-xl border p-4 transition-all duration-200 hover:shadow-md ${
-            statusFilter === "NOT_PARTICIPATING"
-              ? "border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 ring-2 ring-amber-500/20"
-              : "border-border bg-card hover:border-amber-500/30"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-              Không tham gia
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
-              <UserMinus className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-              {isListLoading && statusFilter === "NOT_PARTICIPATING" ? "—" : notParticipatingCount}
-            </span>
-            <span className="text-xs text-muted-foreground">người</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Chưa gia nhập hoặc đã làm đơn xin rút</p>
-        </div>
-      </div>
-
       {/* Main Integrated Table Card */}
       <div className="integrated-table-card">
         {/* Table Toolbar */}
@@ -762,9 +672,8 @@ export function UnionFeesSubtab({
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
         title={`Lịch sử đoàn phí: ${historyMember?.employee.fullName ?? ""}`}
-        description={`Mã NV: ${historyMember?.employee.employeeCode} · Trạng thái: ${
-          historyMember?.participating ? "Đang trích nộp" : "Không tham gia"
-        }`}
+        description={`Mã NV: ${historyMember?.employee.employeeCode} · Trạng thái: ${historyMember?.participating ? "Đang trích nộp" : "Không tham gia"
+          }`}
         size="lg"
         footer={<Button onClick={() => setHistoryModalOpen(false)}>Đóng</Button>}
       >
@@ -874,13 +783,12 @@ export function UnionFeesSubtab({
                 const file = e.dataTransfer.files?.[0];
                 if (file) setImportFile(file);
               }}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                isDragging
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging
                   ? "border-primary bg-primary/5"
                   : importFile
-                  ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
-                  : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
-              }`}
+                    ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                    : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                }`}
             >
               <input
                 type="file"

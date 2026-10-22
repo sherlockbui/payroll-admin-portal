@@ -68,7 +68,7 @@ import type {
   InsuranceContributionPreview,
   InsuranceParticipantItemV3,
   InsuranceParticipationStatus,
-  MedicalFacilityItemV3,
+  InsurancePeriodHistoryItem,
 } from "@/lib/types";
 import { cn, formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
 
@@ -90,21 +90,51 @@ export function InsuranceSubtab({
   const [activeView, setActiveView] = useState<"members" | "changes">("members");
 
   // Filters
+  const [periodFilter, setPeriodFilter] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [memberStatusFilter, setMemberStatusFilter] = useState<string>("ALL");
   const [changeStatusFilter, setChangeStatusFilter] = useState<string>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // Parse periodFilter (YYYY-MM)
+  const { selectedMonth, selectedYear } = useMemo(() => {
+    if (periodFilter && periodFilter.includes("-")) {
+      const parts = periodFilter.split("-");
+      return { selectedYear: Number(parts[0]), selectedMonth: Number(parts[1]) };
+    }
+    return { selectedMonth: undefined, selectedYear: undefined };
+  }, [periodFilter]);
+
   // Modals state
   const [declareModalOpen, setDeclareModalOpen] = useState(false);
+  const [declarePeriod, setDeclarePeriod] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState("");
   const [declareType, setDeclareType] = useState<string>("NEW_HIRE");
   const [declareEffectiveFrom, setDeclareEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
   const [declareNewSalary, setDeclareNewSalary] = useState<number>(5000000);
   const [declareBookNumber, setDeclareBookNumber] = useState("");
-  const [declareMedicalFacilityId, setDeclareMedicalFacilityId] = useState<number | undefined>(undefined);
+  const [declareMedicalFacility, setDeclareMedicalFacility] = useState("");
   const [declareReason, setDeclareReason] = useState("");
+
+  // Parse declarePeriod (YYYY-MM)
+  const { declareMonth, declareYear } = useMemo(() => {
+    if (declarePeriod && declarePeriod.includes("-")) {
+      const parts = declarePeriod.split("-");
+      return { declareYear: Number(parts[0]), declareMonth: Number(parts[1]) };
+    }
+    const effDate = new Date(declareEffectiveFrom);
+    return {
+      declareYear: !isNaN(effDate.getFullYear()) ? effDate.getFullYear() : new Date().getFullYear(),
+      declareMonth: !isNaN(effDate.getMonth()) ? effDate.getMonth() + 1 : new Date().getMonth() + 1,
+    };
+  }, [declarePeriod, declareEffectiveFrom]);
 
   // Reconcile modal (Xác nhận đối soát / Duyệt kỳ đóng BHXH)
   const [reconcileChange, setReconcileChange] = useState<InsuranceChangeItemV3 | null>(null);
@@ -116,7 +146,7 @@ export function InsuranceSubtab({
 
   // History modal
   const [historyMember, setHistoryMember] = useState<InsuranceParticipantItemV3 | null>(null);
-  const [historyList, setHistoryList] = useState<InsuranceChangeItemV3[]>([]);
+  const [historyList, setHistoryList] = useState<InsurancePeriodHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Import modal
@@ -145,14 +175,7 @@ export function InsuranceSubtab({
   // Reset page when switching views or filters
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeView, projectId, memberStatusFilter, changeStatusFilter, searchTerm]);
-
-  // Query: Medical Facilities
-  const { data: medicalFacilities = [] } = useQuery({
-    queryKey: ["web-payroll-insurance-medical-facilities"],
-    queryFn: () => api.getInsuranceMedicalFacilitiesV3(),
-    staleTime: 1000 * 60 * 10,
-  });
+  }, [activeView, projectId, periodFilter, memberStatusFilter, changeStatusFilter, searchTerm]);
 
   // Query: Participants List
   const {
@@ -164,6 +187,8 @@ export function InsuranceSubtab({
     queryKey: [
       "web-payroll-insurance-participants",
       projectId,
+      selectedMonth,
+      selectedYear,
       memberStatusFilter,
       searchTerm,
       currentPage,
@@ -172,6 +197,9 @@ export function InsuranceSubtab({
     queryFn: () =>
       api.getInsuranceParticipantsV3({
         projectId: projectId === "all" ? undefined : projectId,
+        month: selectedMonth,
+        year: selectedYear,
+        type: memberStatusFilter === "ALL" ? undefined : memberStatusFilter,
         status: memberStatusFilter === "ALL" ? undefined : memberStatusFilter,
         keyword: searchTerm,
         pageIndex: currentPage,
@@ -190,6 +218,8 @@ export function InsuranceSubtab({
     queryKey: [
       "web-payroll-insurance-changes",
       projectId,
+      selectedMonth,
+      selectedYear,
       changeStatusFilter,
       searchTerm,
       currentPage,
@@ -198,6 +228,8 @@ export function InsuranceSubtab({
     queryFn: () =>
       api.getInsuranceChangesV3({
         projectId: projectId === "all" ? undefined : projectId,
+        month: selectedMonth,
+        year: selectedYear,
         status: changeStatusFilter === "ALL" ? undefined : changeStatusFilter,
         keyword: searchTerm,
         pageIndex: currentPage,
@@ -208,8 +240,13 @@ export function InsuranceSubtab({
 
   // Query: Live Contribution Preview for Form Modal
   const { data: contributionPreview } = useQuery({
-    queryKey: ["web-payroll-insurance-preview", declareNewSalary],
-    queryFn: () => api.previewInsuranceContributionV3({ baseSalary: declareNewSalary }),
+    queryKey: ["web-payroll-insurance-preview", declareNewSalary, declareMonth, declareYear],
+    queryFn: () =>
+      api.previewInsuranceContributionV3({
+        baseSalary: declareNewSalary,
+        month: declareMonth,
+        year: declareYear,
+      }),
     enabled: declareModalOpen && declareNewSalary > 0,
   });
 
@@ -230,11 +267,12 @@ export function InsuranceSubtab({
   // Open Declare Modal
   const handleOpenDeclare = () => {
     setSelectedEmployeeCode("");
+    setDeclarePeriod(periodFilter || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`);
     setDeclareType("NEW_HIRE");
     setDeclareEffectiveFrom(new Date().toISOString().slice(0, 10));
     setDeclareNewSalary(5000000);
     setDeclareBookNumber("");
-    setDeclareMedicalFacilityId(medicalFacilities[0]?.id);
+    setDeclareMedicalFacility("");
     setDeclareReason("");
     setDeclareModalOpen(true);
   };
@@ -247,24 +285,20 @@ export function InsuranceSubtab({
       }
       const emp = projectEmployees.find((item) => item.employeeCode === selectedEmployeeCode);
       const targetProjId = projectId && projectId !== "all" ? Number(projectId) : (emp?.projectId || undefined);
-      
-      const effDate = new Date(declareEffectiveFrom);
-      const year = !isNaN(effDate.getFullYear()) ? effDate.getFullYear() : new Date().getFullYear();
-      const month = !isNaN(effDate.getMonth()) ? effDate.getMonth() + 1 : new Date().getMonth() + 1;
 
       const payload: CreateInsuranceChangeRequest = {
         projectId: targetProjId,
         employeeCode: selectedEmployeeCode,
+        type: declareType,
         changeType: declareType,
-        year,
-        month,
+        year: declareYear,
+        month: declareMonth,
         baseSalary: declareNewSalary,
-        isParticipating: declareType !== "TERMINATED" && declareType !== "GIAM_HAN",
+        isParticipating: declareType !== "TERMINATED",
         effectiveFrom: declareEffectiveFrom,
         newBaseSalary: declareNewSalary,
         insuranceBookNumber: declareBookNumber.trim() || undefined,
         newInsuranceBookNumber: declareBookNumber.trim() || undefined,
-        newMedicalFacilityId: declareMedicalFacilityId,
         note: declareReason.trim() || undefined,
         reason: declareReason.trim() || undefined,
       };
@@ -274,7 +308,7 @@ export function InsuranceSubtab({
       queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-changes"] });
       queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-participants"] });
       setDeclareModalOpen(false);
-      notify("Đã lập hồ sơ biến động BHXH (D02-LT) thành công!");
+      notify("Đã lập hồ sơ biến động BHXH thành công!");
     },
     onError: (err: any) => {
       notify(err?.message || "Lỗi khi lập hồ sơ biến động BHXH", "error");
@@ -285,8 +319,7 @@ export function InsuranceSubtab({
   const confirmReconcileMutation = useMutation({
     mutationFn: async ({ id, code }: { id: number; code: string }) => {
       const payload: ConfirmInsuranceChangeRequest = {
-        note: code,
-        externalDossierCode: code,
+        note: code || undefined,
       };
       return api.confirmInsuranceChangeV3(id, payload);
     },
@@ -305,7 +338,7 @@ export function InsuranceSubtab({
   // Mutation: Reject Insurance Change (Từ chối)
   const rejectChangeMutation = useMutation({
     mutationFn: async ({ id, note }: { id: number; note: string }) => {
-      return api.rejectInsuranceChangeV3(id, { note });
+      return api.rejectInsuranceChangeV3(id, { note: note || undefined });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["web-payroll-insurance-changes"] });
@@ -342,11 +375,16 @@ export function InsuranceSubtab({
     setHistoryMember(member);
     setLoadingHistory(true);
     try {
-      const res = await api.getInsuranceChangesV3({
-        keyword: member.employee.employeeCode,
-        pageSize: 50,
-      });
-      setHistoryList(res.items || []);
+      if (member.id) {
+        const res = await api.getInsuranceHistoryV3(member.id, { pageSize: 50 });
+        setHistoryList(res.items || []);
+      } else {
+        const res = await api.getInsuranceChangesV3({
+          keyword: member.employee.employeeCode,
+          pageSize: 50,
+        });
+        setHistoryList((res.items || []) as any);
+      }
     } catch {
       setHistoryList([]);
     } finally {
@@ -388,16 +426,6 @@ export function InsuranceSubtab({
           >
             <UploadCloud className="w-3.5 h-3.5" /> Import Excel
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              handleOpenDeclare();
-            }}
-            className="gap-1.5 font-semibold shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" /> Khai báo biến động
-          </Button>
         </div>
       );
     }
@@ -425,7 +453,7 @@ export function InsuranceSubtab({
       return <Badge tone="warning">Nghỉ không lương</Badge>;
     }
     if (t === "ACTIVE") {
-      return <Badge tone="success">Đang tham gia</Badge>;
+      return <Badge tone="success">Đang đóng</Badge>;
     }
     return <Badge tone="neutral">{c.changeTypeName || t}</Badge>;
   };
@@ -442,95 +470,26 @@ export function InsuranceSubtab({
     return <Badge tone="warning">Chờ đối soát</Badge>;
   };
 
+  // Helper Badge for Insurance Participation Eligibility (is_paticipant)
+  const renderEligibleBadge = (m: InsuranceParticipantItemV3) => {
+    const rawVal = m.is_paticipant ?? m.isParticipant ?? (m as any).is_participant ?? (m as any).isParticipating ?? (m as any).isEligible;
+    const isEligible = rawVal === true || rawVal === 1 || rawVal === "true" || rawVal === "1";
+    const isExplicitlyFalse = rawVal === false || rawVal === 0 || rawVal === "false" || rawVal === "0";
+
+    if (isEligible) {
+      return <Badge tone="success">Đủ điều kiện</Badge>;
+    }
+    if (isExplicitlyFalse) {
+      return <Badge tone="neutral">Chưa đủ ĐK</Badge>;
+    }
+    if (m.participationStatus === "ACTIVE" || m.status === "ACTIVE") {
+      return <Badge tone="success">Đủ điều kiện</Badge>;
+    }
+    return <Badge tone="neutral">Chưa đủ ĐK</Badge>;
+  };
+
   return (
     <div className="insurance-subtab space-y-4">
-      {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Card 1: Tổng lao động tham gia BHXH */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Lao động đóng BHXH
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-              <Users className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-foreground font-mono">
-              {isParticipantsLoading ? "—" : summary?.activeCount ?? totalParticipants}
-            </span>
-            <span className="text-xs text-muted-foreground">người</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Đang đóng BHXH bắt buộc</p>
-        </div>
-
-        {/* Card 2: Tổng quỹ lương trích nộp */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-              Tổng tiền trích nộp
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <Shield className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 font-mono">
-              {isParticipantsLoading ? "—" : formatCurrency(summary?.totalMonthlyContribution ?? 0)}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Tổng trích nộp 32% quỹ lương</p>
-        </div>
-
-        {/* Card 3: Hồ sơ chờ xác nhận */}
-        <div
-          onClick={() => {
-            setActiveView("changes");
-            setChangeStatusFilter("PENDING");
-          }}
-          className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md cursor-pointer hover:border-amber-300"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-              Hồ sơ chờ xác nhận
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <FileCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400 font-mono">
-              {isParticipantsLoading ? "—" : summary?.pendingChangesCount ?? totalChanges}
-            </span>
-            <span className="text-xs text-muted-foreground">hồ sơ</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Hồ sơ biến động chờ đối soát</p>
-        </div>
-
-        {/* Card 4: Tỷ lệ trích nộp */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-              Tỷ lệ trích nộp
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-lg font-bold tracking-tight text-blue-600 dark:text-blue-400 font-mono">
-              NLĐ 10.5%
-            </span>
-            <span className="text-xs text-muted-foreground mx-1">|</span>
-            <span className="text-lg font-bold tracking-tight text-foreground font-mono">
-              DN 21.5%
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">BHXH 8%, BHYT 1.5%, BHTN 1%</p>
-        </div>
-      </div>
-
       {/* Navigation Switcher: Minimalist Underline Tabs */}
       <nav className="subtab-view-switcher" aria-label="Phân hệ bảo hiểm">
         <button
@@ -592,55 +551,75 @@ export function InsuranceSubtab({
               )}
             </div>
 
-            {/* Right: Status Filter & Search Box */}
+            {/* Right: Filters & Search Box */}
             <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-nowrap shrink-0">
+              {/* Month Picker */}
+              <div style={{ width: "165px", minWidth: "150px", flexShrink: 0 }}>
+                <MonthPicker
+                  value={periodFilter}
+                  onChange={(val) => {
+                    setPeriodFilter(val);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full"
+                />
+              </div>
+
               {/* Status Filter for Participants View */}
               {activeView === "members" ? (
-                <SearchableSelect
-                  value={memberStatusFilter}
-                  onChange={(val) => {
-                    setMemberStatusFilter(val || "ALL");
-                    setCurrentPage(1);
-                  }}
-                  options={[
-                    { value: "ALL", label: "Tất cả trạng thái" },
-                    { value: "ACTIVE", label: "Đang tham gia" },
-                    { value: "SUSPENDED", label: "Tạm dừng đóng" },
-                    { value: "STOPPED", label: "Đã ngừng đóng" },
-                  ]}
-                  placeholder="Tất cả trạng thái"
-                  className="w-[170px] sm:w-[185px] shrink-0"
-                  allowClear={false}
-                />
+                <div style={{ width: "195px", minWidth: "160px", flexShrink: 0 }}>
+                  <SearchableSelect
+                    value={memberStatusFilter}
+                    onChange={(val) => {
+                      setMemberStatusFilter(val || "ALL");
+                      setCurrentPage(1);
+                    }}
+                    options={[
+                      { value: "ALL", label: "Tất cả trạng thái" },
+                      { value: "ACTIVE", label: "Đang đóng" },
+                      { value: "SUSPENDED", label: "Tạm dừng đóng" },
+                      { value: "STOPPED", label: "Đã ngừng đóng" },
+                    ]}
+                    placeholder="Tất cả trạng thái"
+                    style={{ width: "100%" }}
+                    allowClear={false}
+                    searchable={false}
+                  />
+                </div>
               ) : (
-                <SearchableSelect
-                  value={changeStatusFilter}
-                  onChange={(val) => {
-                    setChangeStatusFilter(val || "ALL");
-                    setCurrentPage(1);
-                  }}
-                  options={[
-                    { value: "ALL", label: "Tất cả trạng thái" },
-                    { value: "PENDING", label: "Chờ đối soát" },
-                    { value: "CONFIRMED", label: "Đã xác nhận" },
-                    { value: "REJECTED", label: "Từ chối" },
-                  ]}
-                  placeholder="Tất cả trạng thái"
-                  className="w-[170px] sm:w-[185px] shrink-0"
-                  allowClear={false}
-                />
+                <div style={{ width: "195px", minWidth: "160px", flexShrink: 0 }}>
+                  <SearchableSelect
+                    value={changeStatusFilter}
+                    onChange={(val) => {
+                      setChangeStatusFilter(val || "ALL");
+                      setCurrentPage(1);
+                    }}
+                    options={[
+                      { value: "ALL", label: "Tất cả trạng thái" },
+                      { value: "PENDING", label: "Chờ đối soát" },
+                      { value: "CONFIRMED", label: "Đã xác nhận" },
+                      { value: "REJECTED", label: "Từ chối" },
+                    ]}
+                    placeholder="Tất cả trạng thái"
+                    style={{ width: "100%" }}
+                    allowClear={false}
+                    searchable={false}
+                  />
+                </div>
               )}
 
               {/* Search Box */}
-              <SearchInput
-                value={searchTerm}
-                onChange={(val) => {
-                  setSearchTerm(val);
-                  setCurrentPage(1);
-                }}
-                placeholder={activeView === "members" ? "Tìm mã NV, tên, số sổ BHXH..." : "Tìm mã NV, tên, mã đối soát..."}
-                containerClassName="w-[190px] sm:w-[230px] lg:w-[260px] shrink min-w-[140px]"
-              />
+              <div style={{ width: "240px", minWidth: "180px", flexShrink: 1 }}>
+                <SearchInput
+                  value={searchTerm}
+                  onChange={(val) => {
+                    setSearchTerm(val);
+                    setCurrentPage(1);
+                  }}
+                  placeholder={activeView === "members" ? "Tìm mã NV, tên, số sổ BHXH..." : "Tìm mã NV, tên, mã đối soát..."}
+                  containerClassName="w-full"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -667,18 +646,19 @@ export function InsuranceSubtab({
             ) : (
               <div className="data-table-wrap">
                 <div className="data-table-scroll">
-                  <table className="data-table min-w-[1050px]">
+                  <table className="data-table min-w-[1100px]">
                     <thead>
                       <tr>
                         <th style={{ width: "45px" }} className="text-center">STT</th>
-                        <th style={{ minWidth: "190px" }}>NGƯỜI LAO ĐỘNG</th>
-                        <th style={{ width: "130px" }}>MÃ SỐ BHXH</th>
-                        <th style={{ width: "140px" }} className="text-right">LƯƠNG ĐÓNG BH</th>
-                        <th style={{ width: "100px" }} className="text-center">TỶ LỆ NLĐ</th>
-                        <th style={{ width: "100px" }} className="text-center">TỶ LỆ DN</th>
-                        <th style={{ width: "130px" }} className="text-center">TRẠNG THÁI</th>
-                        <th style={{ minWidth: "180px" }}>NƠI KCB BAN ĐẦU</th>
-                        <th style={{ width: "90px" }} className="text-center">THAO TÁC</th>
+                        <th style={{ minWidth: "180px" }}>NGƯỜI LAO ĐỘNG</th>
+                        <th style={{ width: "125px" }}>MÃ SỐ BHXH</th>
+                        <th style={{ width: "135px" }} className="text-right">LƯƠNG ĐÓNG BH</th>
+                        <th style={{ width: "90px" }} className="text-center">TỶ LỆ NLĐ</th>
+                        <th style={{ width: "90px" }} className="text-center">TỶ LỆ DN</th>
+                        <th style={{ width: "130px" }} className="text-center">ĐỦ ĐIỀU KIỆN</th>
+                        <th style={{ width: "125px" }} className="text-center">TRẠNG THÁI</th>
+                        <th style={{ minWidth: "160px" }}>NƠI KCB BAN ĐẦU</th>
+                        <th style={{ width: "85px" }} className="text-center">THAO TÁC</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -696,11 +676,6 @@ export function InsuranceSubtab({
                                 </span>
                                 <span className="employee-cell-sub">
                                   <span className="employee-code-badge">{m.employee.employeeCode}</span>
-                                  {m.employee.project?.projectCode && (
-                                    <span className="text-muted text-[11px] font-medium">
-                                      · [{m.employee.project.projectCode}]
-                                    </span>
-                                  )}
                                 </span>
                               </div>
                             </td>
@@ -719,10 +694,13 @@ export function InsuranceSubtab({
                               {m.employerContributionRate ?? 21.5}%
                             </td>
                             <td className="text-center">
+                              {renderEligibleBadge(m)}
+                            </td>
+                            <td className="text-center">
                               {m.participationStatus === "ACTIVE" || m.status === "ACTIVE" ? (
-                                <Badge tone="success">Đang tham gia</Badge>
+                                <Badge tone="success">Đang đóng</Badge>
                               ) : m.participationStatus === "SUSPENDED" || m.status === "SUSPENDED" ? (
-                                <Badge tone="warning">Tạm dừng</Badge>
+                                <Badge tone="warning">Tạm dừng đóng</Badge>
                               ) : (
                                 <Badge tone="danger">Đã ngừng đóng</Badge>
                               )}
@@ -949,8 +927,17 @@ export function InsuranceSubtab({
             />
           </div>
 
-          {/* Loại biến động & Ngày hiệu lực */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Kỳ áp dụng, Loại biến động & Ngày hiệu lực */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <MonthPicker
+                label="Kỳ áp dụng"
+                value={declarePeriod}
+                onChange={setDeclarePeriod}
+                variant="form"
+                placeholder="Chọn kỳ..."
+              />
+            </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
                 Loại biến động <span className="text-rose-500">*</span>
@@ -962,13 +949,12 @@ export function InsuranceSubtab({
                   { value: "TERMINATED", label: "Báo giảm hẳn (Nghỉ việc)" },
                   { value: "MATERNITY", label: "Nghỉ thai sản" },
                   { value: "UNPAID_LEAVE", label: "Nghỉ không hưởng lương / Ốm đau" },
-                  { value: "ACTIVE", label: "Khôi phục / Đang tham gia" },
-                  { value: "THOAI_THU", label: "Thoái thu tiền đóng" },
+                  { value: "ACTIVE", label: "Khôi phục / Đang đóng" },
                 ]}
                 value={declareType}
                 onChange={(val) => setDeclareType(val)}
                 allowClear={false}
-                searchPlaceholder="Tìm loại biến động..."
+                searchable={false}
                 placeholder="-- Chọn loại biến động --"
               />
             </div>
@@ -1037,16 +1023,12 @@ export function InsuranceSubtab({
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
                 Nơi KCB ban đầu
               </label>
-              <SearchableSelect
-                items={medicalFacilities}
-                value={declareMedicalFacilityId || ""}
-                onChange={(val) => setDeclareMedicalFacilityId(val ? Number(val) : undefined)}
-                getOptionValue={(f: MedicalFacilityItemV3) => f.id}
-                getOptionLabel={(f: MedicalFacilityItemV3) => `${f.facilityName}${f.province ? ` (${f.province})` : ""}`}
-                getOptionBadge={(f: MedicalFacilityItemV3) => f.facilityCode || ""}
-                allowClear={true}
-                searchPlaceholder="Tìm bệnh viện / cơ sở KCB..."
-                placeholder="-- Chọn bệnh viện/cơ sở KCB --"
+              <input
+                type="text"
+                value={declareMedicalFacility}
+                onChange={(e) => setDeclareMedicalFacility(e.target.value)}
+                placeholder="VD: Bệnh viện Đa khoa Sài Gòn..."
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
               />
             </div>
           </div>
@@ -1157,14 +1139,14 @@ export function InsuranceSubtab({
         </Modal>
       )}
 
-      {/* Modal: Lịch sử biến động nhân viên */}
+      {/* Modal: Lịch sử đóng BHXH nhân viên */}
       {historyMember && (
         <Modal
           open={Boolean(historyMember)}
           onOpenChange={(open) => !open && setHistoryMember(null)}
-          title={`Lịch sử biến động BHXH - ${historyMember.employee.fullName}`}
+          title={`Lịch sử đóng BHXH - ${historyMember.employee.fullName}`}
           description={`Mã NV: ${historyMember.employee.employeeCode} | Mã số BHXH: ${historyMember.insuranceBookNumber || historyMember.socialInsuranceNumber || "Chưa có"}`}
-          size="md"
+          size="lg"
           footer={
             <Button variant="secondary" onClick={() => setHistoryMember(null)}>
               Đóng
@@ -1176,35 +1158,48 @@ export function InsuranceSubtab({
               <LoadingBlock rows={4} />
             ) : historyList.length === 0 ? (
               <EmptyState
-                title="Chưa có lịch sử biến động"
-                description="Nhân viên này chưa ghi nhận biến động nào trong hệ thống."
+                title="Chưa có lịch sử đóng BHXH"
+                description="Nhân viên này chưa ghi nhận kỳ đóng BHXH nào trong hệ thống."
               />
             ) : (
               <div className="data-table-wrap border border-border rounded-xl overflow-hidden">
-                <table className="data-table min-w-[500px]">
+                <table className="data-table min-w-[550px]">
                   <thead>
                     <tr>
-                      <th style={{ width: "120px" }}>NGÀY HIỆU LỰC</th>
+                      <th style={{ width: "115px" }} className="text-center">KỲ ĐÓNG</th>
                       <th style={{ width: "140px" }}>LOẠI BIẾN ĐỘNG</th>
-                      <th style={{ width: "130px" }} className="text-right">LƯƠNG MỚI</th>
-                      <th>MÃ ĐỐI SOÁT</th>
+                      <th style={{ width: "135px" }} className="text-right">LƯƠNG ĐÓNG BH</th>
+                      <th style={{ width: "120px" }} className="text-center">TRẠNG THÁI</th>
+                      <th>GHI CHÚ / CĂN CỨ</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {historyList.map((h: InsuranceChangeItemV3, idx: number) => (
-                      <tr key={h.id || idx}>
-                        <td className="text-xs font-medium text-foreground">
-                          {h.effectiveFrom ? formatDate(h.effectiveFrom) : h.effectiveMonth || "—"}
-                        </td>
-                        <td>{renderChangeTypeBadge(h)}</td>
-                        <td className="text-right font-bold text-foreground text-xs font-mono">
-                          {formatCurrency(h.newBaseSalary || h.newSalary || 0)}
-                        </td>
-                        <td className="font-mono text-xs text-muted-foreground">
-                          {h.externalDossierCode || "—"}
-                        </td>
-                      </tr>
-                    ))}
+                    {historyList.map((h: InsurancePeriodHistoryItem, idx: number) => {
+                      const periodStr =
+                        h.month && h.year
+                          ? `Tháng ${String(h.month).padStart(2, "0")}/${h.year}`
+                          : h.effectiveFrom
+                          ? formatDate(h.effectiveFrom)
+                          : "—";
+
+                      return (
+                        <tr key={h.id || idx}>
+                          <td className="text-center text-xs font-semibold text-foreground font-mono">
+                            {periodStr}
+                          </td>
+                          <td>{renderChangeTypeBadge(h as any)}</td>
+                          <td className="text-right font-bold text-foreground text-xs font-mono">
+                            {formatCurrency(h.baseSalary || h.newBaseSalary || 0)}
+                          </td>
+                          <td className="text-center">
+                            {renderChangeStatusBadge(h.status || "confirmed")}
+                          </td>
+                          <td className="text-xs text-muted-foreground">
+                            {h.note || h.statusNote || h.externalDossierCode || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1263,13 +1258,12 @@ export function InsuranceSubtab({
                 const file = e.dataTransfer.files?.[0];
                 if (file) setImportFile(file);
               }}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                isDragging
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging
                   ? "border-primary bg-primary/5"
                   : importFile
-                  ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
-                  : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
-              }`}
+                    ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                    : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                }`}
             >
               <input
                 type="file"

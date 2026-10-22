@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, RefreshCw, Search, X } from "lucide-react";
+import { Check, ChevronDown, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePayrollProjects } from "@/lib/hooks/use-payroll";
@@ -230,7 +230,6 @@ export function ProjectSelect({
           >
             {/* Search Input Box */}
             <div className="searchable-select-search-box">
-              <Search className="search-icon" />
               <input
                 ref={inputRef}
                 type="text"

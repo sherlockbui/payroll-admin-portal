@@ -312,6 +312,7 @@ export function OtherDeductionsSubtab({
           >
             <UploadCloud className="w-3.5 h-3.5" /> Import Excel
           </Button>
+          {/* Tam an button Them khoan giam tru
           <Button
             variant="primary"
             size="sm"
@@ -323,6 +324,7 @@ export function OtherDeductionsSubtab({
           >
             <Plus className="w-3.5 h-3.5" /> Thêm khoản giảm trừ
           </Button>
+          */}
         </div>
       );
     }
@@ -353,94 +355,6 @@ export function OtherDeductionsSubtab({
 
   return (
     <div className="other-deductions-subtab space-y-4">
-      {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Card 1: Tổng số khoản trừ */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Tổng số khoản trừ
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-              <ReceiptText className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-foreground font-mono">
-              {isListLoading ? "—" : totalItems}
-            </span>
-            <span className="text-xs text-muted-foreground">khoản</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">
-            Trong kỳ {formatMonthYear(periodFilter)}
-          </p>
-        </div>
-
-        {/* Card 2: Tổng tiền giảm trừ */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-rose-700 dark:text-rose-400 uppercase tracking-wider">
-              Tổng tiền giảm trừ
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-              <TrendingDown className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400 font-mono">
-              {isListLoading ? "—" : formatCurrency(totalAmount)}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Khấu trừ trực tiếp tiền lương</p>
-        </div>
-
-        {/* Card 3: Tạm ứng lương */}
-        <div
-          onClick={() => {
-            const adv = deductionTypes.find((t) => t.deductionCode.includes("ADVANCE"));
-            if (adv) setTypeFilter(String(adv.id));
-          }}
-          className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md cursor-pointer hover:border-blue-300"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-              Tạm ứng lương
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <WalletCards className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400 font-mono">
-              {isListLoading ? "—" : countByType["ADVANCE_SALARY"] || countByType["ADVANCE_PAYMENT"] || 0}
-            </span>
-            <span className="text-xs text-muted-foreground">khoản</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Tạm ứng lương giữa kỳ</p>
-        </div>
-
-        {/* Card 4: Bồi thường / Đồng phục */}
-        <div className="bg-card border border-border rounded-xl p-4 transition-all duration-200 hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-              Khấu trừ khác
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400 font-mono">
-              {isListLoading
-                ? "—"
-                : (countByType["COMPENSATION"] || 0) + (countByType["UNIFORM_FEE"] || 0) + (countByType["OTHER"] || 0)}
-            </span>
-            <span className="text-xs text-muted-foreground">khoản</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Đồng phục, bồi thường CCDC</p>
-        </div>
-      </div>
-
       {/* Main Integrated Table Card */}
       <div className="integrated-table-card">
         {/* Table Toolbar */}
@@ -454,43 +368,49 @@ export function OtherDeductionsSubtab({
             {/* Right: Filters & Search on a single horizontal line */}
             <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-nowrap shrink-0">
               {/* Month Picker */}
-              <MonthPicker
-                value={periodFilter}
-                onChange={setPeriodFilter}
-                className="w-[155px] sm:w-[165px] shrink-0"
-              />
+              <div style={{ width: "165px", minWidth: "150px", flexShrink: 0 }}>
+                <MonthPicker
+                  value={periodFilter}
+                  onChange={setPeriodFilter}
+                  className="w-full"
+                />
+              </div>
 
               {/* Deduction Type Select */}
               {deductionTypes.length > 0 && (
-                <SearchableSelect
-                  value={typeFilter}
-                  onChange={(val) => {
-                    setTypeFilter(val || "all");
-                    setCurrentPage(1);
-                  }}
-                  options={[
-                    { value: "all", label: "Tất cả loại giảm trừ" },
-                    ...deductionTypes.map((t: OtherDeductionTypeItem) => ({
-                      value: String(t.id),
-                      label: t.deductionName || (t as any).name || t.deductionCode || `Loại #${t.id}`,
-                    })),
-                  ]}
-                  placeholder="Tất cả loại giảm trừ"
-                  className="w-[190px] sm:w-[205px] shrink-0"
-                  allowClear={false}
-                />
+                <div style={{ width: "195px", minWidth: "160px", flexShrink: 0 }}>
+                  <SearchableSelect
+                    value={typeFilter}
+                    onChange={(val) => {
+                      setTypeFilter(val || "all");
+                      setCurrentPage(1);
+                    }}
+                    options={[
+                      { value: "all", label: "Tất cả loại giảm trừ" },
+                      ...deductionTypes.map((t: OtherDeductionTypeItem) => ({
+                        value: String(t.id),
+                        label: t.deductionName || (t as any).name || t.deductionCode || `Loại #${t.id}`,
+                      })),
+                    ]}
+                    placeholder="Tất cả loại giảm trừ"
+                    style={{ width: "100%" }}
+                    allowClear={false}
+                  />
+                </div>
               )}
 
               {/* Search Box */}
-              <SearchInput
-                value={searchTerm}
-                onChange={(val) => {
-                  setSearchTerm(val);
-                  setCurrentPage(1);
-                }}
-                placeholder="Tìm mã NV, tên, số QĐ..."
-                containerClassName="w-[180px] sm:w-[220px] lg:w-[250px] shrink min-w-[140px]"
-              />
+              <div style={{ width: "240px", minWidth: "180px", flexShrink: 1 }}>
+                <SearchInput
+                  value={searchTerm}
+                  onChange={(val) => {
+                    setSearchTerm(val);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Tìm mã NV, tên, số QĐ..."
+                  containerClassName="w-full"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -665,8 +585,8 @@ export function OtherDeductionsSubtab({
                 {saveMutation.isPending
                   ? "Đang lưu..."
                   : editingRecord
-                  ? "Lưu thay đổi"
-                  : "Lưu hồ sơ"}
+                    ? "Lưu thay đổi"
+                    : "Lưu hồ sơ"}
               </span>
             </Button>
           </div>
@@ -840,13 +760,12 @@ export function OtherDeductionsSubtab({
                 const file = e.dataTransfer.files?.[0];
                 if (file) setImportFile(file);
               }}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                isDragging
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging
                   ? "border-primary bg-primary/5"
                   : importFile
-                  ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
-                  : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
-              }`}
+                    ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                    : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                }`}
             >
               <input
                 type="file"

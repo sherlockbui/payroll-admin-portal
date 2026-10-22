@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Award,
@@ -13,12 +13,14 @@ import {
   Layers,
   RefreshCw,
   Search,
+  Upload,
+  UploadCloud,
   UserCheck,
   UserX,
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useToast } from "@/components/providers";
 import {
   Badge,
@@ -51,6 +53,7 @@ export function LeaveSubtab({
   setHeaderAction?: (node: ReactNode) => void;
 }) {
   const { notify } = useToast();
+  const queryClient = useQueryClient();
 
   // Filters & State
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "all");
@@ -66,6 +69,40 @@ export function LeaveSubtab({
   const [historyYear, setHistoryYear] = useState<string>("2026");
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize] = useState(10);
+
+  // Import Modal State
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadTemplate = async () => {
+    try {
+      setDownloadingTemplate(true);
+      await api.downloadLeaveImportTemplateV3();
+      notify("Đã tải xuống biểu mẫu import phép năm (.xlsx)");
+    } catch (err: any) {
+      notify(err?.message || "Không thể tải file mẫu. Vui lòng thử lại sau.", "error");
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      return api.importLeaveExcelV3(file);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leaves-list-v3"] });
+      setImportModalOpen(false);
+      setImportFile(null);
+      notify("Nhập dữ liệu phép năm từ Excel thành công!");
+    },
+    onError: (err: any) => {
+      notify(err?.message || "Lỗi khi import file Excel phép năm", "error");
+    },
+  });
 
   // Sync prop changes for projectId
   useEffect(() => {
@@ -176,6 +213,14 @@ export function LeaveSubtab({
           >
             <RefreshCw className="w-3.5 h-3.5" /> Làm mới
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setImportModalOpen(true)}
+            className="gap-1.5 font-medium shrink-0"
+          >
+            <UploadCloud className="w-3.5 h-3.5 text-primary" /> Import Excel
+          </Button>
         </div>
       );
     }
@@ -211,154 +256,6 @@ export function LeaveSubtab({
 
   return (
     <div className="leave-subtab space-y-4">
-      {/* 5 KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        {/* Card 1: Tổng nhân sự */}
-        <div
-          onClick={() => {
-            setViewFilter("ALL");
-            setCurrentPage(1);
-          }}
-          className={`group cursor-pointer rounded-xl border p-4 transition-all duration-200 hover:shadow-md ${
-            viewFilter === "ALL"
-              ? "border-primary bg-primary/5 dark:bg-primary/10 ring-2 ring-primary/20"
-              : "border-border bg-card hover:border-border/80"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Tổng nhân sự
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform">
-              <Users className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-foreground">
-              {isListLoading ? "—" : summaryData?.total ?? 0}
-            </span>
-            <span className="text-xs text-muted-foreground">người</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Tất cả nhân sự trong hệ thống</p>
-        </div>
-
-        {/* Card 2: Đủ điều kiện hưởng phép */}
-        <div
-          onClick={() => {
-            setViewFilter("OFFICIAL_ELIGIBLE");
-            setCurrentPage(1);
-          }}
-          className={`group cursor-pointer rounded-xl border p-4 transition-all duration-200 hover:shadow-md ${
-            viewFilter === "OFFICIAL_ELIGIBLE"
-              ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 ring-2 ring-emerald-500/20"
-              : "border-border bg-card hover:border-emerald-500/30"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-              Đủ điều kiện phép
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">
-              <UserCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-              {isListLoading ? "—" : summaryData?.officialEligible ?? 0}
-            </span>
-            <span className="text-xs text-muted-foreground">HĐ chính thức</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Hưởng tiêu chuẩn 12+ ngày/năm</p>
-        </div>
-
-        {/* Card 3: Thử việc / Chưa ký HĐ */}
-        <div
-          onClick={() => {
-            setViewFilter("PROBATION_OR_NO_CONTRACT");
-            setCurrentPage(1);
-          }}
-          className={`group cursor-pointer rounded-xl border p-4 transition-all duration-200 hover:shadow-md ${
-            viewFilter === "PROBATION_OR_NO_CONTRACT"
-              ? "border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 ring-2 ring-amber-500/20"
-              : "border-border bg-card hover:border-amber-500/30"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-              Thử việc / Chưa HĐ
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
-              <Clock className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-              {isListLoading ? "—" : summaryData?.probationOrNoContract ?? 0}
-            </span>
-            <span className="text-xs text-muted-foreground">người</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Chưa phát sinh hạn mức phép</p>
-        </div>
-
-        {/* Card 4: Còn phép khả dụng */}
-        <div
-          onClick={() => {
-            setViewFilter("HAS_AVAILABLE_LEAVE");
-            setCurrentPage(1);
-          }}
-          className={`group cursor-pointer rounded-xl border p-4 transition-all duration-200 hover:shadow-md ${
-            viewFilter === "HAS_AVAILABLE_LEAVE"
-              ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 ring-2 ring-blue-500/20"
-              : "border-border bg-card hover:border-blue-500/30"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-              Còn phép khả dụng
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400">
-              {isListLoading ? "—" : summaryData?.hasAvailableLeave ?? 0}
-            </span>
-            <span className="text-xs text-muted-foreground">nhân sự</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Số dư ngày phép khả dụng &gt; 0</p>
-        </div>
-
-        {/* Card 5: Hết phép năm */}
-        <div
-          onClick={() => {
-            setViewFilter("EXHAUSTED");
-            setCurrentPage(1);
-          }}
-          className={`group cursor-pointer rounded-xl border p-4 transition-all duration-200 hover:shadow-md ${
-            viewFilter === "EXHAUSTED"
-              ? "border-rose-500 bg-rose-50/50 dark:bg-rose-950/20 ring-2 ring-rose-500/20"
-              : "border-border bg-card hover:border-rose-500/30"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-rose-700 dark:text-rose-400 uppercase tracking-wider">
-              Hết phép năm
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform">
-              <AlertCircle className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-              {isListLoading ? "—" : summaryData?.exhausted ?? 0}
-            </span>
-            <span className="text-xs text-muted-foreground">nhân sự</span>
-          </div>
-          <p className="mt-1 text-xs text-muted leading-relaxed">Đã sử dụng hết hạn mức năm</p>
-        </div>
-      </div>
-
       {/* Main Integrated Table Card */}
       <div className="integrated-table-card">
         {/* Toolbar & Filters */}
@@ -559,9 +456,8 @@ export function LeaveSubtab({
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
         title={`Chi tiết & Lịch sử phép năm: ${selectedEmployee?.employee.fullName ?? ""}`}
-        description={`Mã NV: ${selectedEmployee?.employee.employeeCode} · Phòng ban: ${
-          selectedEmployee?.employee.department ?? "Khối Sản xuất"
-        } · Dự án: ${selectedEmployee?.employee.project?.projectName ?? "JSS"}`}
+        description={`Mã NV: ${selectedEmployee?.employee.employeeCode} · Phòng ban: ${selectedEmployee?.employee.department ?? "Khối Sản xuất"
+          } · Dự án: ${selectedEmployee?.employee.project?.projectName ?? "JSS"}`}
         size="lg"
         footer={<Button onClick={() => setHistoryModalOpen(false)}>Đóng</Button>}
       >
@@ -688,11 +584,123 @@ export function LeaveSubtab({
           ) : (
             <EmptyState
               title="Chưa có lịch sử nghỉ phép"
-              description={`Nhân viên chưa phát sinh đợt nghỉ phép nào trong năm ${
-                selectedYear === "all" ? "này" : selectedYear
-              }.`}
+              description={`Nhân viên chưa phát sinh đợt nghỉ phép nào trong năm ${selectedYear === "all" ? "này" : selectedYear
+                }.`}
             />
           )}
+        </div>
+      </Modal>
+
+      {/* ================= Modal: Import Excel Wizard ================= */}
+      <Modal
+        open={importModalOpen}
+        onOpenChange={(open) => {
+          setImportModalOpen(open);
+          if (!open) {
+            setImportFile(null);
+            setIsDragging(false);
+          }
+        }}
+        title="Import danh sách Phép năm từ Excel"
+        description="Tải lên tệp danh sách số dư ngày phép năm theo biểu mẫu chuẩn để cập nhật hàng loạt vào hệ thống."
+        size="lg"
+      >
+        <div className="space-y-4 text-xs">
+          {/* Step 1: Download Template */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-slate-800 dark:text-slate-100">1. Tải biểu mẫu Excel chuẩn</div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Sử dụng tệp mẫu để đảm bảo đúng định dạng các cột dữ liệu ngày phép năm.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={downloadingTemplate}
+              onClick={handleDownloadTemplate}
+              className="gap-1.5 text-xs font-semibold shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" /> Tải file mẫu (.xlsx)
+            </Button>
+          </div>
+
+          {/* Step 2: Upload File Dropzone */}
+          <div>
+            <div className="font-semibold text-slate-800 dark:text-slate-100 mb-1.5">2. Chọn tệp dữ liệu đã điền</div>
+            <div
+              onClick={() => importFileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) setImportFile(file);
+              }}
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                isDragging
+                  ? "border-primary bg-primary/5"
+                  : importFile
+                    ? "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                    : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              }`}
+            >
+              <input
+                type="file"
+                ref={importFileInputRef}
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                accept=".xlsx,.xls"
+                className="hidden"
+              />
+              {importFile ? (
+                <div className="flex items-center justify-center gap-3">
+                  <FileSpreadsheet className="w-8 h-8 text-emerald-600" />
+                  <div className="text-left">
+                    <div className="font-bold text-slate-900 dark:text-slate-100">{importFile.name}</div>
+                    <div className="text-slate-500 dark:text-slate-400 text-[11px]">
+                      {(importFile.size / 1024).toFixed(1)} KB • Bấm để chọn tệp khác
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <UploadCloud className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+                  <p className="font-semibold text-slate-700 dark:text-slate-200">Kéo thả tệp Excel vào đây hoặc bấm để chọn</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Chấp nhận .xlsx, .xls tối đa 10MB</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setImportModalOpen(false);
+                setImportFile(null);
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!importFile}
+              loading={importMutation.isPending}
+              onClick={() => {
+                if (importFile) importMutation.mutate(importFile);
+              }}
+              className="gap-1.5 font-semibold"
+            >
+              <Upload className="w-3.5 h-3.5" /> Bắt đầu Import
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>

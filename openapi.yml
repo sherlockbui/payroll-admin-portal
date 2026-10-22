@@ -1,0 +1,974 @@
+openapi: 3.0.3
+
+info:
+  title: HRIS API - WebPayroll (Evaluation & Insurance)
+  description: |
+    Hợp đồng API cho phân hệ WebPayroll thuộc nhóm **Evaluation (Đánh giá KPI)** và **Insurance (BHXH)**.
+
+    Tất cả endpoint đều nằm dưới base path `/api/web/payroll` và yêu cầu xác thực Bearer (JWT).
+
+    ## Quy ước response
+    Mọi response (trừ file tải về) đều bọc trong envelope chung:
+    ```json
+    {
+      "success": true,
+      "data": { },
+      "error": null,
+      "message": "Success",
+      "traceId": "0HN...",
+      "timestamp": "2026-10-05T07:30:00.0000000Z"
+    }
+    ```
+    - Khi lỗi: `success=false`, `error.code` nằm trong danh sách mã lỗi, `data` là `null`.
+    - Các property được serialize theo **camelCase**.
+  version: 1.0.0
+  license:
+    name: Proprietary
+
+servers:
+  - url: /api/web/payroll
+    description: Base path WebPayroll
+
+tags:
+  - name: Evaluation
+    description: Đánh giá KPI nhân viên (tải template, import, danh sách)
+  - name: Insurance
+    description: Bảo hiểm xã hội (người tham gia, kỳ đóng, chứng từ, import)
+
+security:
+  - bearerAuth: []
+
+paths:
+  # =========================================================================
+  # EVALUATION
+  # =========================================================================
+  /evaluations:
+    get:
+      tags: [Evaluation]
+      summary: Danh sách đánh giá KPI (phân trang)
+      description: Lấy danh sách bản ghi đánh giá KPI của một dự án, kèm chi tiết từng loại đánh giá.
+      operationId: getEvaluations
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          description: ID dự án
+          schema: { type: integer, format: int32, example: 1 }
+        - name: month
+          in: query
+          required: false
+          description: Tháng đánh giá (1-12)
+          schema: { type: integer, format: int32, minimum: 1, maximum: 12, example: 10 }
+        - name: year
+          in: query
+          required: false
+          description: Năm đánh giá
+          schema: { type: integer, format: int32, minimum: 2000, maximum: 2100, example: 2026 }
+        - name: keyword
+          in: query
+          required: false
+          description: Tìm theo mã nhân viên hoặc tên nhân viên
+          schema: { type: string }
+        - name: pageIndex
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 1, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 20, minimum: 1 }
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvaluationPagedResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /evaluations/template:
+    get:
+      tags: [Evaluation]
+      summary: Tải template đánh giá KPI (Excel)
+      description: |
+        Tải file Excel mẫu. Các cột eval lấy từ `config.project_evaluation_type` của dự án
+        (chỉ loại đang active, sắp theo display_order). Nếu dự án chưa cấu hình loại đánh giá nào → trả lỗi 400.
+      operationId: downloadEvaluationTemplate
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          description: ID dự án
+          schema: { type: integer, format: int32, example: 1 }
+      responses:
+        '200':
+          description: File Excel template (Template_DanhGiaKPI.xlsx)
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /evaluations/import:
+    post:
+      tags: [Evaluation]
+      summary: Import file đánh giá KPI
+      description: |
+        Upload file Excel (theo template) để lưu đánh giá. Dữ liệu áp dụng cho 1 kỳ (projectId + month + year).
+
+        - Cột eval trong file khớp theo `eval_name` với các loại đánh giá của dự án.
+        - All-or-nothing: chỉ cần 1 dòng lỗi thì không lưu gì, trả về danh sách lỗi.
+        - Upsert theo (projectId, employeeCode, year, month): nếu đã tồn tại thì cập nhật và ghi lại toàn bộ chi tiết.
+      operationId: importEvaluations
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, projectId, month, year]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File Excel đánh giá (.xlsx)
+                projectId:
+                  type: integer
+                  format: int32
+                  example: 1
+                month:
+                  type: integer
+                  format: int32
+                  minimum: 1
+                  maximum: 12
+                  example: 10
+                year:
+                  type: integer
+                  format: int32
+                  example: 2026
+      responses:
+        '200':
+          description: Import hoàn tất
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvaluationImportResultResponse' }
+        '400':
+          description: File lỗi / dữ liệu không hợp lệ (kèm danh sách lỗi trong data)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvaluationImportResultResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # =========================================================================
+  # INSURANCE
+  # =========================================================================
+  /insurance/participants:
+    get:
+      tags: [Insurance]
+      summary: Danh sách người lao động tham gia BHXH (phân trang)
+      operationId: getInsuranceParticipants
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: integer, format: int32, example: 1 }
+        - name: status
+          in: query
+          required: false
+          description: Trạng thái (vd pending / confirmed / rejected)
+          schema: { $ref: '#/components/schemas/InsurancePeriodStatus' }
+        - name: type
+          in: query
+          required: false
+          description: Loại biến động
+          schema: { $ref: '#/components/schemas/InsuranceChangeType' }
+        - name: keyword
+          in: query
+          required: false
+          description: Tìm theo mã nhân viên hoặc tên nhân viên
+          schema: { type: string }
+        - name: pageIndex
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 1, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 20, minimum: 1 }
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsuranceParticipantPagedResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/employees/search:
+    get:
+      tags: [Insurance]
+      summary: Tìm kiếm nhân viên để khai báo BHXH
+      operationId: searchInsuranceEmployees
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: integer, format: int32, example: 1 }
+        - name: keyword
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 20, minimum: 1 }
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsuranceEmployeeSearchResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/contribution-preview:
+    get:
+      tags: [Insurance]
+      summary: Xem trước mức đóng BHXH
+      operationId: previewInsuranceContribution
+      parameters:
+        - name: baseSalary
+          in: query
+          required: true
+          schema: { type: number, format: decimal, example: 10000000 }
+        - name: month
+          in: query
+          required: true
+          schema: { type: integer, format: int32, minimum: 1, maximum: 12, example: 10 }
+        - name: year
+          in: query
+          required: true
+          schema: { type: integer, format: int32, example: 2026 }
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsuranceContributionPreviewResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/changes:
+    get:
+      tags: [Insurance]
+      summary: Danh sách kỳ đóng BHXH (phân trang)
+      operationId: getInsuranceChanges
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: integer, format: int32, example: 1 }
+        - name: year
+          in: query
+          required: false
+          schema: { type: integer, format: int32, example: 2026 }
+        - name: month
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, maximum: 12, example: 10 }
+        - name: status
+          in: query
+          required: false
+          description: Trạng thái (mặc định pending nếu bỏ trống)
+          schema: { $ref: '#/components/schemas/InsurancePeriodStatus' }
+        - name: type
+          in: query
+          required: false
+          description: Loại biến động
+          schema: { $ref: '#/components/schemas/InsuranceChangeType' }
+        - name: keyword
+          in: query
+          required: false
+          schema: { type: string }
+        - name: pageIndex
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 1, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 20, minimum: 1 }
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsurancePeriodPagedResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Insurance]
+      summary: Tạo kỳ đóng BHXH (biến động)
+      operationId: createInsuranceChange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInsurancePeriodRequest' }
+      responses:
+        '201':
+          description: Tạo thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdCreatedResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/changes/{id}:
+    get:
+      tags: [Insurance]
+      summary: Chi tiết kỳ đóng BHXH
+      operationId: getInsuranceChangeDetail
+      parameters:
+        - $ref: '#/components/parameters/InsurancePeriodId'
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsurancePeriodDetailResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/changes/{id}/confirm:
+    post:
+      tags: [Insurance]
+      summary: Xác nhận kỳ đóng BHXH
+      operationId: confirmInsuranceChange
+      parameters:
+        - $ref: '#/components/parameters/InsurancePeriodId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsurancePeriodDecisionRequest' }
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BooleanResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/changes/{id}/reject:
+    post:
+      tags: [Insurance]
+      summary: Từ chối kỳ đóng BHXH
+      operationId: rejectInsuranceChange
+      parameters:
+        - $ref: '#/components/parameters/InsurancePeriodId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsurancePeriodDecisionRequest' }
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BooleanResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/changes/{id}/documents:
+    post:
+      tags: [Insurance]
+      summary: Đính kèm tài liệu cho kỳ đóng BHXH
+      operationId: uploadInsuranceChangeDocument
+      parameters:
+        - $ref: '#/components/parameters/InsurancePeriodId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                documentType:
+                  type: string
+                  description: Loại tài liệu (LABOR_CONTRACT / DECISION / MEDICAL_DOCUMENT / OTHER)
+      responses:
+        '200':
+          description: Thành công (data là documentId)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdLongResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/{id}/history:
+    get:
+      tags: [Insurance]
+      summary: Lịch sử đóng BHXH của một hồ sơ (phân trang)
+      description: |
+        Lấy toàn bộ kỳ đóng (mọi trạng thái) của một hồ sơ BHXH (`employee_insurance`) theo `id`.
+        Sắp xếp theo năm/tháng giảm dần. Nếu hồ sơ không tồn tại → trả lỗi 404.
+      operationId: getInsuranceHistory
+      parameters:
+        - $ref: '#/components/parameters/EmployeeInsuranceId'
+        - name: year
+          in: query
+          required: false
+          description: Lọc theo năm đóng
+          schema: { type: integer, format: int32, example: 2026 }
+        - name: month
+          in: query
+          required: false
+          description: Lọc theo tháng đóng (1-12)
+          schema: { type: integer, format: int32, minimum: 1, maximum: 12, example: 10 }
+        - name: pageIndex
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 1, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, format: int32, default: 20, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Thành công
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsurancePeriodHistoryPagedResponse' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/import-template:
+    get:
+      tags: [Insurance]
+      summary: Tải template import BHXH (Excel)
+      operationId: downloadInsuranceImportTemplate
+      responses:
+        '200':
+          description: File Excel template (Template_Import_DongBHXH.xlsx)
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /insurance/import:
+    post:
+      tags: [Insurance]
+      summary: Import danh sách biến động BHXH
+      operationId: importInsurancePeriods
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, projectId]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File Excel (.xlsx) hoặc CSV (.csv)
+                projectId:
+                  type: integer
+                  format: int32
+                  description: Dự án đang import. Mọi nhân viên trong file phải thuộc dự án này.
+                  example: 1
+      responses:
+        '200':
+          description: Import hoàn tất
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsuranceImportResultResponse' }
+        '400':
+          description: File lỗi / dữ liệu không hợp lệ (kèm danh sách lỗi trong data)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsuranceImportResultResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    InsurancePeriodId:
+      name: id
+      in: path
+      required: true
+      description: ID kỳ đóng BHXH
+      schema: { type: integer, format: int32, example: 10 }
+
+    EmployeeInsuranceId:
+      name: id
+      in: path
+      required: true
+      description: ID hồ sơ BHXH (insurance.employee_insurance.id)
+      schema: { type: integer, format: int32, example: 5 }
+
+  responses:
+    BadRequest:
+      description: Yêu cầu không hợp lệ
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Không tìm thấy dữ liệu
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Xung đột trạng thái
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Chưa xác thực
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    # ---------------------------------------------------------------------
+    # Envelope
+    # ---------------------------------------------------------------------
+    ApiError:
+      type: object
+      properties:
+        code:
+          type: string
+          example: BAD_REQUEST
+          enum:
+            - SUCCESS
+            - NOT_FOUND
+            - BAD_REQUEST
+            - DUPLICATE
+            - VALIDATION_ERROR
+            - INTERNAL_SERVER_ERROR
+            - SERVER_ERROR
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - CONFLICT
+            - TIMEOUT
+            - SERVICE_UNAVAILABLE
+        details:
+          description: Chi tiết lỗi (tùy endpoint, có thể là danh sách lỗi import)
+
+    BaseResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        error: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/ApiError' }] }
+        message: { type: string }
+        traceId: { type: string, nullable: true }
+        timestamp: { type: string, format: date-time }
+
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data: { type: object, nullable: true }
+
+    BooleanResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data: { type: boolean }
+
+    IdCreatedResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data: { type: integer, format: int32 }
+
+    IdLongResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data: { type: integer, format: int64 }
+
+    ImportError:
+      type: object
+      properties:
+        row: { type: integer, format: int32, example: 3 }
+        column: { type: string, example: 'A' }
+        value: { type: string, nullable: true }
+        message: { type: string, example: 'Mã nhân viên không được để trống.' }
+        errorCode: { type: string, example: 'REQUIRED' }
+
+    # ---------------------------------------------------------------------
+    # Evaluation
+    # ---------------------------------------------------------------------
+    EvaluationDetailItem:
+      type: object
+      properties:
+        evaluationTypeId: { type: integer, format: int32 }
+        evalName: { type: string }
+        actual: { type: number, format: double, nullable: true, description: '% thực đạt (0.8500 = 85%)' }
+        grade: { type: string, nullable: true, description: 'Xếp loại' }
+
+    EvaluationListItem:
+      type: object
+      properties:
+        id: { type: integer, format: int32 }
+        employeeCode: { type: string }
+        employeeName: { type: string }
+        positionName: { type: string, nullable: true }
+        year: { type: integer, format: int32 }
+        month: { type: integer, format: int32 }
+        note: { type: string, nullable: true }
+        status: { type: string }
+        details:
+          type: array
+          items: { $ref: '#/components/schemas/EvaluationDetailItem' }
+
+    EvaluationImportResult:
+      type: object
+      properties:
+        totalRows: { type: integer, format: int32 }
+        successRows: { type: integer, format: int32 }
+        errorRows: { type: integer, format: int32 }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/ImportError' }
+
+    EvaluationPagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/EvaluationListItem' }
+                pageIndex: { type: integer, format: int32 }
+                pageSize: { type: integer, format: int32 }
+                totalRow: { type: integer, format: int32 }
+
+    EvaluationImportResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/EvaluationImportResult' }
+
+    # ---------------------------------------------------------------------
+    # Insurance
+    # ---------------------------------------------------------------------
+    InsuranceChangeType:
+      type: string
+      description: Loại biến động BHXH
+      enum:
+        - ACTIVE
+        - NEW_HIRE
+        - SALARY_ADJUSTMENT
+        - MATERNITY
+        - UNPAID_LEAVE
+        - TERMINATED
+
+    InsurancePeriodStatus:
+      type: string
+      description: Trạng thái kỳ đóng BHXH
+      enum:
+        - pending
+        - confirmed
+        - rejected
+
+    InsuranceParticipantListItem:
+      type: object
+      properties:
+        id: { type: integer, format: int32 }
+        employeeCode: { type: string }
+        employeeName: { type: string }
+        projectId: { type: integer, format: int32, nullable: true }
+        projectName: { type: string, nullable: true }
+        insuranceBookNumber: { type: string, nullable: true }
+        baseSalary: { type: number, format: double }
+        participationDate: { type: string, nullable: true }
+        medicalFacility: { type: string, nullable: true }
+        year: { type: integer, format: int32, nullable: true }
+        month: { type: integer, format: int32, nullable: true }
+        type: { type: string, nullable: true, allOf: [{ $ref: '#/components/schemas/InsuranceChangeType' }] }
+        isParticipating: { type: boolean }
+        status: { type: string, nullable: true, allOf: [{ $ref: '#/components/schemas/InsurancePeriodStatus' }] }
+        employeeRate: { type: number, format: double }
+        companyRate: { type: number, format: double }
+        employeeAmount: { type: number, format: double }
+        companyAmount: { type: number, format: double }
+        totalAmount: { type: number, format: double }
+
+    InsuranceEmployeeSearchItem:
+      type: object
+      properties:
+        employeeCode: { type: string }
+        employeeName: { type: string }
+        projectId: { type: integer, format: int32, nullable: true }
+        projectName: { type: string, nullable: true }
+        hasInsurance: { type: boolean }
+        insuranceBookNumber: { type: string, nullable: true }
+        baseSalary: { type: number, format: double, nullable: true }
+        medicalFacility: { type: string, nullable: true }
+        year: { type: integer, format: int32, nullable: true }
+        month: { type: integer, format: int32, nullable: true }
+
+    InsuranceContributionItem:
+      type: object
+      properties:
+        insuranceTypeId: { type: integer, format: int32 }
+        typeCode: { type: string }
+        typeName: { type: string }
+        employeeRate: { type: number, format: double }
+        companyRate: { type: number, format: double }
+        maxBaseAmount: { type: number, format: double, nullable: true }
+        appliedBaseAmount: { type: number, format: double }
+        employeeAmount: { type: number, format: double }
+        companyAmount: { type: number, format: double }
+
+    InsuranceContributionPreview:
+      type: object
+      properties:
+        baseSalary: { type: number, format: double }
+        effectiveFrom: { type: string, nullable: true }
+        employeeRateTotal: { type: number, format: double }
+        companyRateTotal: { type: number, format: double }
+        employeeAmountTotal: { type: number, format: double }
+        companyAmountTotal: { type: number, format: double }
+        totalAmount: { type: number, format: double }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/InsuranceContributionItem' }
+
+    CreateInsurancePeriodRequest:
+      type: object
+      required: [employeeCode, type]
+      properties:
+        employeeCode: { type: string, example: 'NV001' }
+        insuranceBookNumber: { type: string, nullable: true }
+        projectId: { type: integer, format: int32, nullable: true, description: 'Dự án của kỳ đóng (lưu vào period). Nếu bỏ trống sẽ lấy theo dự án hiện tại của nhân viên.', example: 1 }
+        year: { type: integer, format: int32, nullable: true, example: 2026 }
+        month: { type: integer, format: int32, nullable: true, minimum: 1, maximum: 12, example: 10 }
+        baseSalary: { type: number, format: double, nullable: true, example: 10000000 }
+        type:
+          type: string
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/InsuranceChangeType'
+          example: ACTIVE
+        isParticipating: { type: boolean, nullable: true }
+        note: { type: string, nullable: true }
+
+    InsurancePeriodDecisionRequest:
+      type: object
+      properties:
+        note: { type: string, nullable: true }
+
+    InsurancePeriodListItem:
+      type: object
+      properties:
+        id: { type: integer, format: int32 }
+        employeeCode: { type: string }
+        employeeName: { type: string }
+        projectId: { type: integer, format: int32, nullable: true }
+        projectName: { type: string, nullable: true }
+        year: { type: integer, format: int32 }
+        month: { type: integer, format: int32 }
+        baseSalary: { type: number, format: double }
+        type: { type: string, nullable: true, allOf: [{ $ref: '#/components/schemas/InsuranceChangeType' }] }
+        isParticipating: { type: boolean }
+        status: { type: string, nullable: true, allOf: [{ $ref: '#/components/schemas/InsurancePeriodStatus' }] }
+        note: { type: string, nullable: true }
+        statusNote: { type: string, nullable: true }
+        createdAt: { type: string, nullable: true }
+
+    InsurancePeriodHistoryItem:
+      type: object
+      properties:
+        id: { type: integer, format: int32 }
+        year: { type: integer, format: int32 }
+        month: { type: integer, format: int32 }
+        employeeCode: { type: string }
+        employeeName: { type: string }
+        projectName: { type: string, nullable: true }
+        baseSalary: { type: number, format: double }
+        type: { type: string, nullable: true, allOf: [{ $ref: '#/components/schemas/InsuranceChangeType' }] }
+        isParticipating: { type: boolean }
+        status: { type: string, nullable: true, allOf: [{ $ref: '#/components/schemas/InsurancePeriodStatus' }] }
+        note: { type: string, nullable: true }
+        statusNote: { type: string, nullable: true }
+        createdAt: { type: string, nullable: true }
+        createdByName: { type: string, nullable: true }
+        updatedAt: { type: string, nullable: true }
+        updatedByName: { type: string, nullable: true }
+
+    InsurancePeriodDocument:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        periodId: { type: integer, format: int32 }
+        documentType: { type: string, nullable: true }
+        fileName: { type: string, nullable: true }
+        filePath: { type: string, nullable: true }
+        fileSize: { type: integer, format: int64, nullable: true }
+        mimeType: { type: string, nullable: true }
+        createdBy: { type: integer, format: int32, nullable: true }
+        createdAt: { type: string, nullable: true }
+
+    InsurancePeriodDetail:
+      allOf:
+        - $ref: '#/components/schemas/InsurancePeriodListItem'
+        - type: object
+          properties:
+            insuranceBookNumber: { type: string, nullable: true }
+            medicalFacility: { type: string, nullable: true }
+            participationDate: { type: string, nullable: true }
+            documents:
+              type: array
+              items: { $ref: '#/components/schemas/InsurancePeriodDocument' }
+
+    InsurancePeriodImportResult:
+      type: object
+      properties:
+        batchId: { type: integer, format: int32, nullable: true }
+        totalRows: { type: integer, format: int32 }
+        successRows: { type: integer, format: int32 }
+        errorRows: { type: integer, format: int32 }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/ImportError' }
+
+    InsuranceParticipantPagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/InsuranceParticipantListItem' }
+                pageIndex: { type: integer, format: int32 }
+                pageSize: { type: integer, format: int32 }
+                totalRow: { type: integer, format: int32 }
+
+    InsuranceEmployeeSearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/InsuranceEmployeeSearchItem' }
+
+    InsuranceContributionPreviewResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/InsuranceContributionPreview' }
+
+    InsurancePeriodPagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/InsurancePeriodListItem' }
+                pageIndex: { type: integer, format: int32 }
+                pageSize: { type: integer, format: int32 }
+                totalRow: { type: integer, format: int32 }
+
+    InsurancePeriodHistoryPagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/InsurancePeriodHistoryItem' }
+                pageIndex: { type: integer, format: int32 }
+                pageSize: { type: integer, format: int32 }
+                totalRow: { type: integer, format: int32 }
+
+    InsurancePeriodDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/InsurancePeriodDetail' }
+
+    InsuranceImportResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/InsurancePeriodImportResult' }

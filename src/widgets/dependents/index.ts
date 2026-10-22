@@ -1,13 +1,14 @@
 import React from "react";
 import { createRoot, Root } from "react-dom/client";
 import { DependentsWidgetApp, DependentsWidgetConfig } from "./DependentsWidgetApp";
-import { ensureWidgetFonts } from "../common";
+import { ensureWidgetFonts, getWidgetInitialAttr } from "../common";
 import tailwindStyles from "@/app/globals.css?inline";
 
 class PayrollDependentsElement extends HTMLElement {
   private root: Root | null = null;
   private shadow: ShadowRoot | null = null;
   private mountPoint: HTMLDivElement | null = null;
+  private lastRenderKey: string = "";
 
   static get observedAttributes() {
     return ["api-base-url", "auth-token", "project-id", "user-role", "theme"];
@@ -45,14 +46,26 @@ class PayrollDependentsElement extends HTMLElement {
   private renderApp() {
     if (!this.shadow || !this.mountPoint) return;
 
+    const apiBaseUrl = getWidgetInitialAttr(this, "api-base-url", "API_BASE_URL");
+    const authToken = getWidgetInitialAttr(this, "auth-token", "__SERVER_TOKEN", "hdfPayrollToken");
+    const projectId = getWidgetInitialAttr(this, "project-id", "__SERVER_PROJECT_ID", "hdfPayrollProjectId");
+    const userRole = (getWidgetInitialAttr(this, "user-role") as any) || "accountant";
+    const themePreset = (getWidgetInitialAttr(this, "theme") as any) || "corporate";
+
+    const renderKey = `${apiBaseUrl}|${authToken}|${projectId}|${userRole}|${themePreset}`;
+    if (renderKey === this.lastRenderKey && this.root) {
+      return;
+    }
+    this.lastRenderKey = renderKey;
+
     const config: DependentsWidgetConfig = {
       shadowRoot: this.shadow,
       mountElement: this.mountPoint,
-      apiBaseUrl: this.getAttribute("api-base-url") || "",
-      authToken: this.getAttribute("auth-token") || "",
-      projectId: this.getAttribute("project-id") || "",
-      userRole: (this.getAttribute("user-role") as any) || "accountant",
-      themePreset: (this.getAttribute("theme") as any) || "corporate",
+      apiBaseUrl,
+      authToken,
+      projectId,
+      userRole,
+      themePreset,
       onEvent: (name: string, detail: any) => {
         this.dispatchEvent(
           new CustomEvent(name, {

@@ -389,7 +389,8 @@ export function DependentsSubtab({
           >
             <Upload className="w-3.5 h-3.5" /> Import Excel
           </Button>
-          <Button
+          {/* Tạm ẩn nút Khai báo NPT theo yêu cầu */}
+          {/* <Button
             variant="primary"
             size="sm"
             onClick={() => {
@@ -399,7 +400,7 @@ export function DependentsSubtab({
             className="gap-1.5 font-semibold shrink-0"
           >
             <Plus className="w-3.5 h-3.5" /> Khai báo NPT
-          </Button>
+          </Button> */}
         </div>
       );
     }
@@ -502,78 +503,7 @@ export function DependentsSubtab({
 
   return (
     <div className="space-y-4">
-      {/* 1. KPI Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div
-          onClick={() => {
-            setStatusFilter("all");
-            setCurrentPage(1);
-          }}
-          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-slate-400 ${
-            statusFilter === "all" ? "ring-2 ring-primary/40 border-primary" : "border-slate-200"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-600">Tổng số NPT</span>
-            <UserCheck className="w-4 h-4 text-slate-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900">{countsMap.TOTAL}</div>
-          <p className="mt-1 text-xs text-slate-500 leading-relaxed">Toàn bộ hồ sơ NPT</p>
-        </div>
-
-        <div
-          onClick={() => {
-            setStatusFilter("PENDING");
-            setCurrentPage(1);
-          }}
-          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-amber-400 ${
-            statusFilter === "PENDING" ? "ring-2 ring-amber-500/40 border-amber-500" : "border-slate-200"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-amber-800">Chờ phê duyệt</span>
-            <Clock className="w-4 h-4 text-amber-700" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-amber-700">{countsMap.PENDING}</div>
-          <p className="mt-1 text-xs text-amber-700/80 leading-relaxed">Cần xem xét phê duyệt</p>
-        </div>
-
-        <div
-          onClick={() => {
-            setStatusFilter("APPROVED");
-            setCurrentPage(1);
-          }}
-          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-emerald-400 ${
-            statusFilter === "APPROVED" ? "ring-2 ring-emerald-500/40 border-emerald-500" : "border-slate-200"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-emerald-800">Đã phê duyệt</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-emerald-700">{countsMap.APPROVED}</div>
-          <p className="mt-1 text-xs text-emerald-700/80 leading-relaxed">Được tính giảm trừ</p>
-        </div>
-
-        <div
-          onClick={() => {
-            setStatusFilter("REJECTED");
-            setCurrentPage(1);
-          }}
-          className={`p-3.5 rounded-xl border bg-white shadow-xs cursor-pointer transition-all hover:border-rose-400 ${
-            statusFilter === "REJECTED" ? "ring-2 ring-rose-500/40 border-rose-500" : "border-slate-200"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-rose-800">Bị từ chối</span>
-            <XCircle className="w-4 h-4 text-rose-700" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-rose-700">{countsMap.REJECTED}</div>
-          <p className="mt-1 text-xs text-rose-700/80 leading-relaxed">Hồ sơ không hợp lệ</p>
-        </div>
-      </div>
-
-      {/* 2. Main Integrated Table Card with Toolbar */}
+      {/* Main Integrated Table Card with Toolbar */}
       <div className="integrated-table-card">
         {/* Toolbar */}
         <div className="table-card-toolbar">
@@ -624,20 +554,7 @@ export function DependentsSubtab({
               description={
                 searchTerm || relationshipFilter !== "all" || statusFilter !== "all"
                   ? "Không tìm thấy kết quả phù hợp với bộ lọc hiện tại."
-                  : "Bấm 'Khai báo NPT' hoặc 'Import Excel' để thêm người phụ thuộc đầu tiên."
-              }
-              action={
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    resetDeclareForm();
-                    setDeclareModalOpen(true);
-                  }}
-                  className="gap-1.5 font-semibold"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Khai báo người phụ thuộc
-                </Button>
+                  : "Chưa có nhân sự nào khai báo người phụ thuộc trong dự án đã chọn."
               }
             />
           </div>
@@ -749,8 +666,8 @@ export function DependentsSubtab({
                             type="button"
                             onClick={() => handleOpenDocuments(dep as DependentDetailV3)}
                             className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${(dep.documentsCount || 0) > 0
-                                ? "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
-                                : "bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200"
+                              ? "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                              : "bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200"
                               }`}
                             title="Quản lý tài liệu hồ sơ"
                           >
@@ -1556,10 +1473,10 @@ export function DependentsSubtab({
                 if (file) setImportFile(file);
               }}
               className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging
-                  ? "border-primary bg-primary/5"
-                  : importFile
-                    ? "border-emerald-300 bg-emerald-50/40"
-                    : "border-slate-300 hover:bg-slate-50"
+                ? "border-primary bg-primary/5"
+                : importFile
+                  ? "border-emerald-300 bg-emerald-50/40"
+                  : "border-slate-300 hover:bg-slate-50"
                 }`}
             >
               <input

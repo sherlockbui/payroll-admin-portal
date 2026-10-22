@@ -50,6 +50,120 @@ import { cn, formatCurrency, formatDate } from "@/lib/utils";
 
 export type SalaryPolicyMode = "ALL" | "CUSTOM" | "PROJECT_DEFAULT";
 
+// Helper to categorize policy items
+export function getPolicyCategory(policy: { policyCode?: string; policyName?: string; dataType?: string }): {
+  key: "salary" | "allowance" | "bonus" | "overtime" | "other";
+  label: string;
+} {
+  const code = (policy.policyCode || "").toUpperCase();
+  const name = (policy.policyName || "").toLowerCase();
+
+  if (
+    code.startsWith("POL_BASIC_") ||
+    code === "POL_BASIC_SALARY" ||
+    code === "POL_INSURANCE_BASE" ||
+    code === "POL_INSURANCE_ALLOWANCE" ||
+    code.includes("GIO_CHUAN") ||
+    code.includes("NGAY_CHUAN") ||
+    code.includes("HOURLY_DIVISOR") ||
+    name.includes("lương cơ bản") ||
+    name.includes("lương đóng bh") ||
+    name.includes("giờ chuẩn") ||
+    name.includes("ngày chuẩn")
+  ) {
+    return { key: "salary", label: "Lương & Định mức" };
+  }
+
+  if (
+    code.startsWith("POL_OT_") ||
+    code.startsWith("POL_NIGHT_") ||
+    name.includes("tăng ca") ||
+    name.includes("làm thêm") ||
+    name.includes("ca đêm") ||
+    name.includes("overtime")
+  ) {
+    return { key: "overtime", label: "Tăng ca & Ca đêm" };
+  }
+
+  if (
+    code.includes("BONUS") ||
+    code.includes("KPI") ||
+    code.includes("TARGET") ||
+    name.includes("thưởng") ||
+    name.includes("chuyên cần") ||
+    name.includes("kpi")
+  ) {
+    return { key: "bonus", label: "Thưởng & KPI" };
+  }
+
+  if (
+    code.includes("ALLOWANCE") ||
+    name.includes("phụ cấp") ||
+    name.includes("tiền cơm") ||
+    name.includes("xăng") ||
+    name.includes("điện thoại") ||
+    name.includes("nhà ở") ||
+    name.includes("độc hại") ||
+    name.includes("trách nhiệm")
+  ) {
+    return { key: "allowance", label: "Phụ cấp & Trợ cấp" };
+  }
+
+  return { key: "other", label: "Chế độ khác" };
+}
+
+// Helper to format policy values by dataType
+export function formatPolicyValue(val: string | number | null | undefined, dataType?: string): string {
+  if (val === null || val === undefined || val === "") return "—";
+  const num = Number(val);
+  const dt = (dataType || "").toUpperCase();
+
+  if (dt === "PERCENTAGE" || dt.includes("PERCENT")) {
+    return isNaN(num) ? String(val) : `${num}%`;
+  }
+  if (dt === "HOURS" || dt.includes("HOUR") || dt.includes("GIO")) {
+    return isNaN(num) ? String(val) : `${num} giờ`;
+  }
+  if (dt === "DAYS" || dt.includes("DAY") || dt.includes("NGAY")) {
+    return isNaN(num) ? String(val) : `${num} ngày`;
+  }
+  if (dt === "COEFFICIENT" || dt.includes("COEFF") || dt === "MULTIPLIER") {
+    return isNaN(num) ? String(val) : `x${num}`;
+  }
+  if (dt === "NUMBER") {
+    return isNaN(num) ? String(val) : String(num);
+  }
+
+  if (!isNaN(num)) {
+    return formatCurrency(num);
+  }
+  return String(val);
+}
+
+// Helper to check if a policy data type is currency / money
+export function isMoneyDataType(dataType?: string): boolean {
+  if (!dataType) return true;
+  const dt = dataType.toUpperCase();
+  if (
+    dt === "PERCENT" ||
+    dt === "PERCENTAGE" ||
+    dt.includes("PERCENT") ||
+    dt === "COEFFICIENT" ||
+    dt.includes("COEFF") ||
+    dt === "MULTIPLIER" ||
+    dt === "HOURS" ||
+    dt.includes("HOUR") ||
+    dt.includes("GIO") ||
+    dt === "DAYS" ||
+    dt.includes("DAY") ||
+    dt.includes("NGAY") ||
+    dt === "NUMBER"
+  ) {
+    return false;
+  }
+  return true;
+}
+
 // Helper to filter true allowances & bonus policies (exclude basic salary, insurance base, OT rate coefficients, standard hour thresholds)
 export function isAllowancePolicy(policy: {
   policyCode?: string;
@@ -232,6 +346,7 @@ export function EmployeePoliciesSubtab({
   interface EditablePolicyItem extends EmployeePolicyDetailItemDto {
     isEnabled: boolean;
     amount: number;
+    valueStr: string;
     isExpanded?: boolean;
   }
   const [editablePolicies, setEditablePolicies] = useState<EditablePolicyItem[]>([]);
@@ -262,19 +377,19 @@ export function EmployeePoliciesSubtab({
         detail.policies.find((p) => p.effectiveFrom)?.effectiveFrom || new Date().toISOString().slice(0, 10)
       );
 
-      const mappedPolicies: EditablePolicyItem[] = detail.policies
-        .filter(isAllowancePolicy)
-        .map((p) => {
-          const valNum = Number(p.employeeValue || p.effectiveValue || p.groupValue || 0);
-          return {
-            ...p,
-            isEnabled: p.hasOverride || (p.groupValue !== null && p.groupValue !== "" && p.groupValue !== "0"),
-            amount: isNaN(valNum) ? 0 : valNum,
-            effectiveTo: p.effectiveTo || "",
-            note: p.note || "",
-            isExpanded: Boolean(p.note || p.effectiveTo),
-          };
-        });
+      const mappedPolicies: EditablePolicyItem[] = (detail.policies || []).map((p) => {
+        const rawVal = p.employeeValue ?? p.effectiveValue ?? p.groupValue ?? "0";
+        const valNum = Number(rawVal);
+        return {
+          ...p,
+          isEnabled: Boolean(p.hasOverride),
+          amount: isNaN(valNum) ? 0 : valNum,
+          valueStr: String(rawVal),
+          effectiveTo: p.effectiveTo || "",
+          note: p.note || "",
+          isExpanded: Boolean(p.note || p.effectiveTo),
+        };
+      });
 
       setEditablePolicies(mappedPolicies);
     } catch (err: any) {
@@ -299,13 +414,17 @@ export function EmployeePoliciesSubtab({
         insuranceSalary: editIsCustom ? editInsuranceSalary : null,
         policies: editablePolicies
           .filter((p) => p.isEnabled)
-          .map((p) => ({
-            policyItemId: p.policyItemId,
-            value: String(p.amount || 0),
-            effectiveTo: p.effectiveTo || null,
-            note: p.note || null,
-            status: 1,
-          })),
+          .map((p) => {
+            const isMoney = isMoneyDataType(p.dataType);
+            const val = isMoney ? String(p.amount || 0) : String(p.valueStr || p.amount || 0);
+            return {
+              policyItemId: p.policyItemId,
+              value: val,
+              effectiveTo: p.effectiveTo || null,
+              note: p.note || null,
+              status: 1,
+            };
+          }),
       };
 
       await api.saveEmployeePolicy(editDetail.employeeCode, payload);
@@ -332,13 +451,15 @@ export function EmployeePoliciesSubtab({
       setEditablePolicies((prev) =>
         prev.map((p) => {
           if (p.policyItemId === policyItemId) {
-            const defVal = Number(p.groupValue || 0);
+            const rawVal = p.groupValue ?? "0";
+            const defVal = Number(rawVal);
             return {
               ...p,
               hasOverride: false,
               employeeValue: null,
               effectiveValue: p.groupValue,
               amount: isNaN(defVal) ? 0 : defVal,
+              valueStr: String(rawVal),
               note: null,
               effectiveTo: null,
             };
@@ -453,11 +574,11 @@ export function EmployeePoliciesSubtab({
   // Live calculation in Edit Modal
   const editCalculations = useMemo(() => {
     const totalAllowance = editablePolicies
-      .filter((a) => a.isEnabled)
+      .filter((a) => a.isEnabled && isMoneyDataType(a.dataType))
       .reduce((s, a) => s + (Number(a.amount) || 0), 0);
 
     const defaultAllowanceTotal = editablePolicies
-      .filter((a) => a.isEnabled)
+      .filter((a) => a.isEnabled && isMoneyDataType(a.dataType))
       .reduce((s, a) => s + (Number(a.groupValue) || 0), 0);
 
     const deltaTotal = totalAllowance - defaultAllowanceTotal;
@@ -467,72 +588,7 @@ export function EmployeePoliciesSubtab({
 
   return (
     <div className="space-y-4">
-      {/* 1. KPI Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* Total Employees */}
-        <div
-          onClick={() => setSelectedMode("ALL")}
-          className={cn(
-            "p-3.5 rounded-xl border bg-white dark:bg-slate-900 shadow-xs cursor-pointer transition-all hover:border-slate-400",
-            selectedMode === "ALL" ? "ring-2 ring-primary/40 border-primary" : "border-slate-200 dark:border-slate-800"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Tổng nhân sự</span>
-            <Users className="w-4 h-4 text-slate-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.total}</div>
-          <p className="mt-1 text-xs text-slate-500 leading-relaxed">Toàn bộ nhân sự trong phạm vi lọc</p>
-        </div>
-
-        {/* Project Default */}
-        <div
-          onClick={() => setSelectedMode("PROJECT_DEFAULT")}
-          className={cn(
-            "p-3.5 rounded-xl border bg-white dark:bg-slate-900 shadow-xs cursor-pointer transition-all hover:border-emerald-400",
-            selectedMode === "PROJECT_DEFAULT" ? "ring-2 ring-emerald-500/40 border-emerald-500" : "border-slate-200 dark:border-slate-800"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">Theo chuẩn Nhóm</span>
-            <Building2 className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.defaultCount}</div>
-          <p className="mt-1 text-xs text-emerald-700/80 leading-relaxed">Kế thừa 100% định mức nhóm quy định</p>
-        </div>
-
-        {/* Custom Override */}
-        <div
-          onClick={() => setSelectedMode("CUSTOM")}
-          className={cn(
-            "p-3.5 rounded-xl border bg-white dark:bg-slate-900 shadow-xs cursor-pointer transition-all hover:border-primary/60",
-            selectedMode === "CUSTOM" ? "ring-2 ring-primary/40 border-primary" : "border-slate-200 dark:border-slate-800"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-primary">Thỏa thuận riêng</span>
-            <Sparkles className="w-4 h-4 text-primary" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-primary">{stats.customCount}</div>
-          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">Có lương hoặc phụ cấp thỏa thuận riêng</p>
-        </div>
-
-        {/* Total Salary Fund */}
-        <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Tổng thu nhập cố định</span>
-            <Wallet className="w-4 h-4 text-slate-500" />
-          </div>
-          <div className="mt-2 text-xl font-bold text-foreground font-mono">
-            {formatCurrency(stats.totalMonthlySalary)}
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            Lương cơ bản &amp; các khoản phụ cấp cố định
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Main Integrated Table Card */}
+      {/* Main Integrated Table Card */}
       <div className="integrated-table-card">
         {/* Toolbar */}
         <div className="table-card-toolbar">
@@ -767,13 +823,13 @@ export function EmployeePoliciesSubtab({
                               },
                               ...(hasOverride
                                 ? [
-                                    {
-                                      key: "restore",
-                                      label: "Khôi phục chuẩn dự án",
-                                      icon: <RotateCcw className="w-3.5 h-3.5 text-slate-500" />,
-                                      onClick: () => setRestoreEmployee(item),
-                                    },
-                                  ]
+                                  {
+                                    key: "restore",
+                                    label: "Khôi phục chuẩn dự án",
+                                    icon: <RotateCcw className="w-3.5 h-3.5 text-slate-500" />,
+                                    onClick: () => setRestoreEmployee(item),
+                                  },
+                                ]
                                 : []),
                             ]}
                           />
@@ -807,7 +863,7 @@ export function EmployeePoliciesSubtab({
           onOpenChange={(open) => !open && setEditEmployeeCode(null)}
           title={`Cấu hình thỏa thuận chế độ & lương: ${editDetail?.employeeName || editEmployeeCode}`}
           description={`Mã NV: ${editEmployeeCode} • Nhóm đối tượng: ${editDetail?.policyGroupName || "Chưa phân nhóm"}`}
-          size="lg"
+          size="xl"
           footer={
             <div className="flex items-center justify-between w-full">
               <div>
@@ -850,29 +906,31 @@ export function EmployeePoliciesSubtab({
           ) : !editDetail ? (
             <div className="py-8 text-center text-muted-foreground">Không tìm thấy thông tin nhân sự.</div>
           ) : (
-            <div className="space-y-4 py-1 text-xs">
-              {/* Mode Switcher Banner */}
+            <div className="space-y-3.5 py-1 text-xs">
+              {/* Compact Mode Switcher Banner */}
               <div
                 className={cn(
-                  "p-3 rounded-xl border flex items-center justify-between transition-colors",
+                  "px-3.5 py-2.5 rounded-xl border flex items-center justify-between transition-colors",
                   editIsCustom
                     ? "bg-primary/5 border-primary/20 text-slate-900 dark:text-slate-100"
-                    : "bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                    : "bg-slate-100/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
                 )}
               >
-                <div className="space-y-0.5">
-                  <div className="font-semibold text-sm flex items-center gap-1.5">
-                    {editIsCustom ? <Sparkles className="w-4 h-4 text-primary" /> : <Building2 className="w-4 h-4 text-slate-500" />}
-                    <span>{editIsCustom ? "Chế độ: Thỏa thuận riêng (Ghi đè định mức chuẩn của nhóm)" : "Chế độ: Kế thừa theo chuẩn Nhóm"}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground m-0">
-                    {editIsCustom
-                      ? "Nhân sự này sẽ nhận mức lương cơ bản và các khoản phụ cấp thỏa thuận riêng dưới đây."
-                      : "Mức lương và phụ cấp tự động đồng bộ theo bảng quy chế của nhóm đối tượng."}
-                  </p>
+                <div className="font-semibold text-xs flex items-center gap-2">
+                  {editIsCustom ? (
+                    <>
+                      <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                      <span className="text-primary font-bold">Chế độ thỏa thuận riêng (Ghi đè định mức chuẩn của nhóm)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Building2 className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span className="text-slate-600 dark:text-slate-300">Chế độ kế thừa 100% theo chuẩn nhóm đối tượng</span>
+                    </>
+                  )}
                 </div>
 
-                <label className="flex items-center gap-2 cursor-pointer shrink-0 ml-3 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xs">
+                <label className="flex items-center gap-2 cursor-pointer shrink-0 ml-3 bg-white dark:bg-slate-800 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xs">
                   <input
                     type="checkbox"
                     checked={editIsCustom}
@@ -884,30 +942,133 @@ export function EmployeePoliciesSubtab({
               </div>
 
               {/* Side-by-Side Comparison Box */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
                 {/* LEFT COLUMN: MỨC CHUẨN CỦA NHÓM (THAM CHIẾU) */}
-                <div className="p-3.5 bg-slate-50/80 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="p-3.5 bg-slate-50/80 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 flex flex-col">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
                     <span className="font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                      <Building2 className="w-3.5 h-3.5 text-slate-500" /> 1. Định mức Chuẩn Nhóm
+                      <Building2 className="w-3.5 h-3.5 text-slate-500" /> 1. Định mức chuẩn nhóm
                     </span>
-                    <span className="text-[11px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded font-medium">Khóa</span>
+                    <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded font-medium">Khóa cố định</span>
                   </div>
 
-                  {/* Group Default Policy Summary */}
-                  <div className="space-y-2">
-                    <label className="block text-slate-500 text-[11px] font-medium">Các khoản phụ cấp chuẩn nhóm:</label>
-                    <div className="space-y-1.5 bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 max-h-[260px] overflow-y-auto">
-                      {editDetail.policies.filter(isAllowancePolicy).map((p) => (
-                        <div key={p.policyItemId} className="pt-1.5 first:pt-0 flex items-center justify-between text-xs py-1">
-                          <span className="text-slate-600 dark:text-slate-300 font-medium mr-2" title={p.policyName}>{p.policyName}</span>
-                          <span className="font-bold font-mono text-slate-700 dark:text-slate-300 shrink-0">
-                            {p.groupValue && Number(p.groupValue) > 0 ? formatCurrency(p.groupValue) : "0 đ"}
-                          </span>
+                  {/* Group Default Salary & Insurance */}
+                  {(() => {
+                    const hasCustomBase = editIsCustom && editBaseSalary > 0 && editBaseSalary !== (editDetail.basicSalary || 0);
+                    const hasCustomIns = editIsCustom && editInsuranceSalary > 0 && editInsuranceSalary !== (editDetail.insuranceSalary || 0);
+
+                    return (
+                      <div className="grid grid-cols-2 gap-2.5 p-2 bg-white dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <div className={cn("p-1.5 rounded transition-colors", hasCustomBase ? "bg-primary/5 border border-primary/20" : "")}>
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-slate-500 text-[10px] block">Lương cơ bản nhóm:</span>
+                            {hasCustomBase ? (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-primary/10 text-primary font-bold">★ Đã ghi đè</span>
+                            ) : (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 font-medium">Chuẩn</span>
+                            )}
+                          </div>
+                          <div className="flex items-baseline gap-1 mt-0.5">
+                            <span className={cn("font-bold font-mono text-xs", hasCustomBase ? "line-through text-slate-400" : "text-slate-800 dark:text-slate-200")}>
+                              {editDetail.basicSalary ? formatCurrency(editDetail.basicSalary) : "—"}
+                            </span>
+                            {hasCustomBase && (
+                              <span className="font-bold font-mono text-xs text-primary">
+                                → {formatCurrency(editBaseSalary)}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      ))}
-                      {editDetail.policies.filter(isAllowancePolicy).length === 0 && (
-                        <div className="text-slate-400 italic text-center py-2">Dự án không có phụ cấp mặc định</div>
+
+                        <div className={cn("p-1.5 rounded transition-colors", hasCustomIns ? "bg-primary/5 border border-primary/20" : "")}>
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-slate-500 text-[10px] block">Lương đóng BHXH nhóm:</span>
+                            {hasCustomIns ? (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-primary/10 text-primary font-bold">★ Đã ghi đè</span>
+                            ) : (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 font-medium">Chuẩn</span>
+                            )}
+                          </div>
+                          <div className="flex items-baseline gap-1 mt-0.5">
+                            <span className={cn("font-bold font-mono text-xs", hasCustomIns ? "line-through text-slate-400" : "text-slate-800 dark:text-slate-200")}>
+                              {editDetail.insuranceSalary ? formatCurrency(editDetail.insuranceSalary) : "—"}
+                            </span>
+                            {hasCustomIns && (
+                              <span className="font-bold font-mono text-xs text-primary">
+                                → {formatCurrency(editInsuranceSalary)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Group All Policies List */}
+                  <div className="space-y-1 flex-1">
+                    <div className="space-y-1.5 bg-white dark:bg-slate-900/60 p-2 rounded-lg border border-slate-200 dark:border-slate-700 max-h-[340px] overflow-y-auto pr-1">
+                      {editDetail.policies.map((p) => {
+                        const cat = getPolicyCategory(p);
+                        const catColors: Record<string, string> = {
+                          salary: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800",
+                          allowance: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800",
+                          overtime: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800",
+                          bonus: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800",
+                          other: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+                        };
+
+                        const isOverridden = Boolean(p.hasOverride);
+                        const customVal = p.employeeValue ?? p.effectiveValue;
+
+                        return (
+                          <div
+                            key={p.policyItemId}
+                            className={cn(
+                              "p-2 rounded-lg border transition-all flex items-center justify-between text-xs gap-2",
+                              isOverridden
+                                ? "bg-primary/5 border-primary/25 border-l-4 border-l-primary shadow-xs"
+                                : "bg-slate-50/50 dark:bg-slate-800/30 border-slate-200/80 dark:border-slate-700/60"
+                            )}
+                          >
+                            <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                              <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0", catColors[cat.key] || catColors.other)}>
+                                {cat.label}
+                              </span>
+                              <span className="text-slate-700 dark:text-slate-200 font-medium truncate" title={p.policyName}>
+                                {p.policyName}
+                              </span>
+                              {isOverridden ? (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/25 shrink-0">
+                                  ★ Đã ghi đè
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                                  Chuẩn nhóm
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              {isOverridden ? (
+                                <div className="flex items-baseline gap-1">
+                                  <span className="line-through text-slate-400 text-[11px]">
+                                    {formatPolicyValue(p.groupValue, p.dataType)}
+                                  </span>
+                                  <span className="font-bold font-mono text-xs text-primary">
+                                    → {formatPolicyValue(customVal, p.dataType)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
+                                  {formatPolicyValue(p.groupValue, p.dataType)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {editDetail.policies.length === 0 && (
+                        <div className="text-slate-400 italic text-center py-4">Nhóm đối tượng chưa cấu hình chính sách nào</div>
                       )}
                     </div>
                   </div>
@@ -916,7 +1077,7 @@ export function EmployeePoliciesSubtab({
                 {/* RIGHT COLUMN: MỨC ÁP DỤNG RIÊNG CHO NHÂN SỰ NÀY */}
                 <div
                   className={cn(
-                    "p-3.5 rounded-xl border space-y-3 transition-colors",
+                    "p-3.5 rounded-xl border space-y-3 flex flex-col transition-colors",
                     editIsCustom
                       ? "bg-white dark:bg-slate-900 border-primary/30 ring-1 ring-primary/20 shadow-xs"
                       : "bg-slate-50/50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-700"
@@ -943,6 +1104,7 @@ export function EmployeePoliciesSubtab({
                     <div>
                       <GsMoneyInput
                         label="Lương cơ bản riêng"
+                        showWords={false}
                         disabled={!editIsCustom}
                         value={editBaseSalary}
                         onChange={setEditBaseSalary}
@@ -953,6 +1115,7 @@ export function EmployeePoliciesSubtab({
                     <div>
                       <GsMoneyInput
                         label="Lương đóng BHXH riêng"
+                        showWords={false}
                         disabled={!editIsCustom}
                         value={editInsuranceSalary}
                         onChange={setEditInsuranceSalary}
@@ -962,17 +1125,24 @@ export function EmployeePoliciesSubtab({
                     </div>
                   </div>
 
-                  {/* Allowances List Editable */}
-                  <div className="space-y-2 pt-1">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Khoản phụ cấp áp dụng:
-                    </label>
-                    <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-                      {editablePolicies.map((a, i) => (
+                  {/* All Policies List Editable */}
+                  <div className="space-y-1.5 flex-1 max-h-[340px] overflow-y-auto pr-1">
+                    {editablePolicies.map((a, i) => {
+                      const cat = getPolicyCategory(a);
+                      const catColors: Record<string, string> = {
+                        salary: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800",
+                        allowance: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800",
+                        overtime: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800",
+                        bonus: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800",
+                        other: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+                      };
+                      const isMoney = isMoneyDataType(a.dataType);
+
+                      return (
                         <div
                           key={a.policyItemId}
                           className={cn(
-                            "p-2.5 rounded-lg border transition-colors space-y-1.5",
+                            "p-2 rounded-lg border transition-colors space-y-1.5",
                             a.isEnabled
                               ? "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 shadow-xs"
                               : "bg-slate-100/60 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 opacity-60"
@@ -986,11 +1156,20 @@ export function EmployeePoliciesSubtab({
                                 checked={a.isEnabled}
                                 onChange={(e) => {
                                   const copy = [...editablePolicies];
-                                  copy[i].isEnabled = e.target.checked;
+                                  const checked = e.target.checked;
+                                  copy[i].isEnabled = checked;
+                                  if (checked && (!copy[i].amount || copy[i].amount === 0) && copy[i].groupValue) {
+                                    const num = Number(copy[i].groupValue);
+                                    if (!isNaN(num)) copy[i].amount = num;
+                                    copy[i].valueStr = String(copy[i].groupValue);
+                                  }
                                   setEditablePolicies(copy);
                                 }}
-                                className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5 shrink-0"
+                                className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5 shrink-0 cursor-pointer"
                               />
+                              <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0", catColors[cat.key] || catColors.other)}>
+                                {cat.label}
+                              </span>
                               <span
                                 className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate"
                                 title={a.policyName}
@@ -1006,19 +1185,50 @@ export function EmployeePoliciesSubtab({
 
                             <div className="flex items-center gap-1 shrink-0">
                               <div className="w-28">
-                                <GsMoneyInput
-                                  showWords={false}
-                                  disabled={!editIsCustom || !a.isEnabled}
-                                  value={a.amount}
-                                  onChange={(val) => {
-                                    const copy = [...editablePolicies];
-                                    copy[i].amount = val;
-                                    setEditablePolicies(copy);
-                                  }}
-                                  className="h-7 text-xs"
-                                  inputClassName="text-right font-bold h-7 py-1 px-2 text-xs"
-                                  placeholder="0"
-                                />
+                                {isMoney ? (
+                                  <GsMoneyInput
+                                    showWords={false}
+                                    disabled={!editIsCustom || !a.isEnabled}
+                                    value={a.amount}
+                                    onChange={(val) => {
+                                      const copy = [...editablePolicies];
+                                      copy[i].amount = val;
+                                      copy[i].valueStr = String(val);
+                                      setEditablePolicies(copy);
+                                    }}
+                                    className="h-7 text-xs"
+                                    inputClassName="text-right font-bold h-7 py-1 px-2 text-xs"
+                                    placeholder="0"
+                                  />
+                                ) : (
+                                  <div className="relative flex items-center">
+                                    <input
+                                      type="text"
+                                      disabled={!editIsCustom || !a.isEnabled}
+                                      value={a.valueStr ?? a.amount ?? ""}
+                                      onChange={(e) => {
+                                        const copy = [...editablePolicies];
+                                        copy[i].valueStr = e.target.value;
+                                        const parsed = Number(e.target.value);
+                                        copy[i].amount = isNaN(parsed) ? 0 : parsed;
+                                        setEditablePolicies(copy);
+                                      }}
+                                      className="w-full h-7 px-2 pr-5 text-right font-bold font-mono text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 disabled:opacity-50"
+                                      placeholder="0"
+                                    />
+                                    <span className="absolute right-1.5 text-[10px] text-muted-foreground font-mono pointer-events-none">
+                                      {a.dataType?.toUpperCase().includes("PERCENT")
+                                        ? "%"
+                                        : a.dataType?.toUpperCase().includes("COEFF") || a.dataType?.toUpperCase() === "MULTIPLIER"
+                                          ? "x"
+                                          : a.dataType?.toUpperCase().includes("HOUR") || a.dataType?.toUpperCase().includes("GIO")
+                                            ? "h"
+                                            : a.dataType?.toUpperCase().includes("DAY") || a.dataType?.toUpperCase().includes("NGAY")
+                                              ? "d"
+                                              : ""}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Expand Note/Date */}
@@ -1082,41 +1292,34 @@ export function EmployeePoliciesSubtab({
                             </div>
                           )}
                         </div>
-                      ))}
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Summary Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-primary/5 border border-primary/20 rounded-xl text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">Tổng thu nhập cố định dự tính:</span>
+                  <span className="text-base font-bold text-primary font-mono">
+                    {formatCurrency((editIsCustom ? editBaseSalary : (editDetail.basicSalary || 0)) + editCalculations.totalAllowance)}
+                  </span>
+                </div>
+
+                {editIsCustom && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-600 dark:text-slate-300 font-medium">Hiệu lực từ:</span>
+                    <div className="w-36">
+                      <GsDatePicker
+                        value={editEffectiveFrom}
+                        onChange={setEditEffectiveFrom}
+                        placeholder="dd/mm/yyyy"
+                      />
                     </div>
                   </div>
-                </div>
+                )}
               </div>
-
-              {/* Total Estimated Summary */}
-              <div className="p-3 bg-primary/5 border border-primary/20 rounded-xl flex items-center justify-between text-xs">
-                <div className="space-y-0.5">
-                  <span className="font-semibold text-slate-800 dark:text-slate-100">Tổng thu nhập cố định dự tính:</span>
-                  <div className="text-[11px] text-muted-foreground font-mono">
-                    (Lương CB: {formatCurrency(editIsCustom ? editBaseSalary : 0)} + Phụ cấp: {formatCurrency(editCalculations.totalAllowance)})
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-base font-bold text-primary font-mono">
-                    {formatCurrency((editIsCustom ? editBaseSalary : 0) + editCalculations.totalAllowance)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Effective From */}
-              {editIsCustom && (
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                  <div className="max-w-xs">
-                    <GsDatePicker
-                      label="Ngày bắt đầu hiệu lực thỏa thuận"
-                      required
-                      value={editEffectiveFrom}
-                      onChange={setEditEffectiveFrom}
-                      placeholder="dd/mm/yyyy"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </Modal>

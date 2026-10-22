@@ -26,3 +26,29 @@ export function ensureWidgetFonts() {
     document.head.appendChild(fontLink);
   }
 }
+
+/**
+ * Lấy giá trị khởi tạo đáng tin cậy cho thuộc tính Widget:
+ * Ưu tiên 1: getAttribute từ DOM
+ * Ưu tiên 2: window.__SERVER_* từ trang cha ASP.NET
+ * Ưu tiên 3: hidden field ASP.NET (hdfPayroll*)
+ */
+export function getWidgetInitialAttr(
+  el: HTMLElement,
+  attrName: string,
+  globalWindowKey?: string,
+  hiddenFieldId?: string
+): string {
+  const attr = el.getAttribute(attrName);
+  if (attr && attr.trim()) return attr.trim().replace(/^"|"$/g, "");
+  if (globalWindowKey && typeof window !== "undefined" && (window as any)[globalWindowKey]) {
+    const val = (window as any)[globalWindowKey];
+    if (typeof val === "string" && val.trim()) return val.trim().replace(/^"|"$/g, "");
+    if (typeof val === "number") return String(val);
+  }
+  if (hiddenFieldId && typeof document !== "undefined") {
+    const hdf = document.getElementById(hiddenFieldId) as HTMLInputElement;
+    if (hdf && hdf.value && hdf.value.trim()) return hdf.value.trim().replace(/^"|"$/g, "");
+  }
+  return "";
+}

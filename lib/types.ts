@@ -912,6 +912,7 @@ export interface StandardWorkdayListResponse {
 }
 
 // ================= OpenAPI 3.0 (WebPayroll - Insurance) Types =================
+export type InsurancePeriodStatus = "pending" | "confirmed" | "rejected" | string;
 export type InsuranceParticipationStatus = "ALL" | "ACTIVE" | "SUSPENDED" | "STOPPED";
 export type SocialInsuranceParticipationStatus = InsuranceParticipationStatus;
 
@@ -993,6 +994,7 @@ export interface CreateInsurancePeriodRequest {
   year?: number | null;
   month?: number | null;
   baseSalary?: number | null;
+  type?: InsuranceChangeType | null;
   changeType?: InsuranceChangeType | null;
   isParticipating?: boolean | null;
   note?: string | null;
@@ -1047,6 +1049,37 @@ export interface InsurancePeriodImportResult {
   errors?: ImportError[];
 }
 
+export interface InsurancePeriodHistoryItem {
+  id: number;
+  year: number;
+  month: number;
+  employeeCode: string;
+  employeeName: string;
+  projectName?: string | null;
+  baseSalary: number;
+  type?: InsuranceChangeType | null;
+  changeType?: InsuranceChangeType | null;
+  isParticipating: boolean;
+  status?: InsurancePeriodStatus | null;
+  note?: string | null;
+  statusNote?: string | null;
+  createdAt?: string | null;
+  // Fallback/alias fields
+  effectiveFrom?: string | null;
+  effectiveMonth?: string | null;
+  newBaseSalary?: number | null;
+  newSalary?: number | null;
+  externalDossierCode?: string | null;
+}
+
+export interface InsurancePeriodHistoryResponse {
+  items: InsurancePeriodHistoryItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface InsuranceParticipantItemV3 {
   id?: number;
   employee: EmployeeSummaryV3;
@@ -1065,6 +1098,10 @@ export interface InsuranceParticipantItemV3 {
   month?: number | null;
   changeType?: string | null;
   isParticipating?: boolean;
+  is_paticipant?: boolean | number | null;
+  is_participant?: boolean | number | null;
+  isParticipant?: boolean | number | null;
+  isEligible?: boolean | number | null;
   participationStatus?: InsuranceParticipationStatus;
   status?: InsuranceParticipationStatus | string | null;
   employeeRate?: number;
@@ -1996,4 +2033,49 @@ export interface MockDatabase {
   benefitsAllowanceEmployeesV3?: BenefitsAllowanceEmployeeV3[];
   otherDeductionsV3?: OtherDeductionV3[];
   otherIncomesV3?: OtherIncomeV3[];
+}
+
+// =========================================================================
+// EVALUATION (ĐÁNH GIÁ KPI) DTOs
+// =========================================================================
+
+export interface EvaluationDetailItemDto {
+  evaluationTypeId: number;
+  evalName: string;
+  actual?: number | null; // % thực đạt (0.8500 = 85%)
+  grade?: string | null;  // Xếp loại (vd: A, B, C, Xuất sắc...)
+}
+
+export interface EvaluationListItemDto {
+  id: number;
+  employeeCode: string;
+  employeeName: string;
+  positionName?: string | null;
+  year: number;
+  month: number;
+  note?: string | null;
+  status: string;
+  details: EvaluationDetailItemDto[];
+}
+
+export interface EvaluationPagedResponseData {
+  items: EvaluationListItemDto[];
+  pageIndex: number;
+  pageSize: number;
+  totalRow: number;
+}
+
+export interface EvaluationImportResultDto {
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  errors?: ImportErrorDto[];
+}
+
+export interface ImportErrorDto {
+  row: number;
+  column: string;
+  value?: string | null;
+  message: string;
+  errorCode?: string;
 }

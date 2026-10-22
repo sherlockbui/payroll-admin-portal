@@ -56,7 +56,9 @@ export interface SearchableSelectProps<T = any> {
   isLoading?: boolean;
   emptyText?: string;
   className?: string;
+  style?: React.CSSProperties;
   icon?: ReactNode;
+  searchable?: boolean;
 }
 
 export function SearchableSelect<T = any>({
@@ -78,7 +80,9 @@ export function SearchableSelect<T = any>({
   isLoading = false,
   emptyText = "Không tìm thấy kết quả phù hợp",
   className,
+  style,
   icon,
+  searchable,
 }: SearchableSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -94,13 +98,15 @@ export function SearchableSelect<T = any>({
     return [];
   }, [items, options]);
 
+  const isSearchVisible = searchable !== undefined ? searchable : sourceItems.length > 7;
+
   const selectedItem = useMemo(() => {
     if (value === undefined || value === null || value === "") return null;
     return sourceItems.find((item) => String(getOptionValue(item)) === String(value)) ?? null;
   }, [sourceItems, value, getOptionValue]);
 
   const filteredItems = useMemo(() => {
-    if (!search.trim()) return sourceItems;
+    if (!isSearchVisible || !search.trim()) return sourceItems;
     const rawQ = search.toLowerCase().trim();
     const normQ = normalizeSearchText(search);
     return sourceItems.filter((item) => {
@@ -125,7 +131,7 @@ export function SearchableSelect<T = any>({
       }
       return false;
     });
-  }, [sourceItems, search, getOptionLabel, getOptionSublabel, getOptionBadge, getOptionValue, getSearchKeywords]);
+  }, [sourceItems, search, isSearchVisible, getOptionLabel, getOptionSublabel, getOptionBadge, getOptionValue, getSearchKeywords]);
 
   useEffect(() => {
     setHighlightedIndex(0);
@@ -138,9 +144,11 @@ export function SearchableSelect<T = any>({
       setSearch("");
       setHighlightedIndex(0);
       setOpen(true);
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 40);
+      if (isSearchVisible) {
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 40);
+      }
     } else {
       setOpen(false);
     }
@@ -190,7 +198,11 @@ export function SearchableSelect<T = any>({
   }, [open]);
 
   return (
-    <div ref={containerRef} className={cn("searchable-select-wrap", className)}>
+    <div
+      ref={containerRef}
+      style={style}
+      className={cn("searchable-select-wrap", className)}
+    >
       {/* Trigger element (Accessible div combobox, avoids invalid HTML nested button issue) */}
       <div
         ref={triggerRef}
@@ -264,52 +276,54 @@ export function SearchableSelect<T = any>({
           className="searchable-select-popover"
         >
           {/* Search Box */}
-          <div className="searchable-select-search-box">
-            <Search className="search-icon" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setHighlightedIndex((prev) => Math.min(filteredItems.length - 1, prev + 1));
-                } else if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setHighlightedIndex((prev) => Math.max(0, prev - 1));
-                } else if (e.key === "Enter") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (filteredItems.length > 0) {
-                    const idx = highlightedIndex >= 0 && highlightedIndex < filteredItems.length ? highlightedIndex : 0;
-                    handleSelect(filteredItems[idx]);
+          {isSearchVisible && (
+            <div className="searchable-select-search-box">
+              <Search className="search-icon" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setHighlightedIndex((prev) => Math.min(filteredItems.length - 1, prev + 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setHighlightedIndex((prev) => Math.max(0, prev - 1));
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (filteredItems.length > 0) {
+                      const idx = highlightedIndex >= 0 && highlightedIndex < filteredItems.length ? highlightedIndex : 0;
+                      handleSelect(filteredItems[idx]);
+                    }
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
                   }
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setOpen(false);
-                }
-              }}
-              placeholder={searchPlaceholder}
-              className="searchable-select-input"
-              onClick={(e) => e.stopPropagation()}
-            />
-            {search && (
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSearch("");
                 }}
-                className="search-clear-btn"
-                title="Xóa tìm kiếm"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+                placeholder={searchPlaceholder}
+                className="searchable-select-input"
+                onClick={(e) => e.stopPropagation()}
+              />
+              {search && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSearch("");
+                  }}
+                  className="search-clear-btn"
+                  title="Xóa tìm kiếm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Options List */}
           <div

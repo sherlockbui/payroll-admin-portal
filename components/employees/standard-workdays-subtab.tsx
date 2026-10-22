@@ -249,49 +249,6 @@ export function StandardWorkdaysSubtab({
 
   return (
     <div className="space-y-5">
-      {/* 4 KPI Metrics Banner */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-medium">Tổng số nhân sự</div>
-            <div className="text-xl font-bold text-foreground mt-0.5">{summary?.total ?? "..."}</div>
-          </div>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-            <Check className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-medium">Mặc định dự án</div>
-            <div className="text-xl font-bold text-emerald-600 mt-0.5">{summary?.projectDefaultCount ?? "..."}</div>
-          </div>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
-            <Pencil className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-medium">Tùy chỉnh riêng</div>
-            <div className="text-xl font-bold text-amber-600 mt-0.5">{summary?.customCount ?? "..."}</div>
-          </div>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center">
-            <CalendarDays className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-medium">Chuẩn dự án</div>
-            <div className="text-xl font-bold text-blue-600 mt-0.5">{projectDefaultDays} ngày/tháng</div>
-          </div>
-        </div>
-      </div>
-
       {/* Info Notice Banner */}
       <div className="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/50 rounded-xl p-3.5 flex items-start gap-3">
         <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
@@ -348,7 +305,10 @@ export function StandardWorkdaysSubtab({
                 <button
                   type="button"
                   onClick={() => setSearchTerm("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  style={{ transform: "translateY(-50%)" }}
+                  className="search-input-clear-btn absolute right-2.5 top-1/2 flex items-center justify-center w-5 h-5 p-0 m-0 border-0 bg-transparent text-muted-foreground hover:text-foreground cursor-pointer rounded transition-colors"
+                  title="Xóa tìm kiếm"
+                  aria-label="Xóa tìm kiếm"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
