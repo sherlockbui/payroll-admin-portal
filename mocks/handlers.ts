@@ -3693,6 +3693,24 @@ export const handlers = [
     return okV3(summary, "Lấy tổng quan khoản giảm trừ thành công.");
   }),
 
+  http.get("/api/web/payroll/other-deduction-types", async ({ request }) => {
+    await delay(100);
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const allTypes = [
+      { id: 1, deductionCode: "ADVANCE_PAYMENT", deductionName: "Tạm ứng lương giữa kỳ", projectId: null, bucketCode: "deduction", isTaxable: false, displayOrder: 10, isActive: true },
+      { id: 2, deductionCode: "ASSET_COMPENSATION", deductionName: "Bồi thường hư hỏng CCDC", projectId: null, bucketCode: "deduction", isTaxable: false, displayOrder: 20, isActive: true },
+      { id: 3, deductionCode: "DISCIPLINE_FINE", deductionName: "Phạt vi phạm kỷ luật lao động", projectId: null, bucketCode: "deduction", isTaxable: false, displayOrder: 30, isActive: true },
+      { id: 4, deductionCode: "OTHER", deductionName: "Khoản giảm trừ khác", projectId: null, bucketCode: "deduction", isTaxable: false, displayOrder: 40, isActive: true },
+      { id: 5, deductionCode: "DED_KEY_PACKER", deductionName: "Khoản trừ bảo lãnh Key Packer", projectId: 1017, bucketCode: "deduction", isTaxable: false, displayOrder: 50, isActive: true },
+    ];
+    let result = allTypes;
+    if (projectId && projectId !== "all") {
+      result = allTypes.filter((t) => t.projectId === null || String(t.projectId) === String(projectId));
+    }
+    return okV3(result, "Lấy danh mục loại giảm trừ thành công.");
+  }),
+
   http.get("/api/web/payroll/master-data/other-deduction-types", async () => {
     await delay(100);
     return okV3([
@@ -3701,6 +3719,17 @@ export const handlers = [
       { code: "DISCIPLINE_FINE", name: "Phạt vi phạm kỷ luật lao động" },
       { code: "OTHER", name: "Khoản giảm trừ khác" },
     ], "Lấy danh mục loại giảm trừ thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-deductions/import-template", async () => {
+    await delay(100);
+    return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": "attachment; filename=Template_Import_KhoanTruKhac.xlsx",
+      },
+    });
   }),
 
   http.get("/api/web/payroll/other-deductions/export", async () => {
@@ -3983,15 +4012,23 @@ export const handlers = [
     return okV3(summary, "Lấy tổng quan thu nhập khác thành công.");
   }),
 
-  http.get("/api/web/payroll/other-income-types", async () => {
+  http.get("/api/web/payroll/other-income-types", async ({ request }) => {
     await delay(100);
-    return okV3([
-      { id: 1, incomeCode: "HOT_BONUS", incomeName: "Thưởng nóng sáng kiến cải tiến" },
-      { id: 2, incomeCode: "PERFORMANCE_BONUS", incomeName: "Thưởng năng suất hiệu quả công việc" },
-      { id: 3, incomeCode: "HOLIDAY_BONUS", incomeName: "Thưởng lễ tết sự kiện" },
-      { id: 4, incomeCode: "PROJECT_SUPPORT", incomeName: "Hỗ trợ công tác dự án đặc thù" },
-      { id: 5, incomeCode: "OTHER", incomeName: "Khoản thu nhập khác" },
-    ], "Lấy danh mục loại thu nhập thành công.");
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    const allTypes = [
+      { id: 1, incomeCode: "HOT_BONUS", incomeName: "Thưởng nóng sáng kiến cải tiến", projectId: null, bucketCode: "bonus", isTaxable: true, isInsuranceBase: false, displayOrder: 10, isActive: true },
+      { id: 2, incomeCode: "PERFORMANCE_BONUS", incomeName: "Thưởng năng suất hiệu quả công việc", projectId: null, bucketCode: "bonus", isTaxable: true, isInsuranceBase: false, displayOrder: 20, isActive: true },
+      { id: 3, incomeCode: "HOLIDAY_BONUS", incomeName: "Thưởng lễ tết sự kiện", projectId: null, bucketCode: "bonus", isTaxable: true, isInsuranceBase: false, displayOrder: 30, isActive: true },
+      { id: 4, incomeCode: "PROJECT_SUPPORT", incomeName: "Hỗ trợ công tác dự án đặc thù", projectId: null, bucketCode: "allowance", isTaxable: false, isInsuranceBase: false, displayOrder: 40, isActive: true },
+      { id: 5, incomeCode: "PC_KEY_PACKER", incomeName: "Phụ cấp Key Packer", projectId: 1017, bucketCode: "allowance", isTaxable: true, isInsuranceBase: false, displayOrder: 50, isActive: true },
+      { id: 6, incomeCode: "OTHER", incomeName: "Khoản thu nhập khác", projectId: null, bucketCode: "other", isTaxable: true, isInsuranceBase: false, displayOrder: 60, isActive: true },
+    ];
+    let result = allTypes;
+    if (projectId && projectId !== "all") {
+      result = allTypes.filter((t) => t.projectId === null || String(t.projectId) === String(projectId));
+    }
+    return okV3(result, "Lấy danh mục loại thu nhập thành công.");
   }),
 
   http.get("/api/web/payroll/master-data/other-income-types", async () => {
@@ -4003,6 +4040,17 @@ export const handlers = [
       { id: 4, code: "PROJECT_SUPPORT", name: "Hỗ trợ công tác dự án đặc thù" },
       { id: 5, code: "OTHER", name: "Khoản thu nhập khác" },
     ], "Lấy danh mục loại thu nhập thành công.");
+  }),
+
+  http.get("/api/web/payroll/other-incomes/import-template", async () => {
+    await delay(100);
+    return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": "attachment; filename=Template_Import_ThuNhapKhac.xlsx",
+      },
+    });
   }),
 
   http.get("/api/web/payroll/other-incomes/export", async () => {

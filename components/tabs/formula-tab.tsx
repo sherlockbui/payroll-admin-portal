@@ -20,7 +20,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/providers";
 import { Badge, Button, ErrorState, LoadingBlock, SaveBar } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -41,7 +41,7 @@ import {
   type SalaryComponentDefinition,
 } from "@/lib/payroll-component-library";
 import type { ExpressionNode, ProjectCustomVariable, SalaryFormula, SalaryStructureLineItemRequest } from "@/lib/types";
-import { hideGsLoading, showGsLoading, uid } from "@/lib/utils";
+import { cn, hideGsLoading, showGsLoading, uid } from "@/lib/utils";
 
 const categoryLabels: Record<SalaryFormula["category"], string> = {
   income: "Thu nhập",
@@ -468,12 +468,20 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
   const [dirty, setDirty] = useState(false);
   const [validation, setValidation] = useState<{ valid: boolean; errors: string[] } | null>(null);
 
-  // Dragged component state
+  // Dragged component state (from left library)
   const [draggedItem, setDraggedItem] = useState<SalaryComponentDefinition | null>(null);
+  // Dragged structure item state (for intra-column reordering)
+  const [draggedStructureItem, setDraggedStructureItem] = useState<SalaryFormula | null>(null);
+  // Visual drop position indicator state
+  const [dragOverInfo, setDragOverInfo] = useState<{
+    category: "income" | "deduction";
+    targetId: string | null;
+    position: "before" | "after";
+  } | null>(null);
 
   // Auto-scroll the page smoothly when dragging near top or bottom edges
   useEffect(() => {
-    if (!draggedItem) return;
+    if (!draggedItem && !draggedStructureItem) return;
 
     let animFrameId: number | null = null;
     let currentSpeed = 0;
@@ -528,7 +536,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       window.removeEventListener("dragend", stopAutoScroll);
       window.removeEventListener("drop", stopAutoScroll);
     };
-  }, [draggedItem]);
+  }, [draggedItem, draggedStructureItem]);
 
   const variables = useMemo(() => {
     const base = variablesQuery.data ?? [];
@@ -706,15 +714,56 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
     return modified;
   }, [formulas, rawTexts, linesQuery.data, variableNameMap, variableCodeMap]);
 
-  // Add component to structure
-  const addComponentToStructure = (item: SalaryComponentDefinition) => {
+  // Reorder items within the same category column (intra-column reordering)
+  const reorderStructureItems = (
+    category: "income" | "deduction",
+    sourceId: string,
+    targetId: string,
+    position: "before" | "after"
+  ) => {
+    if (sourceId === targetId) return;
+
+    setFormulas((prev) => {
+      const sameCatItems = prev.filter((f) => f.category === category);
+      const otherCatItems = prev.filter((f) => f.category !== category);
+
+      const sourceIndex = sameCatItems.findIndex((f) => f.id === sourceId);
+      if (sourceIndex === -1) return prev;
+
+      const itemToMove = sameCatItems[sourceIndex];
+      const withoutSource = sameCatItems.filter((_, idx) => idx !== sourceIndex);
+
+      const targetIdxInRemaining = withoutSource.findIndex((f) => f.id === targetId);
+      if (targetIdxInRemaining === -1) return prev;
+
+      const insertIndex = position === "before" ? targetIdxInRemaining : targetIdxInRemaining + 1;
+      withoutSource.splice(insertIndex, 0, itemToMove);
+
+      const combined =
+        category === "income" ? [...withoutSource, ...otherCatItems] : [...otherCatItems, ...withoutSource];
+
+      return combined.map((f, idx) => ({
+        ...f,
+        order: idx + 1,
+      }));
+    });
+
+    setDirty(true);
+    notify("Đã cập nhật thứ tự thành phần lương");
+  };
+
+  // Insert component from library at specific position in category column
+  const insertComponentAtPosition = (
+    item: SalaryComponentDefinition,
+    targetId: string | null = null,
+    position: "before" | "after" = "after"
+  ) => {
     if (existingOutputCodes.has(item.outputVariable.toUpperCase())) {
       notify(`Mục "${item.name}" đã có trong cấu trúc.`, "warning");
       return;
     }
-    const maxOrder = formulas.reduce((max, f) => Math.max(max, f.order || 0), 0);
+
     const formulaId = `new-line-${Date.now()}-${uid("item")}`;
-    const newOrder = maxOrder + 1;
     const defaultText = item.defaultFormulaText
       ? codeExpressionToFriendlyExpression(item.defaultFormulaText, variableNameMap)
       : `{${item.name}}`;
@@ -726,16 +775,45 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       name: item.name,
       outputVariable: item.outputVariable,
       category: item.category,
-      order: newOrder,
+      order: 1,
       expression: parsedExpr,
       rounding: { mode: "nearest", precision: 1 },
       enabled: true,
     };
-    setFormulas((prev) => [...prev, newFormula]);
+
+    setFormulas((prev) => {
+      const sameCatItems = prev.filter((f) => f.category === item.category);
+      const otherCatItems = prev.filter((f) => f.category !== item.category);
+
+      let insertIndex = sameCatItems.length;
+      if (targetId) {
+        const foundIdx = sameCatItems.findIndex((f) => f.id === targetId);
+        if (foundIdx !== -1) {
+          insertIndex = position === "before" ? foundIdx : foundIdx + 1;
+        }
+      }
+
+      const updatedSameCat = [...sameCatItems];
+      updatedSameCat.splice(insertIndex, 0, newFormula);
+
+      const combined =
+        item.category === "income" ? [...updatedSameCat, ...otherCatItems] : [...otherCatItems, ...updatedSameCat];
+
+      return combined.map((f, idx) => ({
+        ...f,
+        order: idx + 1,
+      }));
+    });
+
     setRawTexts((prev) => ({ ...prev, [formulaId]: defaultText }));
     setEditingFormulaIds((prev) => new Set(prev).add(formulaId));
     setDirty(true);
     notify(`Đã đưa "${item.name}" vào cấu trúc lương (Chưa lưu)`);
+  };
+
+  // Add component to structure (append to end of category)
+  const addComponentToStructure = (item: SalaryComponentDefinition) => {
+    insertComponentAtPosition(item, null, "after");
   };
 
   const removeComponentFromStructure = (id: string) => {
@@ -1284,52 +1362,169 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                   {/* Row 1: 2-Column Inputs (Thu Nhập - Khấu Trừ) */}
                   <div className="flex flex-col md:flex-row items-stretch gap-3">
                     {/* Left Box: Gross Earnings (Thu Nhập) */}
-                    <div
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => {
-                        if (draggedItem && draggedItem.category === "income") {
-                          addComponentToStructure(draggedItem);
-                        }
-                      }}
-                      className="flex-1 rounded-xl border border-emerald-500/25 bg-emerald-500/5 dark:bg-emerald-500/10 p-3.5 flex flex-col space-y-2.5 transition-all hover:border-emerald-500/40"
-                    >
-                      <div className="flex items-center justify-between">
-                        <strong className="text-xs font-bold text-foreground uppercase tracking-wide">
-                          Các khoản Thu nhập
-                        </strong>
-                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                          {grossComponents.length} khoản
-                        </span>
-                      </div>
+                    {(() => {
+                      const isIncomeDragActive =
+                        (draggedItem && draggedItem.category === "income") ||
+                        (draggedStructureItem && draggedStructureItem.category === "income");
+                      const isDeductionDragActive =
+                        (draggedItem && draggedItem.category === "deduction") ||
+                        (draggedStructureItem && draggedStructureItem.category === "deduction");
 
-                      <div className="border border-dashed border-emerald-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
-                        {grossComponents.length === 0 ? (
-                          <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
-                            <Plus className="w-4 h-4 text-emerald-500/60" />
-                            <span>Kéo thả hoặc bấm (+) từ thư viện</span>
+                      return (
+                        <div
+                          onDragOver={(e) => {
+                            if (isDeductionDragActive) {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "none";
+                              return;
+                            }
+                            if (isIncomeDragActive) {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              if (dragOverInfo?.category === "income") {
+                                setDragOverInfo(null);
+                              }
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (isDeductionDragActive) {
+                              notify("Khoản khấu trừ không thể đưa sang nhóm Thu nhập.", "warning");
+                              return;
+                            }
+                            if (draggedStructureItem && draggedStructureItem.category === "income") {
+                              const last = grossComponents[grossComponents.length - 1];
+                              if (last && last.id !== draggedStructureItem.id) {
+                                reorderStructureItems("income", draggedStructureItem.id, last.id, "after");
+                              }
+                            } else if (draggedItem && draggedItem.category === "income") {
+                              addComponentToStructure(draggedItem);
+                            }
+                            setDraggedStructureItem(null);
+                            setDragOverInfo(null);
+                          }}
+                          className={cn(
+                            "flex-1 rounded-xl border p-3.5 flex flex-col space-y-2.5 transition-all",
+                            isIncomeDragActive
+                              ? "border-emerald-500/60 bg-emerald-500/15 ring-2 ring-emerald-500/30 shadow-xs"
+                              : isDeductionDragActive
+                                ? "border-emerald-500/15 bg-emerald-500/5 opacity-60"
+                                : "border-emerald-500/25 bg-emerald-500/5 dark:bg-emerald-500/10 hover:border-emerald-500/40"
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <strong className="text-xs font-bold text-foreground uppercase tracking-wide">
+                              Các khoản Thu nhập
+                            </strong>
+                            <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                              {grossComponents.length} khoản
+                            </span>
                           </div>
-                        ) : (
-                          grossComponents.map((item) => (
-                            <div
-                              key={item.id}
-                              className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-emerald-500 transition-all max-w-full group"
-                            >
-                              <GripVertical className="w-3 h-3 text-emerald-500/70 shrink-0 cursor-grab" />
-                              <span className="truncate py-0.5 leading-normal">{item.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => removeComponentFromStructure(item.id)}
-                                className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5"
-                                title={`Gỡ bỏ ${item.name}`}
-                                aria-label={`Gỡ bỏ ${item.name}`}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+
+                          <div className="border border-dashed border-emerald-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
+                            {grossComponents.length === 0 ? (
+                              <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
+                                <Plus className="w-4 h-4 text-emerald-500/60" />
+                                <span>Kéo thả hoặc bấm (+) từ thư viện</span>
+                              </div>
+                            ) : (
+                              grossComponents.map((item) => {
+                                const isBeingDragged = draggedStructureItem?.id === item.id;
+                                const isTargetBefore =
+                                  dragOverInfo?.category === "income" &&
+                                  dragOverInfo?.targetId === item.id &&
+                                  dragOverInfo?.position === "before";
+                                const isTargetAfter =
+                                  dragOverInfo?.category === "income" &&
+                                  dragOverInfo?.targetId === item.id &&
+                                  dragOverInfo?.position === "after";
+
+                                return (
+                                  <React.Fragment key={item.id}>
+                                    {isTargetBefore && (
+                                      <div className="w-1.5 h-7 bg-emerald-500 rounded-full animate-pulse shadow-sm shrink-0" />
+                                    )}
+                                    <div
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.stopPropagation();
+                                        e.dataTransfer.setData("text/plain", item.id);
+                                        e.dataTransfer.effectAllowed = "move";
+                                        setDraggedStructureItem(item);
+                                      }}
+                                      onDragEnd={() => {
+                                        setDraggedStructureItem(null);
+                                        setDragOverInfo(null);
+                                      }}
+                                      onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (isDeductionDragActive) {
+                                          e.dataTransfer.dropEffect = "none";
+                                          return;
+                                        }
+                                        e.dataTransfer.dropEffect = "move";
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        const isAfter = e.clientX > rect.left + rect.width / 2;
+                                        setDragOverInfo({
+                                          category: "income",
+                                          targetId: item.id,
+                                          position: isAfter ? "after" : "before",
+                                        });
+                                      }}
+                                      onDrop={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (isDeductionDragActive) {
+                                          notify("Khoản khấu trừ không thể đưa sang nhóm Thu nhập.", "warning");
+                                          setDragOverInfo(null);
+                                          return;
+                                        }
+                                        const pos = dragOverInfo?.position || "after";
+                                        if (draggedStructureItem && draggedStructureItem.category === "income") {
+                                          reorderStructureItems("income", draggedStructureItem.id, item.id, pos);
+                                        } else if (draggedItem && draggedItem.category === "income") {
+                                          insertComponentAtPosition(draggedItem, item.id, pos);
+                                        }
+                                        setDraggedStructureItem(null);
+                                        setDragOverInfo(null);
+                                      }}
+                                      className={cn(
+                                        "px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-emerald-500 transition-all max-w-full group cursor-grab active:cursor-grabbing select-none",
+                                        isBeingDragged && "opacity-30 scale-95 border-emerald-500 border-dashed"
+                                      )}
+                                      title={`Kéo để đổi thứ tự: ${item.name}`}
+                                    >
+                                      <GripVertical className="w-3.5 h-3.5 text-emerald-500/70 shrink-0 cursor-grab active:cursor-grabbing group-hover:text-emerald-500" />
+                                      <span className="truncate py-0.5 leading-normal">{item.name}</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeComponentFromStructure(item.id);
+                                        }}
+                                        className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5 cursor-pointer"
+                                        title={`Gỡ bỏ ${item.name}`}
+                                        aria-label={`Gỡ bỏ ${item.name}`}
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    {isTargetAfter && (
+                                      <div className="w-1.5 h-7 bg-emerald-500 rounded-full animate-pulse shadow-sm shrink-0" />
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Dedicated Center Operator Bridge (Never overlaps card borders) */}
                     <div className="flex md:flex-col items-center justify-center shrink-0 self-center py-0.5 md:py-0 px-1">
@@ -1342,52 +1537,169 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                     </div>
 
                     {/* Right Box: Deductions (Khấu Trừ) */}
-                    <div
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => {
-                        if (draggedItem && draggedItem.category === "deduction") {
-                          addComponentToStructure(draggedItem);
-                        }
-                      }}
-                      className="flex-1 rounded-xl border border-rose-500/25 bg-rose-500/5 dark:bg-rose-500/10 p-3.5 flex flex-col space-y-2.5 transition-all hover:border-rose-500/40"
-                    >
-                      <div className="flex items-center justify-between">
-                        <strong className="text-xs font-bold text-foreground uppercase tracking-wide">
-                          Các khoản Khấu trừ
-                        </strong>
-                        <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
-                          {deductionComponents.length} khoản
-                        </span>
-                      </div>
+                    {(() => {
+                      const isIncomeDragActive =
+                        (draggedItem && draggedItem.category === "income") ||
+                        (draggedStructureItem && draggedStructureItem.category === "income");
+                      const isDeductionDragActive =
+                        (draggedItem && draggedItem.category === "deduction") ||
+                        (draggedStructureItem && draggedStructureItem.category === "deduction");
 
-                      <div className="border border-dashed border-rose-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
-                        {deductionComponents.length === 0 ? (
-                          <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
-                            <Plus className="w-4 h-4 text-rose-500/60" />
-                            <span>Kéo thả hoặc bấm (+) từ thư viện</span>
+                      return (
+                        <div
+                          onDragOver={(e) => {
+                            if (isIncomeDragActive) {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "none";
+                              return;
+                            }
+                            if (isDeductionDragActive) {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              if (dragOverInfo?.category === "deduction") {
+                                setDragOverInfo(null);
+                              }
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (isIncomeDragActive) {
+                              notify("Khoản thu nhập không thể đưa sang nhóm Khấu trừ.", "warning");
+                              return;
+                            }
+                            if (draggedStructureItem && draggedStructureItem.category === "deduction") {
+                              const last = deductionComponents[deductionComponents.length - 1];
+                              if (last && last.id !== draggedStructureItem.id) {
+                                reorderStructureItems("deduction", draggedStructureItem.id, last.id, "after");
+                              }
+                            } else if (draggedItem && draggedItem.category === "deduction") {
+                              addComponentToStructure(draggedItem);
+                            }
+                            setDraggedStructureItem(null);
+                            setDragOverInfo(null);
+                          }}
+                          className={cn(
+                            "flex-1 rounded-xl border p-3.5 flex flex-col space-y-2.5 transition-all",
+                            isDeductionDragActive
+                              ? "border-rose-500/60 bg-rose-500/15 ring-2 ring-rose-500/30 shadow-xs"
+                              : isIncomeDragActive
+                                ? "border-rose-500/15 bg-rose-500/5 opacity-60"
+                                : "border-rose-500/25 bg-rose-500/5 dark:bg-rose-500/10 hover:border-rose-500/40"
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <strong className="text-xs font-bold text-foreground uppercase tracking-wide">
+                              Các khoản Khấu trừ
+                            </strong>
+                            <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                              {deductionComponents.length} khoản
+                            </span>
                           </div>
-                        ) : (
-                          deductionComponents.map((item) => (
-                            <div
-                              key={item.id}
-                              className="px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-rose-500 transition-all max-w-full group"
-                            >
-                              <GripVertical className="w-3 h-3 text-rose-500/70 shrink-0 cursor-grab" />
-                              <span className="truncate py-0.5 leading-normal">{item.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => removeComponentFromStructure(item.id)}
-                                className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5"
-                                title={`Gỡ bỏ ${item.name}`}
-                                aria-label={`Gỡ bỏ ${item.name}`}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+
+                          <div className="border border-dashed border-rose-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
+                            {deductionComponents.length === 0 ? (
+                              <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
+                                <Plus className="w-4 h-4 text-rose-500/60" />
+                                <span>Kéo thả hoặc bấm (+) từ thư viện</span>
+                              </div>
+                            ) : (
+                              deductionComponents.map((item) => {
+                                const isBeingDragged = draggedStructureItem?.id === item.id;
+                                const isTargetBefore =
+                                  dragOverInfo?.category === "deduction" &&
+                                  dragOverInfo?.targetId === item.id &&
+                                  dragOverInfo?.position === "before";
+                                const isTargetAfter =
+                                  dragOverInfo?.category === "deduction" &&
+                                  dragOverInfo?.targetId === item.id &&
+                                  dragOverInfo?.position === "after";
+
+                                return (
+                                  <React.Fragment key={item.id}>
+                                    {isTargetBefore && (
+                                      <div className="w-1.5 h-7 bg-rose-500 rounded-full animate-pulse shadow-sm shrink-0" />
+                                    )}
+                                    <div
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.stopPropagation();
+                                        e.dataTransfer.setData("text/plain", item.id);
+                                        e.dataTransfer.effectAllowed = "move";
+                                        setDraggedStructureItem(item);
+                                      }}
+                                      onDragEnd={() => {
+                                        setDraggedStructureItem(null);
+                                        setDragOverInfo(null);
+                                      }}
+                                      onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (isIncomeDragActive) {
+                                          e.dataTransfer.dropEffect = "none";
+                                          return;
+                                        }
+                                        e.dataTransfer.dropEffect = "move";
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        const isAfter = e.clientX > rect.left + rect.width / 2;
+                                        setDragOverInfo({
+                                          category: "deduction",
+                                          targetId: item.id,
+                                          position: isAfter ? "after" : "before",
+                                        });
+                                      }}
+                                      onDrop={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (isIncomeDragActive) {
+                                          notify("Khoản thu nhập không thể đưa sang nhóm Khấu trừ.", "warning");
+                                          setDragOverInfo(null);
+                                          return;
+                                        }
+                                        const pos = dragOverInfo?.position || "after";
+                                        if (draggedStructureItem && draggedStructureItem.category === "deduction") {
+                                          reorderStructureItems("deduction", draggedStructureItem.id, item.id, pos);
+                                        } else if (draggedItem && draggedItem.category === "deduction") {
+                                          insertComponentAtPosition(draggedItem, item.id, pos);
+                                        }
+                                        setDraggedStructureItem(null);
+                                        setDragOverInfo(null);
+                                      }}
+                                      className={cn(
+                                        "px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-rose-500 transition-all max-w-full group cursor-grab active:cursor-grabbing select-none",
+                                        isBeingDragged && "opacity-30 scale-95 border-rose-500 border-dashed"
+                                      )}
+                                      title={`Kéo để đổi thứ tự: ${item.name}`}
+                                    >
+                                      <GripVertical className="w-3.5 h-3.5 text-rose-500/70 shrink-0 cursor-grab active:cursor-grabbing group-hover:text-rose-500" />
+                                      <span className="truncate py-0.5 leading-normal">{item.name}</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeComponentFromStructure(item.id);
+                                        }}
+                                        className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5 cursor-pointer"
+                                        title={`Gỡ bỏ ${item.name}`}
+                                        aria-label={`Gỡ bỏ ${item.name}`}
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    {isTargetAfter && (
+                                      <div className="w-1.5 h-7 bg-rose-500 rounded-full animate-pulse shadow-sm shrink-0" />
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                 </div>

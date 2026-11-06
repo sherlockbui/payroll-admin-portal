@@ -160,6 +160,7 @@ export class ApiRequestError extends Error {
     public code: string,
     public status: number,
     public fields?: Record<string, string>,
+    public details?: any,
   ) {
     super(message);
   }
@@ -201,7 +202,8 @@ async function runInMemoryMock<T>(url: string, init?: RequestInit): Promise<{ da
           payload.error?.message ?? "Yêu cầu thất bại",
           payload.error?.code ?? "UNKNOWN_ERROR",
           result.response.status,
-          payload.error?.fields
+          payload.error?.fields,
+          (payload.error as any)?.details ?? (payload as any).details
         );
       }
       return { data: payload.data, meta: payload.meta };
@@ -259,7 +261,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<{ data: T; m
         payload.error?.message || payload.message || "Yêu cầu thất bại",
         payload.error?.code || payload.errorCode || "API_ERROR",
         response.status,
-        payload.error?.fields
+        payload.error?.fields,
+        payload.error?.details ?? payload.data ?? payload.details
       );
     }
     return { data: payload.data !== undefined ? payload.data : payload, meta: payload.meta };
@@ -2821,18 +2824,25 @@ export const api = {
   },
 
   // ================= 07. Khoản giảm trừ khác (WebPayroll - Other Deductions) Swagger Methods =================
-  getOtherDeductionTypesV3: () =>
-    request<any>("/api/web/payroll/other-deduction-types").then((res) => {
+  getOtherDeductionTypesV3: (projectId?: string | number) => {
+    const query = projectId && String(projectId) !== "all" ? `?projectId=${encodeURIComponent(String(projectId))}` : "";
+    return request<any>(`/api/web/payroll/other-deduction-types${query}`).then((res) => {
       const raw = res.data || res || [];
       const list = Array.isArray(raw) ? raw : raw.items || raw.data || [];
       return list.map((item: any) => ({
         id: Number(item.id ?? item.Id ?? 0),
         deductionCode: item.deductionCode || item.DeductionCode || item.code || "",
         deductionName: item.deductionName || item.DeductionName || item.name || "",
+        projectId: item.projectId != null ? Number(item.projectId) : null,
+        bucketCode: item.bucketCode || null,
+        isTaxable: item.isTaxable,
+        displayOrder: item.displayOrder,
+        isActive: item.isActive,
       })) as OtherDeductionTypeItem[];
-    }),
+    });
+  },
 
-  getMasterOtherDeductionTypesV3: () => api.getOtherDeductionTypesV3(),
+  getMasterOtherDeductionTypesV3: (projectId?: string | number) => api.getOtherDeductionTypesV3(projectId),
 
   getOtherDeductionsV3: (params?: {
     projectId?: string | number;
@@ -2877,9 +2887,9 @@ export const api = {
       const items: OtherDeductionItemV3[] = rawList.map((item: any, idx: number) => {
         const empCode = item.employeeCode || item.EmployeeCode || item.code || "";
         const empName = item.employeeName || item.EmployeeName || item.fullName || item.name || "";
-        const dTypeId = item.otherDeductionTypeId ?? item.OtherDeductionTypeId ?? item.deductionTypeId ?? null;
+        const dTypeId = item.deductionTypeId ?? item.DeductionTypeId ?? item.otherDeductionTypeId ?? item.OtherDeductionTypeId ?? null;
         const dCode = item.deductionCode || item.DeductionCode || item.type || "";
-        const dName = item.deductionName || item.DeductionName || item.typeName || "Khoản giảm trừ";
+        const dName = item.deductionTypeName || item.DeductionTypeName || item.deductionName || item.DeductionName || item.typeName || item.TypeName || "Khoản giảm trừ";
 
         return {
           id: Number(item.id ?? item.Id ?? item.deductionId ?? idx + 1),
@@ -2901,6 +2911,7 @@ export const api = {
           deductionTypeId: dTypeId ? Number(dTypeId) : null,
           deductionCode: dCode,
           deductionName: dName,
+          deductionTypeName: dName,
           type: dCode,
           typeName: dName,
           amount: Number(item.amount ?? item.Amount ?? 0),
@@ -2972,9 +2983,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({
         EmployeeCode: payload.employeeCode,
+        ProjectId: payload.projectId != null ? Number(payload.projectId) : undefined,
         PayrollPeriodId: payload.payrollPeriodId,
         OtherDeductionTypeId: payload.otherDeductionTypeId,
         Amount: payload.amount,
+        EffectiveDate: payload.effectiveDate,
         DecisionNumber: payload.decisionNumber,
         DecisionDate: payload.decisionDate,
         Note: payload.note || payload.reason,
@@ -2988,9 +3001,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({
         EmployeeCode: payload.employeeCode,
+        ProjectId: payload.projectId != null ? Number(payload.projectId) : undefined,
         PayrollPeriodId: payload.payrollPeriodId,
         OtherDeductionTypeId: payload.otherDeductionTypeId,
         Amount: payload.amount,
+        EffectiveDate: payload.effectiveDate,
         DecisionNumber: payload.decisionNumber,
         DecisionDate: payload.decisionDate,
         Note: payload.note,
@@ -3026,14 +3041,15 @@ export const api = {
     }).then((res) => res.data);
   },
 
-  downloadOtherDeductionsImportTemplateV3: async (): Promise<void> => {
+  downloadOtherDeductionsImportTemplateV3: async (projectId?: string | number): Promise<void> => {
     const rawBaseUrl = getApiBaseUrl();
     const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const headers: Record<string, string> = { Accept: "*/*" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(`${baseUrl}/api/web/payroll/other-deductions/import-template`, {
+    const query = projectId && String(projectId) !== "all" ? `?projectId=${encodeURIComponent(String(projectId))}` : "";
+    const res = await fetch(`${baseUrl}/api/web/payroll/other-deductions/import-template${query}`, {
       method: "GET",
       headers,
     });
@@ -3056,8 +3072,24 @@ export const api = {
   },
 
   // ================= 08. Thu nhập khác (WebPayroll - Other Income) OpenAPI 3.0 Methods =================
-  getOtherIncomeTypesV3: () =>
-    request<OtherIncomeTypeItem[]>("/api/web/payroll/other-income-types").then((res) => res.data || []),
+  getOtherIncomeTypesV3: (projectId?: string | number) => {
+    const query = projectId && String(projectId) !== "all" ? `?projectId=${encodeURIComponent(String(projectId))}` : "";
+    return request<any>(`/api/web/payroll/other-income-types${query}`).then((res) => {
+      const raw = res.data || res || [];
+      const list = Array.isArray(raw) ? raw : raw.items || raw.data || [];
+      return list.map((item: any) => ({
+        id: Number(item.id ?? item.Id ?? 0),
+        incomeCode: item.incomeCode || item.IncomeCode || item.code || "",
+        incomeName: item.incomeName || item.IncomeName || item.name || "",
+        projectId: item.projectId != null ? Number(item.projectId) : null,
+        bucketCode: item.bucketCode || null,
+        isTaxable: item.isTaxable,
+        isInsuranceBase: item.isInsuranceBase,
+        displayOrder: item.displayOrder,
+        isActive: item.isActive,
+      })) as OtherIncomeTypeItem[];
+    });
+  },
 
   getOtherIncomesV3: async (params?: {
     projectId?: string | number;
@@ -3107,7 +3139,8 @@ export const api = {
           },
           incomeTypeId: item.incomeTypeId || item.IncomeTypeId || item.otherIncomeTypeId || item.OtherIncomeTypeId,
           incomeCode: item.incomeCode || item.IncomeCode || item.typeCode || "",
-          incomeName: item.incomeName || item.IncomeName || item.typeName || item.TypeName || "Thu nhập khác",
+          incomeName: item.incomeTypeName || item.IncomeTypeName || item.incomeName || item.IncomeName || item.typeName || item.TypeName || "Thu nhập khác",
+          incomeTypeName: item.incomeTypeName || item.IncomeTypeName || item.incomeName || item.IncomeName || item.typeName || item.TypeName || "Thu nhập khác",
           otherIncomeTypeId: item.otherIncomeTypeId || item.OtherIncomeTypeId || item.incomeTypeId || item.IncomeTypeId,
           amount: Number(item.amount ?? item.Amount ?? 0),
           decisionNumber: item.decisionNumber || item.DecisionNumber || null,
@@ -3179,9 +3212,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({
         EmployeeCode: payload.employeeCode,
+        ProjectId: payload.projectId != null ? Number(payload.projectId) : undefined,
         PayrollPeriodId: payload.payrollPeriodId,
         OtherIncomeTypeId: payload.otherIncomeTypeId,
         Amount: payload.amount,
+        EffectiveDate: payload.effectiveDate,
         DecisionNumber: payload.decisionNumber,
         DecisionDate: payload.decisionDate,
         Note: payload.note || payload.reason,
@@ -3195,9 +3230,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({
         EmployeeCode: payload.employeeCode,
+        ProjectId: payload.projectId != null ? Number(payload.projectId) : undefined,
         PayrollPeriodId: payload.payrollPeriodId,
         OtherIncomeTypeId: payload.otherIncomeTypeId,
         Amount: payload.amount,
+        EffectiveDate: payload.effectiveDate,
         DecisionNumber: payload.decisionNumber,
         DecisionDate: payload.decisionDate,
         Note: payload.note,
@@ -3233,14 +3270,15 @@ export const api = {
     }).then((res) => res.data);
   },
 
-  downloadOtherIncomesImportTemplateV3: async (): Promise<void> => {
+  downloadOtherIncomesImportTemplateV3: async (projectId?: string | number): Promise<void> => {
     const rawBaseUrl = getApiBaseUrl();
     const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
     const token = getAuthToken();
     const headers: Record<string, string> = { Accept: "*/*" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(`${baseUrl}/api/web/payroll/other-incomes/import-template`, {
+    const query = projectId && String(projectId) !== "all" ? `?projectId=${encodeURIComponent(String(projectId))}` : "";
+    const res = await fetch(`${baseUrl}/api/web/payroll/other-incomes/import-template${query}`, {
       method: "GET",
       headers,
     });
@@ -4156,6 +4194,7 @@ export const api = {
     projectId?: string | number;
     keyword?: string;
     policyGroupId?: string | number;
+    hasCustomPolicy?: boolean;
     pageIndex?: number;
     pageSize?: number;
   }): Promise<EmployeePolicyListResponseData> => {
@@ -4172,6 +4211,9 @@ export const api = {
     }
     if (params?.policyGroupId !== undefined && params?.policyGroupId !== null && String(params.policyGroupId).trim() !== "" && String(params.policyGroupId) !== "all") {
       query.set("policyGroupId", String(params.policyGroupId));
+    }
+    if (params?.hasCustomPolicy !== undefined && params?.hasCustomPolicy !== null) {
+      query.set("hasCustomPolicy", String(params.hasCustomPolicy));
     }
     query.set("pageIndex", String(params?.pageIndex || 1));
     query.set("pageSize", String(params?.pageSize || 20));
@@ -4216,6 +4258,7 @@ export const api = {
       policyGroupName: item.policyGroupName || null,
       basicSalary: item.basicSalary !== null && item.basicSalary !== undefined ? Number(item.basicSalary) : null,
       hasBasicSalaryOverride: Boolean(item.hasBasicSalaryOverride),
+      hasCustomPolicy: Boolean(item.hasCustomPolicy ?? item.hasBasicSalaryOverride ?? (item.policies || []).some((p: any) => p.hasOverride)),
       appliedCount: typeof item.appliedCount === "number" ? item.appliedCount : 0,
       totalAllowance: typeof item.totalAllowance === "number" ? item.totalAllowance : 0,
       effectiveFrom: item.effectiveFrom || null,
@@ -4233,12 +4276,21 @@ export const api = {
         : [],
     }));
 
+    const summary = dataObj.summary
+      ? {
+        totalEmployees: Number(dataObj.summary.totalEmployees ?? 0),
+        customPolicyCount: Number(dataObj.summary.customPolicyCount ?? 0),
+        projectPolicyCount: Number(dataObj.summary.projectPolicyCount ?? 0),
+      }
+      : undefined;
+
     return {
+      summary,
       items,
       pageIndex: typeof dataObj.pageIndex === "number" ? dataObj.pageIndex : (params?.pageIndex || 1),
       pageSize: typeof dataObj.pageSize === "number" ? dataObj.pageSize : (params?.pageSize || 20),
-      totalRow: typeof dataObj.totalRow === "number" ? dataObj.totalRow : items.length,
-      totalPages: typeof dataObj.totalPages === "number" ? dataObj.totalPages : Math.max(1, Math.ceil((dataObj.totalRow || items.length) / (params?.pageSize || 20))),
+      totalRow: typeof dataObj.totalRow === "number" ? dataObj.totalRow : (summary?.totalEmployees ?? items.length),
+      totalPages: typeof dataObj.totalPages === "number" ? dataObj.totalPages : Math.max(1, Math.ceil((dataObj.totalRow || summary?.totalEmployees || items.length) / (params?.pageSize || 20))),
     };
   },
 
@@ -4434,23 +4486,49 @@ export const api = {
     const resJson: any = await response.json().catch(() => null);
     if (!response.ok || !resJson || resJson.success === false) {
       const errData = resJson?.data || {};
+      const errDetails = resJson?.error?.details || errData.errors || (Array.isArray(errData) ? errData : []);
       const errMessage = resJson?.message || "Import danh sách thỏa thuận riêng thất bại.";
       const customErr: any = new ApiRequestError(
         errMessage,
-        resJson?.errorCode || "IMPORT_POLICIES_FAILED",
-        response.status
+        resJson?.error?.code || resJson?.errorCode || "IMPORT_POLICIES_FAILED",
+        response.status,
+        errDetails
       );
       (customErr as any).errorData = errData;
+      (customErr as any).details = errDetails;
       throw customErr;
     }
 
     return resJson.data;
   },
 
-  downloadEmployeePolicyTemplate: (): string => {
+  downloadEmployeePolicyTemplate: async (): Promise<void> => {
     const rawBaseUrl = getApiBaseUrl();
     const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
-    return `${baseUrl}/api/web/payroll/employees/policies/import-template`;
+    const token = getAuthToken();
+    const headers: Record<string, string> = { Accept: "*/*" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseUrl}/api/web/payroll/employees/policies/import-template`, {
+      method: "GET",
+      headers,
+    });
+    if (!res.ok) {
+      throw new ApiRequestError(
+        `Không thể tải biểu mẫu import chế độ nhân sự (Status: ${res.status})`,
+        "DOWNLOAD_TEMPLATE_FAILED",
+        res.status
+      );
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Template_CheDo_PhuCap_NhanSu.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   },
 
   // =========================================================================

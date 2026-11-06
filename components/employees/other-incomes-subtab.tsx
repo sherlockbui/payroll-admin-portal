@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertCircle,
   AlertTriangle,
   Award,
   Calendar,
@@ -55,6 +56,7 @@ import { api } from "@/lib/api";
 import type {
   CreateOtherIncomeRequest,
   Employee,
+  ImportRowErrorItem,
   OtherIncomeItemV3,
   OtherIncomeTypeItem,
   UpdateOtherIncomeRequest,
@@ -91,12 +93,14 @@ export function OtherIncomesSubtab({
   const [importFile, setImportFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [importErrors, setImportErrors] = useState<ImportRowErrorItem[] | null>(null);
+  const [importSummaryResult, setImportSummaryResult] = useState<{ total: number; success: number; error: number } | null>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTemplate = async () => {
     try {
       setDownloadingTemplate(true);
-      await api.downloadOtherIncomesImportTemplateV3();
+      await api.downloadOtherIncomesImportTemplateV3(projectId === "all" ? undefined : projectId);
       notify("Đã tải xuống biểu mẫu import thu nhập khác (.xlsx)");
     } catch {
       notify("Không thể tải file mẫu. Vui lòng thử lại sau.", "error");
@@ -125,10 +129,20 @@ export function OtherIncomesSubtab({
 
   // Query: Income Types
   const { data: incomeTypes = [] } = useQuery({
-    queryKey: ["web-payroll-other-income-types"],
-    queryFn: () => api.getOtherIncomeTypesV3(),
-    staleTime: 1000 * 60 * 10,
+    queryKey: ["web-payroll-other-income-types", projectId],
+    queryFn: () => api.getOtherIncomeTypesV3(projectId === "all" ? undefined : projectId),
+    staleTime: 1000 * 60 * 5,
   });
+
+  // Reset type filter if selected type no longer exists in project
+  useEffect(() => {
+    if (typeFilter !== "all" && incomeTypes.length > 0) {
+      const exists = incomeTypes.some((t) => String(t.id) === String(typeFilter) || t.incomeCode === typeFilter);
+      if (!exists) {
+        setTypeFilter("all");
+      }
+    }
+  }, [incomeTypes, typeFilter]);
 
   // Parse periodFilter (YYYY-MM)
   const { selectedMonth, selectedYear } = useMemo(() => {
@@ -234,6 +248,7 @@ export function OtherIncomesSubtab({
       }
       const payload: CreateOtherIncomeRequest = {
         employeeCode: formEmployeeCode,
+        projectId: projectId === "all" ? undefined : Number(projectId),
         otherIncomeTypeId: formIncomeTypeId,
         amount: Number(formAmount) || 0,
         decisionNumber: formDecisionNumber.trim() || undefined,
@@ -281,14 +296,37 @@ export function OtherIncomesSubtab({
     mutationFn: async (file: File) => {
       return api.importOtherIncomesExcelV3(file);
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["web-payroll-other-incomes"] });
-      setImportModalOpen(false);
-      setImportFile(null);
+      const details = res?.data || res;
+      if (details && typeof details.totalRows === "number") {
+        setImportSummaryResult({
+          total: details.totalRows,
+          success: details.successRows ?? details.totalRows,
+          error: details.errorRows ?? 0,
+        });
+      }
+      setImportErrors(null);
       notify("Nhập khẩu dữ liệu thu nhập từ Excel thành công!");
+      setTimeout(() => {
+        setImportModalOpen(false);
+        setImportFile(null);
+        setImportSummaryResult(null);
+      }, 1000);
     },
     onError: (err: any) => {
-      notify(err.message || "Lỗi khi import file Excel", "error");
+      const details = err.details;
+      if (details && (Array.isArray(details.errors) || details.errorRows > 0)) {
+        setImportSummaryResult({
+          total: details.totalRows || 0,
+          success: details.successRows || 0,
+          error: details.errorRows || details.errors?.length || 0,
+        });
+        setImportErrors(Array.isArray(details.errors) ? details.errors : null);
+        notify(err.message || "Tệp Excel có dòng dữ liệu không hợp lệ. Vui lòng kiểm tra bảng lỗi bên dưới.", "warning");
+      } else {
+        notify(err.message || "Lỗi khi import file Excel", "error");
+      }
     },
   });
 
@@ -347,19 +385,26 @@ export function OtherIncomesSubtab({
 
   // Helper Badge Color for Income Type
   const renderIncomeTypeBadge = (item: OtherIncomeItemV3) => {
-    const code = (item.incomeCode || item.type || "").toUpperCase();
-    const name = item.incomeName || item.typeName || "Thu nhập khác";
+    const matchedType = incomeTypes.find(
+      (t) => t.id === item.incomeTypeId || String(t.id) === String(item.incomeTypeId)
+    );
+    const code = (item.incomeCode || matchedType?.incomeCode || item.type || "").toUpperCase();
+    const name = item.incomeTypeName || item.incomeName || matchedType?.incomeName || item.typeName || "Thu nhập khác";
+    const nameUpper = name.toUpperCase();
 
-    if (code.includes("HOT_BONUS") || code.includes("SANG_KIEN")) {
+    if (code.includes("HOT_BONUS") || code.includes("SANG_KIEN") || nameUpper.includes("ĐỘT XUẤT") || nameUpper.includes("SÁNG KIẾN")) {
       return <Badge tone="success">{name}</Badge>;
     }
-    if (code.includes("PERFORMANCE") || code.includes("NANG_SUAT")) {
+    if (code.includes("PERFORMANCE") || code.includes("NANG_SUAT") || nameUpper.includes("THÀNH TÍCH") || nameUpper.includes("NĂNG SUẤT")) {
       return <Badge tone="info">{name}</Badge>;
     }
-    if (code.includes("HOLIDAY") || code.includes("LE_TET")) {
+    if (code.includes("HOLIDAY") || code.includes("LE_TET") || nameUpper.includes("LỄ") || nameUpper.includes("TẾT")) {
       return <Badge tone="warning">{name}</Badge>;
     }
-    if (code.includes("SUPPORT") || code.includes("HO_TRO")) {
+    if (code.includes("SUPPORT") || code.includes("HO_TRO") || nameUpper.includes("HỖ TRỢ") || nameUpper.includes("TRỢ CẤP")) {
+      return <Badge tone="info">{name}</Badge>;
+    }
+    if (code.includes("PACKER") || nameUpper.includes("PACKER")) {
       return <Badge tone="info">{name}</Badge>;
     }
     return <Badge tone="neutral">{name}</Badge>;
@@ -793,6 +838,8 @@ export function OtherIncomesSubtab({
           if (!open) {
             setImportFile(null);
             setIsDragging(false);
+            setImportErrors(null);
+            setImportSummaryResult(null);
           }
         }}
         title="Import danh sách Thu nhập khác từ Excel"
@@ -833,7 +880,11 @@ export function OtherIncomesSubtab({
                 e.preventDefault();
                 setIsDragging(false);
                 const file = e.dataTransfer.files?.[0];
-                if (file) setImportFile(file);
+                if (file) {
+                  setImportFile(file);
+                  setImportErrors(null);
+                  setImportSummaryResult(null);
+                }
               }}
               className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging
                   ? "border-primary bg-primary/5"
@@ -845,7 +896,11 @@ export function OtherIncomesSubtab({
               <input
                 type="file"
                 ref={importFileInputRef}
-                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  setImportFile(e.target.files?.[0] || null);
+                  setImportErrors(null);
+                  setImportSummaryResult(null);
+                }}
                 accept=".xlsx,.xls,.csv"
                 className="hidden"
               />
@@ -869,6 +924,45 @@ export function OtherIncomesSubtab({
             </div>
           </div>
 
+          {/* Step 3: Error Preview Grid */}
+          {importErrors && importErrors.length > 0 && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl space-y-2">
+              <div className="font-semibold text-rose-800 dark:text-rose-200 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                  <span>Phát hiện {importErrors.length} dòng lỗi trong file:</span>
+                </div>
+                {importSummaryResult && (
+                  <span className="text-[11px] font-normal text-rose-700 dark:text-rose-300">
+                    (Lỗi {importSummaryResult.error}/{importSummaryResult.total} dòng)
+                  </span>
+                )}
+              </div>
+              <div className="max-h-48 overflow-y-auto border border-rose-200 dark:border-rose-900/50 rounded-lg bg-white dark:bg-slate-900">
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr className="bg-rose-100/60 dark:bg-rose-950/50 text-rose-900 dark:text-rose-200 border-b border-rose-200 dark:border-rose-900/50 font-semibold sticky top-0">
+                      <th className="py-1.5 px-2.5 w-16">Dòng</th>
+                      <th className="py-1.5 px-2.5 w-20">Cột</th>
+                      <th className="py-1.5 px-2.5">Giá trị</th>
+                      <th className="py-1.5 px-2.5">Nội dung lỗi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-rose-100 dark:divide-rose-900/30">
+                    {importErrors.map((err, idx) => (
+                      <tr key={idx} className="hover:bg-rose-50/50 dark:hover:bg-rose-950/20">
+                        <td className="py-1.5 px-2.5 font-mono font-bold text-rose-700 dark:text-rose-400">#{err.row}</td>
+                        <td className="py-1.5 px-2.5 font-medium">{err.column || "-"}</td>
+                        <td className="py-1.5 px-2.5 font-mono text-slate-600 dark:text-slate-300 max-w-[120px] truncate">{err.value || "(Trống)"}</td>
+                        <td className="py-1.5 px-2.5 text-rose-700 dark:text-rose-300">{err.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2.5">
             <Button
@@ -877,6 +971,8 @@ export function OtherIncomesSubtab({
               onClick={() => {
                 setImportModalOpen(false);
                 setImportFile(null);
+                setImportErrors(null);
+                setImportSummaryResult(null);
               }}
             >
               Hủy

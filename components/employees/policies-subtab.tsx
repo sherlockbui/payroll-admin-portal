@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Building2,
@@ -10,6 +10,7 @@ import {
   Download,
   FileSpreadsheet,
   Info,
+  Loader2,
   Pencil,
   RefreshCw,
   RotateCcw,
@@ -264,6 +265,7 @@ export function EmployeePoliciesSubtab({
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedMode, setSelectedMode] = useState<SalaryPolicyMode>("ALL");
+  const [selectedGroupId, setSelectedGroupId] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -276,46 +278,70 @@ export function EmployeePoliciesSubtab({
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
-  // Primary Query from Server
+  // Reset page when mode, group, search, or project changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedMode, selectedGroupId, debouncedSearch, projectId]);
+
+  // Fetch Project Employee Groups for dropdown filter
+  const { data: projectGroups = [] } = useQuery({
+    queryKey: ["project-employee-groups", projectId],
+    queryFn: () => (projectId && projectId !== "all" ? api.getProjectEmployeeGroups(projectId) : Promise.resolve([])),
+    enabled: Boolean(projectId && projectId !== "all"),
+  });
+
+  const hasCustomPolicyParam =
+    selectedMode === "CUSTOM" ? true : selectedMode === "PROJECT_DEFAULT" ? false : undefined;
+
+  // Primary Query from Server with keepPreviousData to prevent UI flashes & count jumping
   const policiesQuery = useQuery({
-    queryKey: ["employee-policies", projectId, debouncedSearch, currentPage, pageSize],
+    queryKey: [
+      "employee-policies",
+      projectId,
+      debouncedSearch,
+      selectedGroupId,
+      selectedMode,
+      currentPage,
+      pageSize,
+    ],
     queryFn: () =>
       api.getEmployeePolicies({
         projectId: projectId !== "all" ? projectId : undefined,
         keyword: debouncedSearch || undefined,
+        policyGroupId: selectedGroupId !== "all" ? selectedGroupId : undefined,
+        hasCustomPolicy: hasCustomPolicyParam,
         pageIndex: currentPage,
         pageSize: pageSize,
       }),
+    placeholderData: keepPreviousData,
   });
 
-  const isLoading = policiesQuery.isLoading;
+  const isInitialLoading = policiesQuery.isLoading && !policiesQuery.data;
+  const isFetching = policiesQuery.isFetching;
   const data = policiesQuery.data;
   const rawItems = data?.items || [];
   const totalRow = data?.totalRow || 0;
+  const displayedItems = rawItems;
 
-  // Client-side Mode Filter (Tất cả / Thỏa thuận riêng / Chuẩn nhóm) on current page
-  const displayedItems = useMemo(() => {
-    if (selectedMode === "CUSTOM") {
-      return rawItems.filter(
-        (i) => i.hasBasicSalaryOverride || i.policies.some((p) => p.hasOverride)
-      );
+  // Persistent summary cache so counts NEVER jump to 0 during fetches or transitions
+  const [cachedSummary, setCachedSummary] = useState<any>(null);
+  useEffect(() => {
+    if (data?.summary) {
+      setCachedSummary(data.summary);
     }
-    if (selectedMode === "PROJECT_DEFAULT") {
-      return rawItems.filter(
-        (i) => !i.hasBasicSalaryOverride && !i.policies.some((p) => p.hasOverride)
-      );
-    }
-    return rawItems;
-  }, [rawItems, selectedMode]);
+  }, [data?.summary]);
 
-  // KPI Summary Statistics
+  useEffect(() => {
+    setCachedSummary(null);
+  }, [projectId]);
+
+  const activeSummary = data?.summary || cachedSummary;
+
+  // KPI Summary Statistics (using persistent summary contract)
   const stats = useMemo(() => {
-    const defaultCount = rawItems.filter(
-      (i) => !i.hasBasicSalaryOverride && !i.policies.some((p) => p.hasOverride)
-    ).length;
-    const customCount = rawItems.filter(
-      (i) => i.hasBasicSalaryOverride || i.policies.some((p) => p.hasOverride)
-    ).length;
+    const total = activeSummary?.totalEmployees ?? (totalRow || 0);
+    const customCount = activeSummary?.customPolicyCount ?? (selectedMode === "CUSTOM" ? totalRow : 0);
+    const defaultCount = activeSummary?.projectPolicyCount ?? Math.max(0, total - customCount);
 
     const totalMonthlySalary = rawItems.reduce((sum, i) => {
       const allows = i.policies
@@ -325,12 +351,12 @@ export function EmployeePoliciesSubtab({
     }, 0);
 
     return {
-      total: totalRow,
+      total,
       defaultCount,
       customCount,
       totalMonthlySalary,
     };
-  }, [rawItems, totalRow]);
+  }, [activeSummary, totalRow, rawItems, selectedMode]);
 
   // ================= EDIT MODAL STATE =================
   const [editEmployeeCode, setEditEmployeeCode] = useState<string | null>(null);
@@ -521,10 +547,17 @@ export function EmployeePoliciesSubtab({
     setImportModalOpen(true);
   };
 
-  const handleDownloadTemplate = () => {
-    const url = api.downloadEmployeePolicyTemplate();
-    window.open(url, "_blank");
-    notify("Đang tải xuống biểu mẫu Excel chuẩn...");
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const handleDownloadTemplate = async () => {
+    setDownloadingTemplate(true);
+    try {
+      await api.downloadEmployeePolicyTemplate();
+      notify("Đã tải xuống biểu mẫu Excel chuẩn thành công!");
+    } catch (err: any) {
+      notify(err.message || "Không thể tải biểu mẫu Excel", "error");
+    } finally {
+      setDownloadingTemplate(false);
+    }
   };
 
   const handleExecuteImport = async () => {
@@ -538,14 +571,15 @@ export function EmployeePoliciesSubtab({
 
     try {
       const res = await api.importEmployeePolicies(importFile);
-      notify(`Import thành công ${res.successRows}/${res.totalRows} bản ghi thỏa thuận riêng!`);
+      notify(`Import thành công ${res.successRows ?? res.totalRows}/${res.totalRows} bản ghi thỏa thuận riêng!`);
       queryClient.invalidateQueries({ queryKey: ["employee-policies"] });
       setImportModalOpen(false);
       setImportFile(null);
     } catch (err: any) {
-      if (err.errorData?.errors && Array.isArray(err.errorData.errors)) {
-        setImportErrors(err.errorData.errors);
-        notify(err.message || "File import có dòng bị lỗi dữ liệu.", "error");
+      const errorList = err.details || err.errorData?.errors || (Array.isArray(err.errorData) ? err.errorData : []);
+      if (Array.isArray(errorList) && errorList.length > 0) {
+        setImportErrors(errorList);
+        notify(err.message || `File import có ${errorList.length} dòng bị lỗi dữ liệu.`, "error");
       } else {
         notify(err.message || "Import file thất bại.", "error");
       }
@@ -561,6 +595,13 @@ export function EmployeePoliciesSubtab({
       <div className="flex items-center gap-2">
         <Button
           variant="secondary"
+          onClick={() => policiesQuery.refetch()}
+          className="gap-1.5 font-medium text-xs h-8 px-3"
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5", policiesQuery.isFetching && "animate-spin")} /> Làm mới
+        </Button>
+        <Button
+          variant="secondary"
           onClick={handleOpenImport}
           className="gap-1.5 font-semibold text-xs h-8 px-3"
         >
@@ -569,7 +610,7 @@ export function EmployeePoliciesSubtab({
       </div>
     );
     return () => setHeaderAction(null);
-  }, [setHeaderAction, projectId]);
+  }, [setHeaderAction, projectId, policiesQuery.isFetching]);
 
   // Live calculation in Edit Modal
   const editCalculations = useMemo(() => {
@@ -600,56 +641,76 @@ export function EmployeePoliciesSubtab({
                 onClick={() => setSelectedMode("ALL")}
                 className={`pill-btn ${selectedMode === "ALL" ? "active" : ""}`}
               >
-                Tất cả ({rawItems.length})
+                Tất cả ({stats.total.toLocaleString("vi-VN")})
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedMode("PROJECT_DEFAULT")}
                 className={`pill-btn success ${selectedMode === "PROJECT_DEFAULT" ? "active" : ""}`}
               >
-                Theo chuẩn nhóm ({stats.defaultCount})
+                Theo chuẩn nhóm ({stats.defaultCount.toLocaleString("vi-VN")})
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedMode("CUSTOM")}
                 className={`pill-btn ${selectedMode === "CUSTOM" ? "active" : ""}`}
               >
-                Thỏa thuận riêng ({stats.customCount})
+                Thỏa thuận riêng ({stats.customCount.toLocaleString("vi-VN")})
               </button>
             </div>
 
-            {/* Right: Search Input */}
-            <SearchInput
-              value={searchTerm}
-              onChange={setSearchTerm}
-              placeholder="Tìm theo mã NV (GID), họ tên..."
-              containerClassName="min-w-[260px] max-w-[340px]"
-            />
+            {/* Right: Group Filter Dropdown & Search Input */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {projectGroups.length > 0 && (
+                <div className="min-w-[190px]">
+                  <select
+                    value={selectedGroupId}
+                    onChange={(e) => setSelectedGroupId(e.target.value)}
+                    className="h-9 w-full px-2.5 rounded-lg border border-border bg-background text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
+                    title="Lọc theo nhóm đối tượng"
+                  >
+                    <option value="all">Tất cả nhóm ({projectGroups.length} nhóm)</option>
+                    {projectGroups.map((g) => (
+                      <option key={g.id} value={String(g.id)}>
+                        {g.groupName || g.name} ({g.employeeCount || 0} NS)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <SearchInput
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="Tìm theo mã NV (GID), họ tên..."
+                containerClassName="min-w-[240px] max-w-[320px]"
+              />
+            </div>
           </div>
         </div>
 
         {/* Loading / Error / Table Content */}
-        {isLoading ? (
+        {isInitialLoading ? (
           <div className="py-12">
             <LoadingBlock rows={6} />
           </div>
-        ) : displayedItems.length === 0 ? (
+        ) : displayedItems.length === 0 && !isFetching ? (
           <div className="py-14">
             <EmptyState
               title="Không tìm thấy dữ liệu"
               description={
-                searchTerm || selectedMode !== "ALL"
+                searchTerm || selectedMode !== "ALL" || selectedGroupId !== "all"
                   ? "Không tìm thấy nhân sự phù hợp với từ khóa tìm kiếm hoặc bộ lọc hiện tại."
                   : "Chưa có dữ liệu nhân sự và chế độ lương cho phạm vi dự án này."
               }
               action={
-                searchTerm || selectedMode !== "ALL" ? (
+                searchTerm || selectedMode !== "ALL" || selectedGroupId !== "all" ? (
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => {
                       setSearchTerm("");
                       setSelectedMode("ALL");
+                      setSelectedGroupId("all");
                     }}
                     className="gap-1.5 text-xs"
                   >
@@ -659,9 +720,18 @@ export function EmployeePoliciesSubtab({
               }
             />
           </div>
+        ) : displayedItems.length === 0 && isFetching ? (
+          <div className="py-12">
+            <LoadingBlock rows={6} />
+          </div>
         ) : (
-          <div className="data-table-wrap">
-            <div className="data-table-scroll">
+          <div className="data-table-wrap relative">
+            {isFetching && (
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/20 overflow-hidden z-20">
+                <div className="h-full bg-primary animate-pulse w-full" />
+              </div>
+            )}
+            <div className={cn("data-table-scroll transition-opacity duration-150", isFetching && "opacity-60")}>
               <table className="data-table min-w-[1100px]">
                 <thead>
                   <tr>
@@ -1401,10 +1471,12 @@ export function EmployeePoliciesSubtab({
             <Button
               variant="secondary"
               size="sm"
+              disabled={downloadingTemplate}
               onClick={handleDownloadTemplate}
               className="gap-1 text-xs shrink-0 font-medium"
             >
-              <Download className="w-3.5 h-3.5 text-emerald-600" /> Tải file mẫu (.xlsx)
+              <Download className={cn("w-3.5 h-3.5 text-emerald-600", downloadingTemplate && "animate-bounce")} />{" "}
+              {downloadingTemplate ? "Đang tải..." : "Tải file mẫu (.xlsx)"}
             </Button>
           </div>
 

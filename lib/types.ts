@@ -70,6 +70,7 @@ export interface ProjectEmployeeGroup {
   projectId: string;
   code: string;
   name: string;
+  groupName?: string;
   description?: string;
   colorTone: GroupColorTone;
   isDefault?: boolean;
@@ -1364,6 +1365,11 @@ export interface OtherDeductionTypeItem {
   id: number;
   deductionCode: string;
   deductionName: string;
+  projectId?: number | null;
+  bucketCode?: string | null;
+  isTaxable?: boolean;
+  displayOrder?: number;
+  isActive?: boolean;
 }
 
 export type OtherDeductionType = "DISCIPLINE_FINE" | "ASSET_COMPENSATION" | "ADVANCE_PAYMENT" | "OTHER" | string;
@@ -1377,6 +1383,7 @@ export interface OtherDeductionItemV3 {
   deductionTypeId?: number | null;
   deductionCode?: string | null;
   deductionName?: string | null;
+  deductionTypeName?: string | null;
   type?: OtherDeductionType;
   typeName?: string;
   amount: number;
@@ -1399,9 +1406,11 @@ export type OtherDeductionV3 = OtherDeductionItemV3;
 
 export interface CreateOtherDeductionRequest {
   employeeCode?: string | null;
+  projectId?: number | null;
   payrollPeriodId?: number | null;
   otherDeductionTypeId?: number | null;
   amount?: number | null;
+  effectiveDate?: string | null;
   decisionNumber?: string | null;
   decisionDate?: string | null;
   note?: string | null;
@@ -1416,9 +1425,11 @@ export type CreateOtherDeductionRequestV3 = CreateOtherDeductionRequest;
 
 export interface UpdateOtherDeductionRequest {
   employeeCode?: string | null;
+  projectId?: number | null;
   payrollPeriodId?: number | null;
   otherDeductionTypeId?: number | null;
   amount?: number | null;
+  effectiveDate?: string | null;
   decisionNumber?: string | null;
   decisionDate?: string | null;
   note?: string | null;
@@ -1457,6 +1468,12 @@ export interface OtherIncomeTypeItem {
   id: number;
   incomeCode?: string;
   incomeName?: string;
+  projectId?: number | null;
+  bucketCode?: string | null;
+  isTaxable?: boolean;
+  isInsuranceBase?: boolean;
+  displayOrder?: number;
+  isActive?: boolean;
   code?: string;
   name?: string;
   description?: string;
@@ -1480,6 +1497,7 @@ export interface OtherIncomeItemV3 {
   incomeTypeId?: number;
   incomeCode?: string;
   incomeName?: string;
+  incomeTypeName?: string;
   otherIncomeTypeId?: number;
   type?: string;
   typeName?: string;
@@ -1506,9 +1524,11 @@ export type OtherIncomeType = string;
 
 export interface CreateOtherIncomeRequest {
   employeeCode?: string;
+  projectId?: number | null;
   payrollPeriodId?: number;
   otherIncomeTypeId?: number;
   amount?: number;
+  effectiveDate?: string | null;
   decisionNumber?: string;
   decisionDate?: string;
   note?: string;
@@ -1522,9 +1542,11 @@ export type CreateOtherIncomeRequestV3 = CreateOtherIncomeRequest;
 
 export interface UpdateOtherIncomeRequest {
   employeeCode?: string;
+  projectId?: number | null;
   payrollPeriodId?: number;
   otherIncomeTypeId?: number;
   amount?: number;
+  effectiveDate?: string | null;
   decisionNumber?: string;
   decisionDate?: string;
   note?: string;
@@ -1536,6 +1558,22 @@ export interface SaveOtherIncomeDocumentRequest {
   incomeId: number;
   fileName?: string;
   filePath?: string;
+}
+
+export interface ImportRowErrorItem {
+  row: number;
+  column?: string;
+  value?: string;
+  message: string;
+  errorCode?: string;
+}
+
+export interface ImportResultDetails {
+  batchId?: number;
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  errors: ImportRowErrorItem[];
 }
 
 export interface OtherIncomesSummaryResponse {
@@ -2028,6 +2066,12 @@ export interface EmployeePolicyListSummaryItemDto {
   hasOverride: boolean;
 }
 
+export interface EmployeePolicySummaryDto {
+  totalEmployees: number;
+  customPolicyCount: number;
+  projectPolicyCount: number;
+}
+
 export interface EmployeePolicyListItemDto {
   employeeCode: string;
   employeeName: string;
@@ -2035,6 +2079,7 @@ export interface EmployeePolicyListItemDto {
   policyGroupName?: string | null;
   basicSalary?: number | null;
   hasBasicSalaryOverride: boolean;
+  hasCustomPolicy: boolean;
   appliedCount: number;
   totalAllowance: number;
   effectiveFrom?: string | null;
@@ -2042,6 +2087,7 @@ export interface EmployeePolicyListItemDto {
 }
 
 export interface EmployeePolicyListResponseData {
+  summary?: EmployeePolicySummaryDto;
   items: EmployeePolicyListItemDto[];
   pageIndex: number;
   pageSize: number;

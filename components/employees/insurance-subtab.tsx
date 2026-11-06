@@ -550,7 +550,7 @@ export function InsuranceSubtab({
           </span>
           {activeView === "members" && <span className="tab-indicator" />}
         </button>
-        <button
+        {/* <button
           type="button"
           className={cn("subtab-view-btn", activeView === "changes" && "active")}
           onClick={() => {
@@ -571,7 +571,7 @@ export function InsuranceSubtab({
             {totalChanges}
           </span>
           {activeView === "changes" && <span className="tab-indicator" />}
-        </button>
+        </button> */}
         <button
           type="button"
           className={cn("subtab-view-btn", activeView === "adjustments" && "active")}
