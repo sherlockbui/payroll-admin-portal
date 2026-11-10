@@ -166,5 +166,29 @@ describe("formula engine", () => {
     expect(inside).not.toBeNull();
     expect(inside?.action).toBe("inside");
   });
+
+  it("parse chính xác công thức chứa biến có ngoặc nhọn {Lương cơ bản áp dụng} và {Số ngày nghỉ Lễ, Tết} đồng thời tokenize bảo toàn dấu ngoặc ()", () => {
+    const aliases = new Map<string, string>([
+      ["BASIC_SALARY", "Lương cơ bản áp dụng"],
+      ["HOLIDAY_DAYS", "Số ngày nghỉ Lễ, Tết"],
+    ]);
+    const formula = "({Lương cơ bản áp dụng} /208)*{Số ngày nghỉ Lễ, Tết}";
+    const parsed = parseExpressionTextResult(formula, aliases);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.expression).not.toBeNull();
+    expect(expressionToText(parsed.expression!)).toBe("BASIC_SALARY / 208 * HOLIDAY_DAYS");
+
+    // Tokenize friendly text phải nhận diện đầy đủ các token dấu ngoặc ( và )
+    const tokens = tokenizeFriendlyText(formula, Array.from(aliases.values()));
+    expect(tokens.map((t) => t.text)).toEqual([
+      "(",
+      "Lương cơ bản áp dụng",
+      "÷",
+      "208",
+      ")",
+      "×",
+      "Số ngày nghỉ Lễ, Tết",
+    ]);
+  });
 });
 

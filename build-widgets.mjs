@@ -7,7 +7,16 @@ import { fileURLToPath } from "url";
 import tailwindPostcss from "@tailwindcss/postcss";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const targetDir = "C:/Hris/main-timetracking/UI/Contents/js";
+
+// Ưu tiên thư mục thật trên máy (D:), fallback sang C:
+const targetCandidates = [
+  "D:/Work/Work/Source/admin-hris/main-timetracking/UI/Contents/js",
+  "C:/Hris/main-timetracking/UI/Contents/js",
+];
+const targetDir =
+  process.env.PAYROLL_WIDGET_TARGET_DIR ||
+  targetCandidates.find((dir) => fs.existsSync(dir)) ||
+  targetCandidates[0];
 
 if (!fs.existsSync(targetDir)) {
   fs.mkdirSync(targetDir, { recursive: true });

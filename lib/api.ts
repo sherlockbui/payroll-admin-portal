@@ -168,21 +168,47 @@ export class ApiRequestError extends Error {
 
 export function getApiBaseUrl(): string {
   if (typeof window !== "undefined") {
-    if ((window as any).API_BASE_URL) return (window as any).API_BASE_URL;
+    // 1. Ưu tiên số 1: Thuộc tính trên Web Component (Host ASP.NET WebForms truyền vào)
     const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees, payroll-runs, payroll-dependents, payroll-insurance");
     const attrUrl = widget?.getAttribute("api-base-url");
-    if (attrUrl) return attrUrl;
+    if (attrUrl && attrUrl.trim()) return attrUrl.trim();
+
+    // 2. Biến toàn cục từ trang Host ASP.NET
+    if ((window as any).API_BASE_URL) return (window as any).API_BASE_URL;
+
+    // 3. Cho phép override nhanh qua localStorage của trình duyệt khi test cục bộ
+    const lsUrl = window.localStorage.getItem("payroll-api-base-url");
+    if (lsUrl && lsUrl.trim()) return lsUrl.trim();
   }
-  return "https://bruh.thanhf.dev/api/";
+
+  // 4. Biến môi trường Next.js khi chạy standalone (npm run dev)
+  if (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+
+  return "https://localhost:5001/api/";
 }
 
 export function getAuthToken(): string {
   if (typeof window !== "undefined") {
-    if ((window as any).__SERVER_TOKEN) return (window as any).__SERVER_TOKEN;
+    // 1. Ưu tiên số 1: Thuộc tính trên Web Component từ Host ASP.NET
     const widget = document.querySelector("payroll-projects, payroll-widget, payroll-employees, payroll-runs, payroll-dependents, payroll-insurance");
     const attrToken = widget?.getAttribute("auth-token");
-    if (attrToken) return attrToken;
+    if (attrToken && attrToken.trim()) return attrToken.trim();
+
+    // 2. Token từ Server Host
+    if ((window as any).__SERVER_TOKEN) return (window as any).__SERVER_TOKEN;
+
+    // 3. Token trong localStorage khi test cục bộ
+    const lsToken = window.localStorage.getItem("payroll-auth-token");
+    if (lsToken && lsToken.trim()) return lsToken.trim();
   }
+
+  // 4. Biến môi trường Next.js
+  if (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_AUTH_TOKEN) {
+    return process.env.NEXT_PUBLIC_AUTH_TOKEN;
+  }
+
   return "";
 }
 

@@ -6,9 +6,10 @@ import type {
 } from "@/lib/types";
 
 export function evaluateExpression(
-  node: ExpressionNode,
-  variables: Record<string, number>,
+  node?: ExpressionNode | null,
+  variables: Record<string, number> = {},
 ): number {
+  if (!node) return 0;
   if (node.type === "constant") return node.value;
   if (node.type === "variable") {
     const value = variables[node.variableCode];
@@ -65,7 +66,8 @@ export function applyRounding(value: number, rule: RoundingRule): number {
   return Math.round(scaled) * rule.precision;
 }
 
-export function collectVariables(node: ExpressionNode): string[] {
+export function collectVariables(node?: ExpressionNode | null): string[] {
+  if (!node) return [];
   if (node.type === "variable") return [node.variableCode];
   if (node.type === "constant") return [];
   if (node.type === "if") {
@@ -556,9 +558,15 @@ export function expressionToText(node: ExpressionNode): string {
   return formatExpression(node, (code) => code);
 }
 
-export function expressionToFriendlyText(node: ExpressionNode, variableNameMap?: Map<string, string>): string {
+export function expressionToFriendlyText(node?: ExpressionNode | null, variableNameMap?: Map<string, string>): string {
+  if (!node) return "";
   return formatExpression(node, (code) => {
-    const label = variableNameMap?.get(code) ?? variableCodeToName[code] ?? code;
+    const label =
+      variableNameMap?.get(code) ??
+      variableNameMap?.get(code.toUpperCase()) ??
+      variableCodeToName[code] ??
+      variableCodeToName[code.toUpperCase()] ??
+      code;
     return `{${label}}`;
   });
 }
@@ -727,26 +735,87 @@ export function parseExpressionTextResult(
   text: string,
   aliases?: ReadonlyMap<string, string>,
 ): ExpressionParseResult {
-  let cleaned = text.replace(/^=\s*/, "").replace(/×/g, "*").replace(/÷/g, "/").trim();
-  // Strip bracketed / curly variable names [Tên biến] or {VAR_CODE} -> VAR_CODE and @mention prefix
-  cleaned = cleaned.replace(/[\{\[]\s*([^\{\}\]\[]+?)\s*[\}\]]/g, " $1 ");
-  cleaned = cleaned.replace(/@([a-zA-Z0-9_À-ỹ]+)/g, " $1 ");
   const errors: string[] = [];
+  let cleaned = text.replace(/^=\s*/, "").replace(/×/g, "*").replace(/÷/g, "/").trim();
 
   if (!cleaned) {
     return { expression: null, errors: ["Hãy nhập biểu thức tính."], normalizedText: "" };
   }
 
+  // 1. Build a dictionary for fast lookup: normalized name -> code
+  const nameToCode = new Map<string, string>();
+  if (aliases) {
+    for (const [k, v] of aliases.entries()) {
+      if (k && v) {
+        nameToCode.set(v.trim().toLowerCase(), k.trim());
+        nameToCode.set(k.trim().toLowerCase(), k.trim());
+      }
+    }
+  }
+  for (const [code, name] of Object.entries(variableCodeToName)) {
+    if (code && name) {
+      nameToCode.set(name.trim().toLowerCase(), code.trim());
+      nameToCode.set(code.trim().toLowerCase(), code.trim());
+    }
+  }
+  for (const [pattern, code] of vietnameseNameToCode) {
+    const rawName = pattern.source.replace(/\\/g, "").replace(/\(\?:.*?\)/g, "").toLowerCase();
+    nameToCode.set(rawName, code);
+  }
+
+  // 2. Resolve explicitly bracketed variables {VAR} or [VAR] atomically FIRST
+  cleaned = cleaned.replace(/[\{\[]\s*([^\{\}\]\[]+?)\s*[\}\]]/g, (_match, rawVar) => {
+    const varName = rawVar.trim();
+    const varLower = varName.toLowerCase();
+
+    // Direct match
+    if (nameToCode.has(varLower)) {
+      return ` ${nameToCode.get(varLower)} `;
+    }
+
+    // Check if it's already a valid UPPER_SNAKE_CASE variable code
+    if (/^[A-Z0-9_]+$/.test(varName)) {
+      return ` ${varName} `;
+    }
+
+    // Check partial matches against known patterns
+    for (const [pattern, code] of vietnameseNameToCode) {
+      if (pattern.test(varName) && varName.replace(pattern, "").trim() === "") {
+        return ` ${code} `;
+      }
+    }
+
+    // If not found, look for close suggestion
+    let suggestion = "";
+    for (const [name, code] of nameToCode.entries()) {
+      if (varLower.includes(name) && name.length >= 4) {
+        suggestion = aliases?.get(code) || variableCodeToName[code] || name;
+        break;
+      }
+    }
+
+    if (suggestion) {
+      errors.push(`Biến số “${varName}” chưa đúng trong hệ thống (Gợi ý biến có sẵn: “${suggestion}”).`);
+    } else {
+      errors.push(`Biến số “${varName}” không tồn tại trong danh mục biến số.`);
+    }
+
+    return ` INVALID_VAR `;
+  });
+
+  // Strip @mention prefix
+  cleaned = cleaned.replace(/@([a-zA-Z0-9_À-ỹ]+)/g, " $1 ");
+
+  // 3. For any remaining unbracketed variable names in text
   if (aliases) {
     [...aliases.entries()]
       .filter(([k, v]) => Boolean(k?.trim()) && Boolean(v?.trim()))
+      .sort(([, a], [, b]) => (b?.length ?? 0) - (a?.length ?? 0))
       .forEach(([key, val]) => {
         if (/^[A-Z0-9_]+$/.test(key) && !/^[A-Z0-9_]+$/.test(val)) {
-          cleaned = cleaned.replace(new RegExp(escapeRegExp(val), "gi"), key);
+          cleaned = cleaned.replace(new RegExp(escapeRegExp(val), "gi"), ` ${key} `);
         } else if (/^[A-Z0-9_]+$/.test(val) && !/^[A-Z0-9_]+$/.test(key)) {
-          cleaned = cleaned.replace(new RegExp(escapeRegExp(key), "gi"), val);
-        } else {
-          cleaned = cleaned.replace(new RegExp(escapeRegExp(key), "gi"), val);
+          cleaned = cleaned.replace(new RegExp(escapeRegExp(key), "gi"), ` ${val} `);
         }
       });
   }
@@ -754,7 +823,7 @@ export function parseExpressionTextResult(
   [...vietnameseNameToCode]
     .sort(([left], [right]) => right.source.length - left.source.length)
     .forEach(([pattern, code]) => {
-      cleaned = cleaned.replace(pattern, code);
+      cleaned = cleaned.replace(pattern, ` ${code} `);
     });
 
   const tokens: ParserToken[] = [];
@@ -973,7 +1042,13 @@ export function parseExpressionTextResult(
       idx++;
       const sub = parseIfOrComparison();
       if (!peekOperator(")")) {
-        errors.push("Thiếu dấu đóng ngoặc “)”.");
+        const openParens = (cleaned.match(/\(/g) || []).length;
+        const closeParens = (cleaned.match(/\)/g) || []).length;
+        if (openParens > closeParens) {
+          errors.push(`Thiếu dấu đóng ngoặc “)” (Đang mở ${openParens} dấu “(” nhưng chỉ đóng ${closeParens} dấu “)”).`);
+        } else {
+          errors.push("Thiếu dấu đóng ngoặc “)”.");
+        }
         return null;
       }
       idx++;
@@ -1021,7 +1096,8 @@ export function parseExpressionTextResult(
   };
 }
 
-export function parseExpressionText(text: string): ExpressionNode {
+export function parseExpressionText(text: string): ExpressionNode | null {
+  if (!text || !text.trim()) return null;
   const result = parseExpressionTextResult(text);
-  return result.expression ?? { type: "variable", variableCode: "LUONG_CO_BAN" };
+  return result.expression;
 }

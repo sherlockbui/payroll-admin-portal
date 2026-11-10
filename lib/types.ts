@@ -211,7 +211,7 @@ export interface SalaryFormula {
   outputVariable: string;
   category: "attendance" | "income" | "deduction" | "aggregate" | "net";
   order: number;
-  expression: ExpressionNode;
+  expression: ExpressionNode | null;
   rounding: RoundingRule;
   enabled: boolean;
 }

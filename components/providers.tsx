@@ -126,6 +126,33 @@ function MockApiGate({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     let active = true;
+    const isExplicitMock =
+      typeof window !== "undefined" &&
+      ((window as any).__USE_MOCK__ === true ||
+        (window as any).USE_MOCK === true ||
+        process.env.NEXT_PUBLIC_USE_MOCK === "true");
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+    const hasExternalApi =
+      Boolean(apiUrl && apiUrl.trim()) &&
+      apiUrl.startsWith("http") &&
+      !apiUrl.includes("localhost:5001") &&
+      !apiUrl.includes("bruh.thanhf.dev");
+
+    // Nếu cấu hình API thật (ví dụ api-stage-hris.greenspeed.vn) và không bật mock:
+    // Hủy đăng ký MSW Service Worker để tất cả request bay thẳng vào backend thật
+    if (hasExternalApi && !isExplicitMock) {
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const reg of registrations) {
+            reg.unregister();
+          }
+        });
+      }
+      if (active) setReady(true);
+      return;
+    }
+
     import("@/mocks/browser")
       .then(({ worker }) => worker.start({ onUnhandledRequest: "bypass", quiet: true }))
       .then(() => { if (active) setReady(true); })
@@ -136,7 +163,7 @@ function MockApiGate({ children }: { children: React.ReactNode }) {
   if (!ready) {
     return (
       <div className="app-loading" role="status">
-        <div className="loading-brand"><span>GS</span><div><b>Payroll Admin</b><small>Đang chuẩn bị dữ liệu demo…</small></div></div>
+        <div className="loading-brand"><span>GS</span><div><b>Payroll Admin</b><small>Đang chuẩn bị dữ liệu…</small></div></div>
         <div className="loading-grid"><i /><i /><i /></div>
       </div>
     );

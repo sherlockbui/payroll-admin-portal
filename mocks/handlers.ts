@@ -145,6 +145,122 @@ let mockSalaryStructuresStore: Array<{
     },
   ];
 
+let mockSalaryStructureLinesStore: Array<{
+  id: number;
+  structureId: number;
+  componentId: number;
+  componentCode: string;
+  componentName: string;
+  targetGroupId?: number | null;
+  formulaDefinitionId?: number | null;
+  formulaType: string;
+  expression: string;
+  executionOrder: number;
+  displayOrder: number;
+  isVisibleOnPayslip: boolean;
+  isVisibleOnReport: boolean;
+  aggregationTarget: string;
+  isEnabled: boolean;
+  note?: string | null;
+}> = [
+  {
+    id: 1,
+    structureId: 1,
+    componentId: 1,
+    componentCode: "LUONG_NGAY_CONG",
+    componentName: "Lương theo ngày công thực tế",
+    formulaType: "single_expression",
+    expression: "{LUONG_CO_BAN} / {NGAY_CONG_CHUAN} * {NGAY_CONG_THUC_TE}",
+    executionOrder: 10,
+    displayOrder: 1,
+    isVisibleOnPayslip: true,
+    isVisibleOnReport: true,
+    aggregationTarget: "INCOME",
+    isEnabled: true,
+    note: "Tính theo ngày công chuẩn dự án",
+  },
+  {
+    id: 2,
+    structureId: 1,
+    componentId: 2,
+    componentCode: "LUONG_OT_NGAY_THUONG",
+    componentName: "Lương tăng ca ngày thường 150%",
+    formulaType: "single_expression",
+    expression: "({MUC_LUONG_TINH_OT} / {NGAY_CONG_CHUAN} / 8) * {GIO_OT_NGAY_THUONG} * 1.5",
+    executionOrder: 20,
+    displayOrder: 2,
+    isVisibleOnPayslip: true,
+    isVisibleOnReport: true,
+    aggregationTarget: "INCOME",
+    isEnabled: true,
+    note: "Hệ số OT 1.5",
+  },
+  {
+    id: 3,
+    structureId: 1,
+    componentId: 3,
+    componentCode: "LUONG_OT_DEM_NGAY_THUONG_200",
+    componentName: "Lương OT đêm ngày thường 200%",
+    formulaType: "single_expression",
+    expression: "({MUC_LUONG_TINH_OT} / {NGAY_CONG_CHUAN} / 8) * {GIO_OT_DEM_NGAY_THUONG_KHONG_OT_NGAY} * 2.0",
+    executionOrder: 30,
+    displayOrder: 3,
+    isVisibleOnPayslip: true,
+    isVisibleOnReport: true,
+    aggregationTarget: "INCOME",
+    isEnabled: true,
+    note: "Hệ số OT đêm 2.0",
+  },
+  {
+    id: 4,
+    structureId: 1,
+    componentId: 4,
+    componentCode: "PC_AN_TRUA",
+    componentName: "Phụ cấp ăn trưa",
+    formulaType: "single_expression",
+    expression: "30000 * {NGAY_CONG_THUC_TE}",
+    executionOrder: 40,
+    displayOrder: 4,
+    isVisibleOnPayslip: true,
+    isVisibleOnReport: true,
+    aggregationTarget: "INCOME",
+    isEnabled: true,
+    note: "30.000đ/ngày công",
+  },
+  {
+    id: 5,
+    structureId: 1,
+    componentId: 5,
+    componentCode: "BAO_HIEM_NLD",
+    componentName: "Bảo hiểm bắt buộc người lao động (10.5%)",
+    formulaType: "single_expression",
+    expression: "{LUONG_DONG_BH} * 0.105",
+    executionOrder: 50,
+    displayOrder: 5,
+    isVisibleOnPayslip: true,
+    isVisibleOnReport: true,
+    aggregationTarget: "DEDUCTION",
+    isEnabled: true,
+    note: "BHXH 8%, BHYT 1.5%, BHTN 1%",
+  },
+  {
+    id: 6,
+    structureId: 1,
+    componentId: 6,
+    componentCode: "DOAN_PHI_CONG_DOAN",
+    componentName: "Đoàn phí công đoàn",
+    formulaType: "single_expression",
+    expression: "{LUONG_CO_BAN} * 0.01",
+    executionOrder: 60,
+    displayOrder: 6,
+    isVisibleOnPayslip: true,
+    isVisibleOnReport: true,
+    aggregationTarget: "DEDUCTION",
+    isEnabled: true,
+    note: "1% lương cơ bản",
+  },
+];
+
 const ok = <T,>(data: T, init?: ResponseInit) =>
   HttpResponse.json<ApiResponse<T>>({ data }, init);
 
@@ -468,6 +584,78 @@ export const handlers = [
       found.description = payload.Description || null;
     }
     return ok(true);
+  }),
+
+  // Salary Structure Lines Mock Handlers
+  http.get("*/web/payroll/projects/:projectId/salary-structures/:structureId/lines", async ({ params }) => {
+    await delay(180);
+    const structId = Number(params.structureId);
+    const lines = mockSalaryStructureLinesStore.filter(
+      (item) => item.structureId === structId || structId === 1
+    );
+    return ok(lines);
+  }),
+
+  http.post("*/web/payroll/projects/:projectId/salary-structures/:structureId/lines", async ({ params, request }) => {
+    await delay(250);
+    const structId = Number(params.structureId);
+    const newItems = (await request.json()) as any[];
+    if (Array.isArray(newItems)) {
+      newItems.forEach((item, idx) => {
+        mockSalaryStructureLinesStore.push({
+          id: Date.now() + idx,
+          structureId: structId,
+          componentId: Number(item.ComponentId || idx + 1),
+          componentCode: item.ComponentCode || `COMP_${item.ComponentId}`,
+          componentName: item.Note || item.ComponentName || `Khoản lương ${idx + 1}`,
+          formulaType: item.FormulaType || "single_expression",
+          expression: item.Expression || "",
+          executionOrder: Number(item.ExecutionOrder || (idx + 1) * 10),
+          displayOrder: Number(item.DisplayOrder || idx + 1),
+          isVisibleOnPayslip: Boolean(item.IsVisibleOnPayslip ?? true),
+          isVisibleOnReport: Boolean(item.IsVisibleOnReport ?? true),
+          aggregationTarget: item.AggregationTarget || "INCOME",
+          isEnabled: Boolean(item.IsEnabled ?? true),
+          note: item.Note || null,
+        });
+      });
+    }
+    return ok(true);
+  }),
+
+  http.put("*/web/payroll/projects/:projectId/salary-structures/:structureId/lines", async ({ request }) => {
+    await delay(250);
+    const updatedItems = (await request.json()) as any[];
+    if (Array.isArray(updatedItems)) {
+      updatedItems.forEach((item) => {
+        const found = mockSalaryStructureLinesStore.find((l) => l.id === Number(item.LineId));
+        if (found) {
+          found.expression = item.Expression ?? found.expression;
+          found.executionOrder = Number(item.ExecutionOrder ?? found.executionOrder);
+          found.displayOrder = Number(item.DisplayOrder ?? found.displayOrder);
+          found.isEnabled = Boolean(item.IsEnabled ?? found.isEnabled);
+          found.aggregationTarget = item.AggregationTarget ?? found.aggregationTarget;
+          found.note = item.Note ?? found.note;
+        }
+      });
+    }
+    return ok(true);
+  }),
+
+  http.delete("*/web/payroll/projects/:projectId/salary-structures/:structureId/lines", async ({ request }) => {
+    await delay(200);
+    const idsToDelete = (await request.json()) as number[];
+    if (Array.isArray(idsToDelete)) {
+      mockSalaryStructureLinesStore = mockSalaryStructureLinesStore.filter(
+        (l) => !idsToDelete.includes(Number(l.id))
+      );
+    }
+    return ok(true);
+  }),
+
+  http.get("*/web/payroll/salary-components", async () => {
+    await delay(150);
+    return ok([]);
   }),
 
   http.get("/api/projects/:projectId/formulas", async ({ params }) => {

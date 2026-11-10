@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
+  ArrowDown,
+  ArrowUp,
   Calculator,
   Check,
   CheckCircle2,
@@ -204,12 +206,30 @@ function renderVisualExpressionNode(
     const parentPrecedence =
       parentOperator === "+" || parentOperator === "-" ? 1 : parentOperator ? 2 : 0;
 
-    const needsParentheses =
-      Boolean(parentOperator) &&
-      (currentPrecedence < parentPrecedence ||
-        (isRightChild &&
-          currentPrecedence === parentPrecedence &&
-          (parentOperator === "-" || parentOperator === "/" || parentOperator !== node.operator)));
+    const isMulDiv = (op?: string) => op === "*" || op === "/";
+    const isAddSub = (op?: string) => op === "+" || op === "-";
+
+    let needsParentheses = false;
+    if (parentOperator) {
+      if (currentPrecedence < parentPrecedence) {
+        needsParentheses = true;
+      } else if (currentPrecedence === parentPrecedence) {
+        if (isMulDiv(node.operator) && isMulDiv(parentOperator)) {
+          // Bọc ngoặc khi toán tử nhân chia khác nhau: (A / B) * C, C * (A / B), (A * B) / C
+          if (node.operator !== parentOperator) {
+            needsParentheses = true;
+          } else if (isRightChild && parentOperator === "/") {
+            // A / (B / C)
+            needsParentheses = true;
+          }
+        } else if (isAddSub(node.operator) && isAddSub(parentOperator)) {
+          // A - (B + C) or A - (B - C)
+          if (isRightChild && parentOperator === "-") {
+            needsParentheses = true;
+          }
+        }
+      }
+    }
 
     const leftElements = renderVisualExpressionNode(
       node.left,
@@ -269,66 +289,113 @@ export function FormulaVisualExpression({
   rawText?: string;
   variableNameMap?: Map<string, string>;
 }) {
+  const text = rawText !== undefined ? rawText : "";
+  if (!text.trim() && !formula?.expression) {
+    const isTax =
+      formula?.code?.toUpperCase().includes("PIT") ||
+      formula?.code?.toUpperCase().includes("TAX") ||
+      formula?.name?.toLowerCase().includes("thuế");
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary/80 text-muted-foreground text-[11px] font-medium border border-border/50">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+        {isTax
+          ? "Hệ thống tự động tính theo biểu thuế lũy tiến"
+          : "Chưa cấu hình công thức"}
+      </span>
+    );
+  }
+
   const elements = (() => {
+    // 1. Ưu tiên tokenize trực tiếp từ rawText nếu có, để bảo toàn 100% mọi dấu ngoặc () do người dùng gõ
+    if (text.trim()) {
+      const customNames = variableNameMap ? Array.from(variableNameMap.values()) : undefined;
+      const tokens = tokenizeFriendlyText(text, customNames);
+      if (tokens.length > 0) {
+        return tokens.map((tok, idx) => {
+          if (tok.type === "function") {
+            return (
+              <span
+                key={`fn-${idx}`}
+                className="formula-op-pill font-bold"
+                style={{ backgroundColor: "#038b8c", color: "#ffffff" }}
+                title="Hàm IF"
+              >
+                {tok.text}
+              </span>
+            );
+          }
+
+          if (tok.text === "(" || tok.text === ")") {
+            return (
+              <span
+                key={`paren-${idx}`}
+                className="formula-paren-pill"
+              >
+                {tok.text}
+              </span>
+            );
+          }
+
+          if (tok.text === ",") {
+            return (
+              <span
+                key={`comma-${idx}`}
+                className="formula-paren-pill font-bold"
+              >
+                ,
+              </span>
+            );
+          }
+
+          if (tok.type === "operator") {
+            return (
+              <span
+                key={`op-${idx}`}
+                className="formula-op-pill"
+                title={`Toán tử ${tok.text}`}
+              >
+                <OperatorSymbol op={tok.text} />
+              </span>
+            );
+          }
+
+          if (tok.type === "number") {
+            return (
+              <span
+                key={`num-${idx}`}
+                className="formula-const-pill"
+                title="Hằng số"
+              >
+                {tok.text}
+              </span>
+            );
+          }
+
+          const label =
+            variableNameMap?.get(tok.text) ??
+            variableNameMap?.get(tok.text.toUpperCase()) ??
+            variableCodeToName[tok.text] ??
+            variableCodeToName[tok.text.toUpperCase()] ??
+            tok.text;
+
+          return (
+            <span
+              key={`var-${idx}`}
+              className="formula-var-pill"
+              title={label}
+            >
+              {label}
+            </span>
+          );
+        });
+      }
+    }
+
+    // 2. Fallback sang duyệt cây AST nếu không có rawText
     if (formula?.expression) {
       return renderVisualExpressionNode(formula.expression, variableNameMap);
     }
-    const text = rawText || "";
-    if (!text.trim()) return null;
-    const customNames = variableNameMap ? Array.from(variableNameMap.values()) : undefined;
-    const tokens = tokenizeFriendlyText(text, customNames);
-    return tokens.map((tok, idx) => {
-      if (tok.type === "function") {
-        return (
-          <span
-            key={`fn-${idx}`}
-            className="formula-op-pill font-bold"
-            title="Hàm IF"
-          >
-            {tok.text}
-          </span>
-        );
-      }
-
-      if (tok.type === "operator") {
-        return (
-          <span
-            key={`op-${idx}`}
-            className="formula-op-pill"
-            title={`Toán tử ${tok.text}`}
-          >
-            <OperatorSymbol op={tok.text} />
-          </span>
-        );
-      }
-
-      if (tok.type === "number") {
-        return (
-          <span
-            key={`num-${idx}`}
-            className="formula-const-pill"
-            title="Hằng số"
-          >
-            {tok.text}
-          </span>
-        );
-      }
-
-      const label =
-        variableNameMap?.get(tok.text) ??
-        variableCodeToName[tok.text] ??
-        tok.text;
-
-      return (
-        <span
-          key={`var-${idx}`}
-          className="formula-var-pill"
-          title={label}
-        >
-          {label}
-        </span>
-      );
-    });
+    return null;
   })();
 
   if (!elements || elements.length === 0) {
@@ -403,17 +470,25 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
   const componentsLibrary = useMemo<SalaryComponentDefinition[]>(() => {
     const beComps = salaryComponentsQuery.data ?? [];
     if (beComps.length > 0) {
-      return beComps.map((comp) => ({
-        id: String(comp.id),
-        code: comp.code,
-        name: comp.name,
-        category: comp.category === "deduction" ? "deduction" : "income",
-        description: comp.description || "",
-        defaultFormulaText: comp.defaultFormulaText || `{${comp.code}}`,
-        outputVariable: comp.outputVariable || comp.code,
-        rounding: { mode: "nearest", precision: 1 },
-        enabled: Boolean(comp.isActive),
-      }));
+      return beComps.map((comp) => {
+        const isTaxOrAuto =
+          comp.code?.toUpperCase().includes("PIT") ||
+          comp.code?.toUpperCase().includes("TAX") ||
+          comp.name?.toLowerCase().includes("thuế") ||
+          comp.name?.toLowerCase().includes("thue");
+        const isDed = comp.category === "deduction" || isTaxOrAuto;
+        return {
+          id: String(comp.id),
+          code: comp.code,
+          name: comp.name,
+          category: isDed ? "deduction" : "income",
+          description: comp.description || "",
+          defaultFormulaText: isTaxOrAuto ? "" : comp.defaultFormulaText || `{${comp.name}}`,
+          outputVariable: comp.outputVariable || comp.code,
+          rounding: { mode: "nearest", precision: 1 },
+          enabled: Boolean(comp.isActive),
+        };
+      });
     }
     return salaryComponentLibrary;
   }, [salaryComponentsQuery.data]);
@@ -574,26 +649,71 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
     return result;
   }, [variablesQuery.data, customVariables]);
 
-  const variableNameMap = useMemo(() => new Map(variables.map((item) => [item.code, item.name])), [variables]);
+  const variableNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    // 1. Từ điển biến mặc định hệ thống
+    Object.entries(variableCodeToName).forEach(([code, name]) => {
+      map.set(code.trim().toUpperCase(), name);
+    });
+    // 2. Danh mục biến công thức & biến tuỳ chỉnh dự án
+    variables.forEach((v) => {
+      if (v.code && v.name) map.set(v.code.trim().toUpperCase(), v.name);
+    });
+    // 3. Danh mục thành phần lương chuẩn từ Backend (componentsLibrary)
+    componentsLibrary.forEach((c) => {
+      if (c.code && c.name) map.set(c.code.trim().toUpperCase(), c.name);
+      if (c.outputVariable && c.name) map.set(c.outputVariable.trim().toUpperCase(), c.name);
+    });
+    // 4. Các dòng hiện có trong cấu trúc lương từ Backend (linesQuery)
+    (linesQuery.data ?? []).forEach((l) => {
+      if (l.componentCode && l.componentName) {
+        map.set(l.componentCode.trim().toUpperCase(), l.componentName);
+      }
+    });
+    return map;
+  }, [variables, componentsLibrary, linesQuery.data]);
 
   const variableCodeMap = useMemo(() => {
     const map = new Map<string, string>();
     Object.entries(variableCodeToName).forEach(([code, name]) => {
       map.set(name.trim().toLowerCase(), code);
       map.set(code.trim().toUpperCase(), code);
+      map.set(name.trim(), code);
     });
     variables.forEach((v) => {
-      if (v.name) map.set(v.name.trim().toLowerCase(), v.code);
+      if (v.name) {
+        map.set(v.name.trim().toLowerCase(), v.code);
+        map.set(v.name.trim(), v.code);
+      }
       if (v.code) map.set(v.code.trim().toUpperCase(), v.code);
     });
     componentsLibrary.forEach((c) => {
-      if (c.name) map.set(c.name.trim().toLowerCase(), c.code);
+      if (c.name) {
+        map.set(c.name.trim().toLowerCase(), c.code);
+        map.set(c.name.trim(), c.code);
+      }
       if (c.code) map.set(c.code.trim().toUpperCase(), c.code);
+      if (c.outputVariable) map.set(c.outputVariable.trim().toUpperCase(), c.outputVariable);
+    });
+    (linesQuery.data ?? []).forEach((l) => {
+      if (l.componentName) {
+        map.set(l.componentName.trim().toLowerCase(), l.componentCode || "");
+        map.set(l.componentName.trim(), l.componentCode || "");
+      }
+      if (l.componentCode) map.set(l.componentCode.trim().toUpperCase(), l.componentCode || "");
+    });
+    customVariables.forEach((cv) => {
+      if (cv.name) {
+        map.set(cv.name.trim().toLowerCase(), cv.code);
+        map.set(cv.name.trim(), cv.code);
+      }
+      if (cv.code) map.set(cv.code.trim().toUpperCase(), cv.code);
     });
     return map;
-  }, [variables, componentsLibrary]);
+  }, [variables, componentsLibrary, linesQuery.data, customVariables]);
 
   const getMissingCustomParams = (formula: SalaryFormula) => {
+    if (!formula.expression) return [];
     const customMap = new Map(customVariables.map((c) => [c.code, c]));
     const usedCodes = Array.from(new Set(collectVariables(formula.expression)));
     const missing: ProjectCustomVariable[] = [];
@@ -625,16 +745,29 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
           upper.includes("TAM_UNG") ||
           upper.includes("ADVANCE") ||
           upper.includes("BH BẮT BUỘC") ||
-          upper.includes("BH BAT BUOC")
+          upper.includes("BH BAT BUOC") ||
+          upper.includes("PIT") ||
+          upper.includes("TAX") ||
+          upper.includes("THUẾ") ||
+          upper.includes("THUE") ||
+          upper.includes("GIẢM TRỪ") ||
+          upper.includes("GIAM_TRU") ||
+          upper.includes("KHOẢN TRỪ") ||
+          upper.includes("KHOAN_TRU")
         );
       };
 
       const convertedFormulas: SalaryFormula[] = linesQuery.data.map((line, idx) => {
+        const comp = componentsLibrary.find(
+          (c) => c.code === line.componentCode || c.outputVariable === line.componentCode
+        );
         const isDed =
           line.aggregationTarget?.toLowerCase() === "deduction" ||
+          comp?.category === "deduction" ||
           isDeductionCode(line.componentCode || "", line.componentName || "");
 
-        const parsedExpr = parseExpressionText(line.expression || "");
+        const exprStr = (line.expression ?? "").trim();
+        const parsedExpr = exprStr ? parseExpressionText(exprStr) : null;
         return {
           id: String(line.id || `line-${line.componentId || idx}`),
           projectId,
@@ -653,14 +786,15 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       const initialRaw: Record<string, string> = {};
       linesQuery.data.forEach((line) => {
         const id = String(line.id || `line-${line.componentId}`);
-        initialRaw[id] = codeExpressionToFriendlyExpression(line.expression || "", variableNameMap);
+        const exprStr = (line.expression ?? "").trim();
+        initialRaw[id] = exprStr ? codeExpressionToFriendlyExpression(exprStr, variableNameMap) : "";
       });
       setRawTexts(initialRaw);
     } else {
       setFormulas([]);
       setRawTexts({});
     }
-  }, [linesQuery.data, projectId]);
+  }, [linesQuery.data, projectId, variableNameMap]);
 
   // Derived sections
   const grossComponents = useMemo(() => formulas.filter((f) => f.category === "income"), [formulas]);
@@ -752,6 +886,38 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
     notify("Đã cập nhật thứ tự thành phần lương");
   };
 
+  // Move an item up or down within its category column
+  const moveStructureItem = (id: string, direction: "up" | "down") => {
+    setFormulas((prev) => {
+      const item = prev.find((f) => f.id === id);
+      if (!item) return prev;
+      const cat = item.category;
+      const sameCatItems = prev.filter((f) => f.category === cat);
+      const otherCatItems = prev.filter((f) => f.category !== cat);
+
+      const index = sameCatItems.findIndex((f) => f.id === id);
+      if (index === -1) return prev;
+
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= sameCatItems.length) return prev;
+
+      const updated = [...sameCatItems];
+      const [moved] = updated.splice(index, 1);
+      updated.splice(targetIndex, 0, moved);
+
+      const combined =
+        cat === "income" ? [...updated, ...otherCatItems] : [...otherCatItems, ...updated];
+
+      return combined.map((f, idx) => ({
+        ...f,
+        order: idx + 1,
+      }));
+    });
+
+    setDirty(true);
+    notify("Đã cập nhật thứ tự thành phần lương");
+  };
+
   // Insert component from library at specific position in category column
   const insertComponentAtPosition = (
     item: SalaryComponentDefinition,
@@ -764,17 +930,28 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
     }
 
     const formulaId = `new-line-${Date.now()}-${uid("item")}`;
-    const defaultText = item.defaultFormulaText
-      ? codeExpressionToFriendlyExpression(item.defaultFormulaText, variableNameMap)
-      : `{${item.name}}`;
-    const parsedExpr = parseExpressionText(defaultText);
+    const isTaxOrAuto =
+      item.code?.toUpperCase().includes("PIT") ||
+      item.code?.toUpperCase().includes("TAX") ||
+      item.name?.toLowerCase().includes("thuế") ||
+      item.name?.toLowerCase().includes("thue");
+
+    const targetCategory: SalaryFormula["category"] =
+      isTaxOrAuto || item.category === "deduction" ? "deduction" : "income";
+
+    const defaultText = isTaxOrAuto
+      ? ""
+      : item.defaultFormulaText
+        ? codeExpressionToFriendlyExpression(item.defaultFormulaText, variableNameMap)
+        : `{${item.name}}`;
+    const parsedExpr = defaultText.trim() ? parseExpressionText(defaultText) : null;
     const newFormula: SalaryFormula = {
       id: formulaId,
       projectId,
       code: item.code,
       name: item.name,
       outputVariable: item.outputVariable,
-      category: item.category,
+      category: targetCategory,
       order: 1,
       expression: parsedExpr,
       rounding: { mode: "nearest", precision: 1 },
@@ -782,8 +959,8 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
     };
 
     setFormulas((prev) => {
-      const sameCatItems = prev.filter((f) => f.category === item.category);
-      const otherCatItems = prev.filter((f) => f.category !== item.category);
+      const sameCatItems = prev.filter((f) => f.category === targetCategory);
+      const otherCatItems = prev.filter((f) => f.category !== targetCategory);
 
       let insertIndex = sameCatItems.length;
       if (targetId) {
@@ -797,7 +974,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       updatedSameCat.splice(insertIndex, 0, newFormula);
 
       const combined =
-        item.category === "income" ? [...updatedSameCat, ...otherCatItems] : [...otherCatItems, ...updatedSameCat];
+        targetCategory === "income" ? [...updatedSameCat, ...otherCatItems] : [...otherCatItems, ...updatedSameCat];
 
       return combined.map((f, idx) => ({
         ...f,
@@ -847,7 +1024,8 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       const initialRaw: Record<string, string> = {};
       linesQuery.data.forEach((line) => {
         const id = String(line.id || `line-${line.componentId}`);
-        initialRaw[id] = codeExpressionToFriendlyExpression(line.expression || "", variableNameMap);
+        const exprStr = (line.expression ?? "").trim();
+        initialRaw[id] = exprStr ? codeExpressionToFriendlyExpression(exprStr, variableNameMap) : "";
       });
       setRawTexts(initialRaw);
     } else {
@@ -883,7 +1061,9 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       for (let idx = 0; idx < formulas.length; idx++) {
         const f = formulas[idx];
         const rawText = getFormulaRawText(f);
-        const codeExpression = friendlyExpressionToCodeExpression(rawText, variableCodeMap);
+        const codeExpression = rawText && rawText.trim()
+          ? friendlyExpressionToCodeExpression(rawText, variableCodeMap)
+          : "";
         const existingLine = beLinesMap.get(f.id);
         const comp = componentsLibrary.find(
           (c) => c.code === f.code || c.outputVariable === f.outputVariable
@@ -896,9 +1076,9 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
           TargetGroupId: existingLine?.targetGroupId ?? null,
           FormulaDefinitionId: existingLine?.formulaDefinitionId ?? null,
           FormulaType: existingLine?.formulaType || "single_expression",
-          Expression: codeExpression,
-          ExecutionOrder: existingLine?.executionOrder ?? (idx + 1) * 10,
-          DisplayOrder: existingLine?.displayOrder ?? idx + 1,
+          Expression: codeExpression || null,
+          ExecutionOrder: (idx + 1) * 10,
+          DisplayOrder: idx + 1,
           IsVisibleOnPayslip: true,
           IsVisibleOnReport: true,
           AggregationTarget: f.category === "deduction" ? "DEDUCTION" : "INCOME",
@@ -924,6 +1104,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
       }
 
       queryClient.invalidateQueries({ queryKey: ["salary-structure-lines", projectId, selectedStructureId] });
+      setEditingFormulaIds(new Set());
       setDeletedLineIds([]);
       setDirty(false);
       notify("Đã lưu cấu hình công thức lương thành công!");
@@ -1190,12 +1371,16 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                       <div
                         key={item.id}
                         draggable={!isAdded}
-                        onDragStart={() => setDraggedItem(item)}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/plain", item.id);
+                          e.dataTransfer.effectAllowed = "copy";
+                          requestAnimationFrame(() => setDraggedItem(item));
+                        }}
                         onDragEnd={() => setDraggedItem(null)}
                         title={item.description}
                         className={`w-full min-h-[34px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center justify-between gap-2 transition-all group ${isAdded
-                            ? "bg-secondary/40 border-border/30 text-muted-foreground opacity-50 cursor-not-allowed shadow-none"
-                            : "bg-card border-border/50 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-foreground shadow-2xs cursor-grab active:scale-[0.99]"
+                          ? "bg-secondary/40 border-border/30 text-muted-foreground opacity-50 cursor-not-allowed shadow-none"
+                          : "bg-card border-border/50 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-foreground shadow-2xs cursor-grab active:scale-[0.99]"
                           }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
@@ -1240,12 +1425,16 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                       <div
                         key={item.id}
                         draggable={!isAdded}
-                        onDragStart={() => setDraggedItem(item)}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/plain", item.id);
+                          e.dataTransfer.effectAllowed = "copy";
+                          requestAnimationFrame(() => setDraggedItem(item));
+                        }}
                         onDragEnd={() => setDraggedItem(null)}
                         title={item.description}
                         className={`w-full min-h-[34px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center justify-between gap-2 transition-all group ${isAdded
-                            ? "bg-secondary/40 border-border/30 text-muted-foreground opacity-50 cursor-not-allowed shadow-none"
-                            : "bg-card border-border/50 hover:border-rose-500/50 hover:bg-rose-500/5 text-foreground shadow-2xs cursor-grab active:scale-[0.99]"
+                          ? "bg-secondary/40 border-border/30 text-muted-foreground opacity-50 cursor-not-allowed shadow-none"
+                          : "bg-card border-border/50 hover:border-rose-500/50 hover:bg-rose-500/5 text-foreground shadow-2xs cursor-grab active:scale-[0.99]"
                           }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
@@ -1364,10 +1553,10 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                     {/* Left Box: Gross Earnings (Thu Nhập) */}
                     {(() => {
                       const isIncomeDragActive =
-                        (draggedItem && draggedItem.category === "income") ||
+                        (draggedItem && (draggedItem.code?.toUpperCase().includes("PIT") || draggedItem.code?.toUpperCase().includes("TAX") || draggedItem.name?.toLowerCase().includes("thuế") || draggedItem.name?.toLowerCase().includes("thue") ? false : draggedItem.category === "income")) ||
                         (draggedStructureItem && draggedStructureItem.category === "income");
                       const isDeductionDragActive =
-                        (draggedItem && draggedItem.category === "deduction") ||
+                        (draggedItem && (draggedItem.code?.toUpperCase().includes("PIT") || draggedItem.code?.toUpperCase().includes("TAX") || draggedItem.name?.toLowerCase().includes("thuế") || draggedItem.name?.toLowerCase().includes("thue") ? true : draggedItem.category === "deduction")) ||
                         (draggedStructureItem && draggedStructureItem.category === "deduction");
 
                       return (
@@ -1410,9 +1599,9 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                           className={cn(
                             "flex-1 rounded-xl border p-3.5 flex flex-col space-y-2.5 transition-all",
                             isIncomeDragActive
-                              ? "border-emerald-500/60 bg-emerald-500/15 ring-2 ring-emerald-500/30 shadow-xs"
+                              ? "border-emerald-500/70 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-xs"
                               : isDeductionDragActive
-                                ? "border-emerald-500/15 bg-emerald-500/5 opacity-60"
+                                ? "border-emerald-500/15 bg-secondary/30 opacity-40 cursor-not-allowed"
                                 : "border-emerald-500/25 bg-emerald-500/5 dark:bg-emerald-500/10 hover:border-emerald-500/40"
                           )}
                         >
@@ -1425,14 +1614,19 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                             </span>
                           </div>
 
-                          <div className="border border-dashed border-emerald-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
+                          <div
+                            className={cn(
+                              "border border-dashed rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1 transition-colors",
+                              isIncomeDragActive ? "border-emerald-500/70 bg-emerald-500/10" : "border-emerald-500/30"
+                            )}
+                          >
                             {grossComponents.length === 0 ? (
                               <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
                                 <Plus className="w-4 h-4 text-emerald-500/60" />
                                 <span>Kéo thả hoặc bấm (+) từ thư viện</span>
                               </div>
                             ) : (
-                              grossComponents.map((item) => {
+                              grossComponents.map((item, chipIdx) => {
                                 const isBeingDragged = draggedStructureItem?.id === item.id;
                                 const isTargetBefore =
                                   dragOverInfo?.category === "income" &&
@@ -1443,83 +1637,93 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                                   dragOverInfo?.targetId === item.id &&
                                   dragOverInfo?.position === "after";
 
+                                const isFirst = chipIdx === 0;
+                                const isLast = chipIdx === grossComponents.length - 1;
+
                                 return (
-                                  <React.Fragment key={item.id}>
-                                    {isTargetBefore && (
-                                      <div className="w-1.5 h-7 bg-emerald-500 rounded-full animate-pulse shadow-sm shrink-0" />
+                                  <div
+                                    key={item.id}
+                                    draggable
+                                    onDragStart={(e) => {
+                                      e.stopPropagation();
+                                      e.dataTransfer.setData("text/plain", item.id);
+                                      e.dataTransfer.effectAllowed = "move";
+                                      requestAnimationFrame(() => setDraggedStructureItem(item));
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedStructureItem(null);
+                                      setDragOverInfo(null);
+                                    }}
+                                    onDragOver={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (isDeductionDragActive) {
+                                        e.dataTransfer.dropEffect = "none";
+                                        return;
+                                      }
+                                      if (draggedStructureItem?.id === item.id) return;
+                                      e.dataTransfer.dropEffect = "move";
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      const relX = (e.clientX - rect.left) / rect.width;
+                                      setDragOverInfo({
+                                        category: "income",
+                                        targetId: item.id,
+                                        position: relX < 0.5 ? "before" : "after",
+                                      });
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (isDeductionDragActive) {
+                                        notify("Khoản khấu trừ không thể đưa sang nhóm Thu nhập.", "warning");
+                                        setDragOverInfo(null);
+                                        return;
+                                      }
+                                      if (draggedStructureItem?.id === item.id) {
+                                        setDragOverInfo(null);
+                                        return;
+                                      }
+                                      const pos = dragOverInfo?.position || "after";
+                                      if (draggedStructureItem && draggedStructureItem.category === "income") {
+                                        reorderStructureItems("income", draggedStructureItem.id, item.id, pos);
+                                      } else if (draggedItem && draggedItem.category === "income") {
+                                        insertComponentAtPosition(draggedItem, item.id, pos);
+                                      }
+                                      setDraggedStructureItem(null);
+                                      setDragOverInfo(null);
+                                    }}
+                                    className={cn(
+                                      "relative px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-emerald-500 transition-colors max-w-full cursor-grab active:cursor-grabbing select-none shrink-0",
+                                      isBeingDragged && "opacity-35 scale-95 border-emerald-500 border-dashed",
+                                      isTargetBefore && "ring-2 ring-emerald-500 bg-emerald-500/15 border-emerald-500 before:absolute before:-left-1.5 before:top-1 before:bottom-1 before:w-1 before:bg-emerald-500 before:rounded-full before:shadow-xs",
+                                      isTargetAfter && "ring-2 ring-emerald-500 bg-emerald-500/15 border-emerald-500 after:absolute after:-right-1.5 after:top-1 after:bottom-1 after:w-1 after:bg-emerald-500 after:rounded-full after:shadow-xs"
                                     )}
-                                    <div
-                                      draggable
-                                      onDragStart={(e) => {
+                                    title={`Kéo để đổi thứ tự: ${item.name}`}
+                                  >
+                                    <GripVertical className={cn("w-3.5 h-3.5 text-emerald-500/70 shrink-0 cursor-grab active:cursor-grabbing hover:text-emerald-500", (draggedItem || draggedStructureItem) && "pointer-events-none")} />
+                                    <span className={cn("truncate py-0.5 leading-normal", (draggedItem || draggedStructureItem) && "pointer-events-none")}>{item.name}</span>
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
                                         e.stopPropagation();
-                                        e.dataTransfer.setData("text/plain", item.id);
-                                        e.dataTransfer.effectAllowed = "move";
-                                        setDraggedStructureItem(item);
+                                        removeComponentFromStructure(item.id);
                                       }}
-                                      onDragEnd={() => {
-                                        setDraggedStructureItem(null);
-                                        setDragOverInfo(null);
-                                      }}
-                                      onDragOver={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if (isDeductionDragActive) {
-                                          e.dataTransfer.dropEffect = "none";
-                                          return;
-                                        }
-                                        e.dataTransfer.dropEffect = "move";
-                                        const rect = e.currentTarget.getBoundingClientRect();
-                                        const isAfter = e.clientX > rect.left + rect.width / 2;
-                                        setDragOverInfo({
-                                          category: "income",
-                                          targetId: item.id,
-                                          position: isAfter ? "after" : "before",
-                                        });
-                                      }}
-                                      onDrop={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if (isDeductionDragActive) {
-                                          notify("Khoản khấu trừ không thể đưa sang nhóm Thu nhập.", "warning");
-                                          setDragOverInfo(null);
-                                          return;
-                                        }
-                                        const pos = dragOverInfo?.position || "after";
-                                        if (draggedStructureItem && draggedStructureItem.category === "income") {
-                                          reorderStructureItems("income", draggedStructureItem.id, item.id, pos);
-                                        } else if (draggedItem && draggedItem.category === "income") {
-                                          insertComponentAtPosition(draggedItem, item.id, pos);
-                                        }
-                                        setDraggedStructureItem(null);
-                                        setDragOverInfo(null);
-                                      }}
-                                      className={cn(
-                                        "px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-emerald-500 transition-all max-w-full group cursor-grab active:cursor-grabbing select-none",
-                                        isBeingDragged && "opacity-30 scale-95 border-emerald-500 border-dashed"
-                                      )}
-                                      title={`Kéo để đổi thứ tự: ${item.name}`}
+                                      className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5 cursor-pointer"
+                                      title={`Gỡ bỏ ${item.name}`}
+                                      aria-label={`Gỡ bỏ ${item.name}`}
                                     >
-                                      <GripVertical className="w-3.5 h-3.5 text-emerald-500/70 shrink-0 cursor-grab active:cursor-grabbing group-hover:text-emerald-500" />
-                                      <span className="truncate py-0.5 leading-normal">{item.name}</span>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          removeComponentFromStructure(item.id);
-                                        }}
-                                        className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5 cursor-pointer"
-                                        title={`Gỡ bỏ ${item.name}`}
-                                        aria-label={`Gỡ bỏ ${item.name}`}
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                    {isTargetAfter && (
-                                      <div className="w-1.5 h-7 bg-emerald-500 rounded-full animate-pulse shadow-sm shrink-0" />
-                                    )}
-                                  </React.Fragment>
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 );
                               })
+                            )}
+                            {isIncomeDragActive && grossComponents.length > 0 && (
+                              <div className="px-2 py-1 rounded-md border border-dashed border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium inline-flex items-center gap-1">
+                                <Plus className="w-3 h-3" />
+                                <span>Thả vào cuối</span>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -1539,10 +1743,10 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                     {/* Right Box: Deductions (Khấu Trừ) */}
                     {(() => {
                       const isIncomeDragActive =
-                        (draggedItem && draggedItem.category === "income") ||
+                        (draggedItem && (draggedItem.code?.toUpperCase().includes("PIT") || draggedItem.code?.toUpperCase().includes("TAX") || draggedItem.name?.toLowerCase().includes("thuế") || draggedItem.name?.toLowerCase().includes("thue") ? false : draggedItem.category === "income")) ||
                         (draggedStructureItem && draggedStructureItem.category === "income");
                       const isDeductionDragActive =
-                        (draggedItem && draggedItem.category === "deduction") ||
+                        (draggedItem && (draggedItem.code?.toUpperCase().includes("PIT") || draggedItem.code?.toUpperCase().includes("TAX") || draggedItem.name?.toLowerCase().includes("thuế") || draggedItem.name?.toLowerCase().includes("thue") ? true : draggedItem.category === "deduction")) ||
                         (draggedStructureItem && draggedStructureItem.category === "deduction");
 
                       return (
@@ -1576,7 +1780,7 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                               if (last && last.id !== draggedStructureItem.id) {
                                 reorderStructureItems("deduction", draggedStructureItem.id, last.id, "after");
                               }
-                            } else if (draggedItem && draggedItem.category === "deduction") {
+                            } else if (draggedItem && (isDeductionDragActive || draggedItem.category === "deduction")) {
                               addComponentToStructure(draggedItem);
                             }
                             setDraggedStructureItem(null);
@@ -1585,9 +1789,9 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                           className={cn(
                             "flex-1 rounded-xl border p-3.5 flex flex-col space-y-2.5 transition-all",
                             isDeductionDragActive
-                              ? "border-rose-500/60 bg-rose-500/15 ring-2 ring-rose-500/30 shadow-xs"
+                              ? "border-rose-500/70 bg-rose-500/10 ring-2 ring-rose-500/30 shadow-xs"
                               : isIncomeDragActive
-                                ? "border-rose-500/15 bg-rose-500/5 opacity-60"
+                                ? "border-rose-500/15 bg-secondary/30 opacity-40 cursor-not-allowed"
                                 : "border-rose-500/25 bg-rose-500/5 dark:bg-rose-500/10 hover:border-rose-500/40"
                           )}
                         >
@@ -1600,14 +1804,19 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                             </span>
                           </div>
 
-                          <div className="border border-dashed border-rose-500/30 rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1">
+                          <div
+                            className={cn(
+                              "border border-dashed rounded-lg p-2.5 min-h-[76px] bg-card/60 flex flex-wrap items-center content-start gap-2 flex-1 transition-colors",
+                              isDeductionDragActive ? "border-rose-500/70 bg-rose-500/10" : "border-rose-500/30"
+                            )}
+                          >
                             {deductionComponents.length === 0 ? (
                               <div className="w-full text-center py-3 text-xs text-muted-foreground italic flex flex-col items-center gap-1">
                                 <Plus className="w-4 h-4 text-rose-500/60" />
                                 <span>Kéo thả hoặc bấm (+) từ thư viện</span>
                               </div>
                             ) : (
-                              deductionComponents.map((item) => {
+                              deductionComponents.map((item, chipIdx) => {
                                 const isBeingDragged = draggedStructureItem?.id === item.id;
                                 const isTargetBefore =
                                   dragOverInfo?.category === "deduction" &&
@@ -1618,83 +1827,93 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                                   dragOverInfo?.targetId === item.id &&
                                   dragOverInfo?.position === "after";
 
+                                const isFirst = chipIdx === 0;
+                                const isLast = chipIdx === deductionComponents.length - 1;
+
                                 return (
-                                  <React.Fragment key={item.id}>
-                                    {isTargetBefore && (
-                                      <div className="w-1.5 h-7 bg-rose-500 rounded-full animate-pulse shadow-sm shrink-0" />
+                                  <div
+                                    key={item.id}
+                                    draggable
+                                    onDragStart={(e) => {
+                                      e.stopPropagation();
+                                      e.dataTransfer.setData("text/plain", item.id);
+                                      e.dataTransfer.effectAllowed = "move";
+                                      requestAnimationFrame(() => setDraggedStructureItem(item));
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedStructureItem(null);
+                                      setDragOverInfo(null);
+                                    }}
+                                    onDragOver={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (isIncomeDragActive) {
+                                        e.dataTransfer.dropEffect = "none";
+                                        return;
+                                      }
+                                      if (draggedStructureItem?.id === item.id) return;
+                                      e.dataTransfer.dropEffect = "move";
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      const relX = (e.clientX - rect.left) / rect.width;
+                                      setDragOverInfo({
+                                        category: "deduction",
+                                        targetId: item.id,
+                                        position: relX < 0.5 ? "before" : "after",
+                                      });
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (isIncomeDragActive) {
+                                        notify("Khoản thu nhập không thể đưa sang nhóm Khấu trừ.", "warning");
+                                        setDragOverInfo(null);
+                                        return;
+                                      }
+                                      if (draggedStructureItem?.id === item.id) {
+                                        setDragOverInfo(null);
+                                        return;
+                                      }
+                                      const pos = dragOverInfo?.position || "after";
+                                      if (draggedStructureItem && draggedStructureItem.category === "deduction") {
+                                        reorderStructureItems("deduction", draggedStructureItem.id, item.id, pos);
+                                      } else if (draggedItem && (isDeductionDragActive || draggedItem.category === "deduction")) {
+                                        insertComponentAtPosition(draggedItem, item.id, pos);
+                                      }
+                                      setDraggedStructureItem(null);
+                                      setDragOverInfo(null);
+                                    }}
+                                    className={cn(
+                                      "relative px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-rose-500 transition-colors max-w-full cursor-grab active:cursor-grabbing select-none shrink-0",
+                                      isBeingDragged && "opacity-35 scale-95 border-rose-500 border-dashed",
+                                      isTargetBefore && "ring-2 ring-rose-500 bg-rose-500/15 border-rose-500 before:absolute before:-left-1.5 before:top-1 before:bottom-1 before:w-1 before:bg-rose-500 before:rounded-full before:shadow-xs",
+                                      isTargetAfter && "ring-2 ring-rose-500 bg-rose-500/15 border-rose-500 after:absolute after:-right-1.5 after:top-1 after:bottom-1 after:w-1 after:bg-rose-500 after:rounded-full after:shadow-xs"
                                     )}
-                                    <div
-                                      draggable
-                                      onDragStart={(e) => {
+                                    title={`Kéo để đổi thứ tự: ${item.name}`}
+                                  >
+                                    <GripVertical className={cn("w-3.5 h-3.5 text-rose-500/70 shrink-0 cursor-grab active:cursor-grabbing hover:text-rose-500", (draggedItem || draggedStructureItem) && "pointer-events-none")} />
+                                    <span className={cn("truncate py-0.5 leading-normal", (draggedItem || draggedStructureItem) && "pointer-events-none")}>{item.name}</span>
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
                                         e.stopPropagation();
-                                        e.dataTransfer.setData("text/plain", item.id);
-                                        e.dataTransfer.effectAllowed = "move";
-                                        setDraggedStructureItem(item);
+                                        removeComponentFromStructure(item.id);
                                       }}
-                                      onDragEnd={() => {
-                                        setDraggedStructureItem(null);
-                                        setDragOverInfo(null);
-                                      }}
-                                      onDragOver={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if (isIncomeDragActive) {
-                                          e.dataTransfer.dropEffect = "none";
-                                          return;
-                                        }
-                                        e.dataTransfer.dropEffect = "move";
-                                        const rect = e.currentTarget.getBoundingClientRect();
-                                        const isAfter = e.clientX > rect.left + rect.width / 2;
-                                        setDragOverInfo({
-                                          category: "deduction",
-                                          targetId: item.id,
-                                          position: isAfter ? "after" : "before",
-                                        });
-                                      }}
-                                      onDrop={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if (isIncomeDragActive) {
-                                          notify("Khoản thu nhập không thể đưa sang nhóm Khấu trừ.", "warning");
-                                          setDragOverInfo(null);
-                                          return;
-                                        }
-                                        const pos = dragOverInfo?.position || "after";
-                                        if (draggedStructureItem && draggedStructureItem.category === "deduction") {
-                                          reorderStructureItems("deduction", draggedStructureItem.id, item.id, pos);
-                                        } else if (draggedItem && draggedItem.category === "deduction") {
-                                          insertComponentAtPosition(draggedItem, item.id, pos);
-                                        }
-                                        setDraggedStructureItem(null);
-                                        setDragOverInfo(null);
-                                      }}
-                                      className={cn(
-                                        "px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-rose-500 transition-all max-w-full group cursor-grab active:cursor-grabbing select-none",
-                                        isBeingDragged && "opacity-30 scale-95 border-rose-500 border-dashed"
-                                      )}
-                                      title={`Kéo để đổi thứ tự: ${item.name}`}
+                                      className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5 cursor-pointer"
+                                      title={`Gỡ bỏ ${item.name}`}
+                                      aria-label={`Gỡ bỏ ${item.name}`}
                                     >
-                                      <GripVertical className="w-3.5 h-3.5 text-rose-500/70 shrink-0 cursor-grab active:cursor-grabbing group-hover:text-rose-500" />
-                                      <span className="truncate py-0.5 leading-normal">{item.name}</span>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          removeComponentFromStructure(item.id);
-                                        }}
-                                        className="text-muted hover:text-destructive p-0.5 rounded hover:bg-destructive/10 transition-colors ml-0.5 cursor-pointer"
-                                        title={`Gỡ bỏ ${item.name}`}
-                                        aria-label={`Gỡ bỏ ${item.name}`}
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                    {isTargetAfter && (
-                                      <div className="w-1.5 h-7 bg-rose-500 rounded-full animate-pulse shadow-sm shrink-0" />
-                                    )}
-                                  </React.Fragment>
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 );
                               })
+                            )}
+                            {isDeductionDragActive && deductionComponents.length > 0 && (
+                              <div className="px-2 py-1 rounded-md border border-dashed border-rose-500/50 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[11px] font-medium inline-flex items-center gap-1">
+                                <Plus className="w-3 h-3" />
+                                <span>Thả vào cuối</span>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -1727,18 +1946,96 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                       const isEditing = editingFormulaIds.has(formula.id);
                       const isModified = modifiedFormulaIds.has(formula.id);
 
+                      const isBeingDragged = draggedStructureItem?.id === formula.id;
+                      const isCardTargetBefore =
+                        dragOverInfo?.category === formula.category &&
+                        dragOverInfo?.targetId === formula.id &&
+                        dragOverInfo?.position === "before";
+                      const isCardTargetAfter =
+                        dragOverInfo?.category === formula.category &&
+                        dragOverInfo?.targetId === formula.id &&
+                        dragOverInfo?.position === "after";
+
+                      const isFirstInCategory = isIncome
+                        ? grossComponents.findIndex((f) => f.id === formula.id) === 0
+                        : deductionComponents.findIndex((f) => f.id === formula.id) === 0;
+                      const isLastInCategory = isIncome
+                        ? grossComponents.findIndex((f) => f.id === formula.id) === grossComponents.length - 1
+                        : deductionComponents.findIndex((f) => f.id === formula.id) === deductionComponents.length - 1;
+
+                      const cardCat: "income" | "deduction" = formula.category === "deduction" ? "deduction" : "income";
+
                       return (
                         <div
                           key={formula.id}
-                          className={`rounded-xl border transition-all p-4 space-y-3.5 bg-card ${isModified
-                            ? "border-amber-500/80 dark:border-amber-400/80 shadow-xs ring-1 ring-amber-500/20"
-                            : isEditing
-                              ? "border-primary/80 shadow-sm"
-                              : "border-border shadow-2xs hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5"
-                            }`}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!draggedStructureItem || draggedStructureItem.id === formula.id) return;
+                            const draggedCat: "income" | "deduction" =
+                              draggedStructureItem.category === "deduction" ? "deduction" : "income";
+                            if (draggedCat !== cardCat) {
+                              e.dataTransfer.dropEffect = "none";
+                              return;
+                            }
+                            e.dataTransfer.dropEffect = "move";
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const relY = (e.clientY - rect.top) / rect.height;
+                            setDragOverInfo({
+                              category: cardCat,
+                              targetId: formula.id,
+                              position: relY < 0.5 ? "before" : "after",
+                            });
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!draggedStructureItem || draggedStructureItem.id === formula.id) return;
+                            const draggedCat: "income" | "deduction" =
+                              draggedStructureItem.category === "deduction" ? "deduction" : "income";
+                            if (draggedCat !== cardCat) {
+                              notify("Không thể sắp xếp giữa nhóm Thu nhập và Khấu trừ.", "warning");
+                              setDragOverInfo(null);
+                              return;
+                            }
+                            const pos = dragOverInfo?.position || "after";
+                            reorderStructureItems(cardCat, draggedStructureItem.id, formula.id, pos);
+                            setDraggedStructureItem(null);
+                            setDragOverInfo(null);
+                          }}
+                          className={cn(
+                            "rounded-xl border transition-colors p-4 space-y-3.5 bg-card relative",
+                            isModified
+                              ? "border-amber-500/80 dark:border-amber-400/80 shadow-xs ring-1 ring-amber-500/20"
+                              : isEditing
+                                ? "border-primary/80 shadow-sm"
+                                : "border-border shadow-2xs hover:border-primary/40",
+                            isBeingDragged && "opacity-35 scale-[0.99] border-dashed border-primary",
+                            isCardTargetBefore && "before:absolute before:top-0 before:left-0 before:right-0 before:h-1 before:bg-primary before:rounded-t-xl",
+                            isCardTargetAfter && "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-1 after:bg-primary after:rounded-b-xl"
+                          )}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {/* Drag handle for reordering card directly */}
+                              <div
+                                draggable
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  e.dataTransfer.setData("text/plain", formula.id);
+                                  e.dataTransfer.effectAllowed = "move";
+                                  requestAnimationFrame(() => setDraggedStructureItem(formula));
+                                }}
+                                onDragEnd={() => {
+                                  setDraggedStructureItem(null);
+                                  setDragOverInfo(null);
+                                }}
+                                title="Kéo thả để sắp xếp thứ tự công thức"
+                                className="cursor-grab active:cursor-grabbing p-1 -ml-1 text-muted-foreground/60 hover:text-primary rounded hover:bg-secondary transition-colors"
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </div>
+
                               <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary border border-primary/20 font-mono text-xs font-bold flex items-center justify-center shrink-0">
                                 {String(idx + 1).padStart(2, "0")}
                               </span>
@@ -1765,6 +2062,32 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                             </div>
 
                             <div className="flex items-center gap-1.5">
+                              {/* Quick Move Up/Down button group */}
+                              <div className="flex items-center gap-0.5 bg-secondary/50 rounded-lg p-0.5 border border-border/60">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={isFirstInCategory}
+                                  onClick={() => moveStructureItem(formula.id, "up")}
+                                  title="Di chuyển lên trên"
+                                  className="h-7 w-7 p-0 text-muted hover:text-foreground disabled:opacity-25"
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={isLastInCategory}
+                                  onClick={() => moveStructureItem(formula.id, "down")}
+                                  title="Di chuyển xuống dưới"
+                                  className="h-7 w-7 p-0 text-muted hover:text-foreground disabled:opacity-25"
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+
                               <Button
                                 variant="ghost"
                                 size="sm"
