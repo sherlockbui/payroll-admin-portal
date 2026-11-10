@@ -1695,8 +1695,8 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                                     className={cn(
                                       "relative px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-emerald-500 transition-colors max-w-full cursor-grab active:cursor-grabbing select-none shrink-0",
                                       isBeingDragged && "opacity-35 scale-95 border-emerald-500 border-dashed",
-                                      isTargetBefore && "ring-2 ring-emerald-500 bg-emerald-500/15 border-emerald-500 before:absolute before:-left-1.5 before:top-1 before:bottom-1 before:w-1 before:bg-emerald-500 before:rounded-full before:shadow-xs",
-                                      isTargetAfter && "ring-2 ring-emerald-500 bg-emerald-500/15 border-emerald-500 after:absolute after:-right-1.5 after:top-1 after:bottom-1 after:w-1 after:bg-emerald-500 after:rounded-full after:shadow-xs"
+                                      isTargetBefore && "ring-2 ring-emerald-500 bg-emerald-500/15 border-emerald-500 before:content-[''] before:absolute before:-left-1.5 before:top-1 before:bottom-1 before:w-1 before:bg-emerald-500 before:rounded-full before:shadow-xs",
+                                      isTargetAfter && "ring-2 ring-emerald-500 bg-emerald-500/15 border-emerald-500 after:content-[''] after:absolute after:-right-1.5 after:top-1 after:bottom-1 after:w-1 after:bg-emerald-500 after:rounded-full after:shadow-xs"
                                     )}
                                     title={`Kéo để đổi thứ tự: ${item.name}`}
                                   >
@@ -1885,8 +1885,8 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                                     className={cn(
                                       "relative px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-card text-foreground text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs hover:border-rose-500 transition-colors max-w-full cursor-grab active:cursor-grabbing select-none shrink-0",
                                       isBeingDragged && "opacity-35 scale-95 border-rose-500 border-dashed",
-                                      isTargetBefore && "ring-2 ring-rose-500 bg-rose-500/15 border-rose-500 before:absolute before:-left-1.5 before:top-1 before:bottom-1 before:w-1 before:bg-rose-500 before:rounded-full before:shadow-xs",
-                                      isTargetAfter && "ring-2 ring-rose-500 bg-rose-500/15 border-rose-500 after:absolute after:-right-1.5 after:top-1 after:bottom-1 after:w-1 after:bg-rose-500 after:rounded-full after:shadow-xs"
+                                      isTargetBefore && "ring-2 ring-rose-500 bg-rose-500/15 border-rose-500 before:content-[''] before:absolute before:-left-1.5 before:top-1 before:bottom-1 before:w-1 before:bg-rose-500 before:rounded-full before:shadow-xs",
+                                      isTargetAfter && "ring-2 ring-rose-500 bg-rose-500/15 border-rose-500 after:content-[''] after:absolute after:-right-1.5 after:top-1 after:bottom-1 after:w-1 after:bg-rose-500 after:rounded-full after:shadow-xs"
                                     )}
                                     title={`Kéo để đổi thứ tự: ${item.name}`}
                                   >
@@ -2011,10 +2011,27 @@ export function FormulaTab({ projectId }: { projectId: string; embedded?: boolea
                                 ? "border-primary/80 shadow-sm"
                                 : "border-border shadow-2xs hover:border-primary/40",
                             isBeingDragged && "opacity-35 scale-[0.99] border-dashed border-primary",
-                            isCardTargetBefore && "before:absolute before:top-0 before:left-0 before:right-0 before:h-1 before:bg-primary before:rounded-t-xl",
-                            isCardTargetAfter && "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-1 after:bg-primary after:rounded-b-xl"
+                            isCardTargetBefore && "border-primary ring-2 ring-primary/40",
+                            isCardTargetAfter && "border-primary ring-2 ring-primary/40"
                           )}
                         >
+                          {/* DROP INDICATOR LINE BEFORE (Đường kẻ định vị thả phía trên) */}
+                          {isCardTargetBefore && (
+                            <div className="absolute -top-1.5 left-2 right-2 flex items-center z-30 pointer-events-none">
+                              <div className="w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-card shadow-xs -ml-1 shrink-0" />
+                              <div className="flex-1 h-1 bg-primary rounded-full shadow-xs" />
+                              <div className="w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-card shadow-xs -mr-1 shrink-0" />
+                            </div>
+                          )}
+
+                          {/* DROP INDICATOR LINE AFTER (Đường kẻ định vị thả phía dưới) */}
+                          {isCardTargetAfter && (
+                            <div className="absolute -bottom-1.5 left-2 right-2 flex items-center z-30 pointer-events-none">
+                              <div className="w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-card shadow-xs -ml-1 shrink-0" />
+                              <div className="flex-1 h-1 bg-primary rounded-full shadow-xs" />
+                              <div className="w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-card shadow-xs -mr-1 shrink-0" />
+                            </div>
+                          )}
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-2.5 min-w-0">
                               {/* Drag handle for reordering card directly */}
