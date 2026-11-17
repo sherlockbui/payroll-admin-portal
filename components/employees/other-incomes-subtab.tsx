@@ -294,7 +294,7 @@ export function OtherIncomesSubtab({
   // Import Mutation
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
-      return api.importOtherIncomesExcelV3(file);
+      return api.importOtherIncomesExcelV3(file, projectId === "all" ? undefined : projectId);
     },
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["web-payroll-other-incomes"] });
@@ -983,6 +983,7 @@ export function OtherIncomesSubtab({
               disabled={!importFile}
               loading={importMutation.isPending}
               onClick={() => {
+                if (!ensureSpecificProject("import thu nhập khác")) return;
                 if (importFile) importMutation.mutate(importFile);
               }}
               className="gap-1.5 font-semibold"

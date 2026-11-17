@@ -3058,10 +3058,16 @@ export const api = {
       }),
     }).then((res) => res.data),
 
-  importOtherDeductionsExcelV3: async (file: File): Promise<any> => {
+  importOtherDeductionsExcelV3: async (file: File, projectId?: string | number): Promise<any> => {
     const formData = new FormData();
     formData.append("file", file);
-    return request<any>("/api/web/payroll/other-deductions/import", {
+    const isValidProject = projectId != null && String(projectId).trim() !== "" && String(projectId) !== "all";
+    if (isValidProject) {
+      formData.append("projectId", String(projectId));
+      formData.append("ProjectId", String(projectId));
+    }
+    const query = isValidProject ? `?projectId=${encodeURIComponent(String(projectId))}` : "";
+    return request<any>(`/api/web/payroll/other-deductions/import${query}`, {
       method: "POST",
       body: formData,
     }).then((res) => res.data);
@@ -3287,10 +3293,16 @@ export const api = {
       }),
     }).then((res) => res.data),
 
-  importOtherIncomesExcelV3: (file: File) => {
+  importOtherIncomesExcelV3: async (file: File, projectId?: string | number): Promise<any> => {
     const formData = new FormData();
     formData.append("file", file);
-    return request<any>("/api/web/payroll/other-incomes/import", {
+    const isValidProject = projectId != null && String(projectId).trim() !== "" && String(projectId) !== "all";
+    if (isValidProject) {
+      formData.append("projectId", String(projectId));
+      formData.append("ProjectId", String(projectId));
+    }
+    const query = isValidProject ? `?projectId=${encodeURIComponent(String(projectId))}` : "";
+    return request<any>(`/api/web/payroll/other-incomes/import${query}`, {
       method: "POST",
       body: formData,
     }).then((res) => res.data);

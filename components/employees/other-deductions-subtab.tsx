@@ -282,7 +282,7 @@ export function OtherDeductionsSubtab({
   // Import Mutation
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
-      return api.importOtherDeductionsExcelV3(file);
+      return api.importOtherDeductionsExcelV3(file, projectId === "all" ? undefined : projectId);
     },
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["web-payroll-other-deductions"] });
@@ -905,6 +905,7 @@ export function OtherDeductionsSubtab({
               disabled={!importFile}
               loading={importMutation.isPending}
               onClick={() => {
+                if (!ensureSpecificProject("import khoản giảm trừ khác")) return;
                 if (importFile) importMutation.mutate(importFile);
               }}
               className="gap-1.5 font-semibold"
