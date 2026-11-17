@@ -36,6 +36,12 @@ const widgets = [
     globalName: "PayrollEmployeesWidget",
   },
   {
+    name: "payroll-bank-accounts",
+    entry: path.resolve(__dirname, "src/widgets/bank-accounts/index.ts"),
+    outFile: "payroll-bank-accounts.min.js",
+    globalName: "PayrollBankAccountsWidget",
+  },
+  {
     name: "payroll-dependents",
     entry: path.resolve(__dirname, "src/widgets/dependents/index.ts"),
     outFile: "payroll-dependents.min.js",

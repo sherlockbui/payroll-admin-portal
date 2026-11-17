@@ -148,6 +148,20 @@ import type {
   ImportEmployeePolicyResponse,
   EvaluationPagedResponseData,
   EvaluationImportResultDto,
+  EmployeeBankAccountItemDto,
+  BankAccountPagedResponseData,
+  SaveBankAccountRequest,
+  ImportBankAccountResultDto,
+  ImportBankAccountErrorDto,
+  BankAccountFilterParams,
+  ImportEmployeeGroupResultDto,
+  ImportEmployeeGroupErrorDto,
+  EkkoDeductionListItemDto,
+  CreateEkkoDeductionRequest,
+  UpdateEkkoDeductionRequest,
+  ImportEkkoDeductionResultDto,
+  ImportEkkoDeductionErrorDto,
+  EkkoDeductionFilterParams,
 } from "@/lib/types";
 
 import { handlers } from "@/mocks/handlers";
@@ -4679,5 +4693,221 @@ export const api = {
     }
 
     return resJson.data;
+  },
+
+  // =========================================================================
+  // BANK ACCOUNTS (QUẢN LÝ TÀI KHOẢN NGÂN HÀNG)
+  // =========================================================================
+  getBankAccounts: async (params?: BankAccountFilterParams): Promise<BankAccountPagedResponseData> => {
+    const q = new URLSearchParams();
+    if (params?.search && params.search.trim()) q.set("search", params.search.trim());
+    if (params?.projectId && String(params.projectId).trim() !== "" && String(params.projectId) !== "all") {
+      q.set("projectId", String(params.projectId));
+    }
+    if (params?.status !== undefined && params?.status !== null && String(params.status).trim() !== "") {
+      q.set("status", String(params.status));
+    }
+    if (params?.pageIndex) q.set("pageIndex", String(params.pageIndex));
+    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+
+    const queryStr = q.toString() ? `?${q.toString()}` : "";
+    return request<BankAccountPagedResponseData>(`/api/web/payroll/bank-accounts${queryStr}`).then((res) => res.data);
+  },
+
+  getBankAccountById: (id: number | string): Promise<EmployeeBankAccountItemDto> =>
+    request<EmployeeBankAccountItemDto>(`/api/web/payroll/bank-accounts/${id}`).then((res) => res.data),
+
+  getActiveBankAccountByEmployee: (employeeCode: string): Promise<EmployeeBankAccountItemDto> =>
+    request<EmployeeBankAccountItemDto>(`/api/web/payroll/bank-accounts/by-employee/${encodeURIComponent(employeeCode)}`).then((res) => res.data),
+
+  getBankAccountHistory: (employeeCode: string): Promise<EmployeeBankAccountItemDto[]> =>
+    request<EmployeeBankAccountItemDto[]>(`/api/web/payroll/bank-accounts/history/${encodeURIComponent(employeeCode)}`).then((res) => res.data),
+
+  saveBankAccount: (payload: SaveBankAccountRequest): Promise<{ id: number }> =>
+    request<{ id: number }>("/api/web/payroll/bank-accounts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data),
+
+  downloadBankAccountImportTemplate: async (): Promise<void> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    const token = getAuthToken();
+    const headers: Record<string, string> = { Accept: "*/*" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseUrl}/api/web/payroll/bank-accounts/download-import-template`, {
+      method: "GET",
+      headers,
+    });
+    if (!res.ok) {
+      throw new ApiRequestError(
+        `Không thể tải biểu mẫu import tài khoản ngân hàng (Status: ${res.status})`,
+        "DOWNLOAD_TEMPLATE_FAILED",
+        res.status
+      );
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Template_Import_TaiKhoanNganHang.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importBankAccountsExcel: async (file: File): Promise<ImportBankAccountResultDto> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<ImportBankAccountResultDto>("/api/web/payroll/bank-accounts/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
+  },
+
+  downloadEmployeeGroupTemplate: async (projectId: number | string): Promise<void> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    const token = getAuthToken();
+    const headers: Record<string, string> = { Accept: "*/*" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseUrl}/api/web/payroll/projects/${projectId}/employee-groups/download-import-template`, {
+      method: "GET",
+      headers,
+    });
+    if (!res.ok) {
+      throw new ApiRequestError(
+        `Không thể tải biểu mẫu phân nhóm nhân sự (Status: ${res.status})`,
+        "DOWNLOAD_TEMPLATE_FAILED",
+        res.status
+      );
+    }
+
+    const disposition = res.headers.get("content-disposition");
+    let filename = `Template_PhanNhom_DuAn_${projectId}.xlsx`;
+    if (disposition && disposition.includes("filename=")) {
+      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (match && match[1]) {
+        filename = match[1].replace(/['"]/g, "").trim();
+      }
+    }
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importEmployeeGroupsExcel: async (
+    projectId: number | string,
+    file: File
+  ): Promise<ImportEmployeeGroupResultDto> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<ImportEmployeeGroupResultDto>(
+      `/api/web/payroll/projects/${projectId}/employee-groups/import`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    ).then((res) => res.data);
+  },
+
+  getEkkoDeductions: async (
+    params?: EkkoDeductionFilterParams
+  ): Promise<{ items: EkkoDeductionListItemDto[]; totalRow: number; pageIndex: number; pageSize: number }> => {
+    const query = new URLSearchParams();
+    if (params?.projectId && String(params.projectId) !== "all" && String(params.projectId) !== "0") {
+      query.set("projectId", String(params.projectId));
+    }
+    if (params?.month) query.set("month", String(params.month));
+    if (params?.year) query.set("year", String(params.year));
+    if (params?.keyword) query.set("keyword", params.keyword.trim());
+    if (params?.pageIndex) query.set("pageIndex", String(params.pageIndex));
+    if (params?.pageSize) query.set("pageSize", String(params.pageSize));
+
+    const qs = query.toString();
+    return request<{ items: EkkoDeductionListItemDto[]; totalRow: number; pageIndex: number; pageSize: number }>(
+      `/api/web/payroll/ekko-deductions${qs ? `?${qs}` : ""}`
+    ).then((res) => {
+      const data: any = res.data || {};
+      const items = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
+      return {
+        items,
+        totalRow: data.totalRow ?? items.length,
+        pageIndex: data.pageIndex ?? params?.pageIndex ?? 1,
+        pageSize: data.pageSize ?? params?.pageSize ?? 20,
+      };
+    });
+  },
+
+  getEkkoDeductionDetail: async (id: number | string): Promise<EkkoDeductionListItemDto> => {
+    return request<EkkoDeductionListItemDto>(`/api/web/payroll/ekko-deductions/${id}`).then((res) => res.data);
+  },
+
+  createEkkoDeduction: async (payload: CreateEkkoDeductionRequest): Promise<{ id: number }> => {
+    return request<{ id: number }>("/api/web/payroll/ekko-deductions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data);
+  },
+
+  updateEkkoDeduction: async (id: number | string, payload: UpdateEkkoDeductionRequest): Promise<boolean> => {
+    return request<boolean>(`/api/web/payroll/ekko-deductions/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }).then((res) => res.data);
+  },
+
+  deleteEkkoDeduction: async (id: number | string): Promise<boolean> => {
+    return request<boolean>(`/api/web/payroll/ekko-deductions/${id}`, {
+      method: "DELETE",
+    }).then((res) => res.data);
+  },
+
+  downloadEkkoTemplate: async (): Promise<void> => {
+    const rawBaseUrl = getApiBaseUrl();
+    const baseUrl = (rawBaseUrl && rawBaseUrl.trim().length > 0 ? rawBaseUrl : "https://bruh.thanhf.dev/api/").replace(/\/+$/, "").replace(/\/api\/?$/, "");
+    const token = getAuthToken();
+    const headers: Record<string, string> = { Accept: "*/*" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseUrl}/api/web/payroll/ekko-deductions/download-template`, {
+      method: "GET",
+      headers,
+    });
+    if (!res.ok) {
+      throw new ApiRequestError(
+        `Không thể tải biểu mẫu đối soát Ekko (Status: ${res.status})`,
+        "DOWNLOAD_TEMPLATE_FAILED",
+        res.status
+      );
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Template_Import_DoiSoat_Ekko.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  importEkkoDeductionsExcel: async (file: File): Promise<ImportEkkoDeductionResultDto> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<ImportEkkoDeductionResultDto>("/api/web/payroll/ekko-deductions/import", {
+      method: "POST",
+      body: formData,
+    }).then((res) => res.data);
   },
 };

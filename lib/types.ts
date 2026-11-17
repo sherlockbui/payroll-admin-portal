@@ -2236,3 +2236,155 @@ export interface ImportErrorDto {
   message: string;
   errorCode?: string;
 }
+
+// =========================================================================
+// BANK ACCOUNTS (QUẢN LÝ TÀI KHOẢN NGÂN HÀNG) DTOs
+// =========================================================================
+
+export interface EmployeeBankAccountItemDto {
+  id: number;
+  employeeCode: string;
+  employeeName: string;
+  citizenId: string;
+  bankName: string;
+  bankBranch?: string | null;
+  bankAccountNumber: string;
+  bankAccountName?: string | null;
+  isPrimary: boolean;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  version: number;
+  status: number;
+  statusText: string;
+  createdAt: string;
+  createdByName?: string | null;
+}
+
+export interface BankAccountPagedResponseData {
+  items: EmployeeBankAccountItemDto[];
+  pageIndex: number;
+  pageSize: number;
+  totalRow: number;
+}
+
+export interface SaveBankAccountRequest {
+  employeeCode: string;
+  citizenId: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankBranch?: string | null;
+  bankAccountName?: string | null;
+}
+
+export interface ImportBankAccountResultDto {
+  batchId: number;
+  batchCode: string;
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  errors: ImportBankAccountErrorDto[];
+}
+
+export interface ImportBankAccountErrorDto {
+  row: number;
+  employeeCode?: string;
+  column: string;
+  value?: string | null;
+  message: string;
+}
+
+export interface BankAccountFilterParams {
+  search?: string;
+  projectId?: number | string;
+  status?: number | string;
+  pageIndex?: number;
+  pageSize?: number;
+}
+
+export interface ImportEmployeeGroupResultDto {
+  batchId: number;
+  batchCode: string;
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  errors: ImportEmployeeGroupErrorDto[];
+}
+
+export interface ImportEmployeeGroupErrorDto {
+  row: number;
+  employeeCode?: string;
+  column: string;
+  value?: string | null;
+  message: string;
+}
+
+export interface EkkoDeductionListItemDto {
+  id: number;
+  employeeCode: string;
+  employeeName: string;
+  projectId: number;
+  projectCode: string;
+  projectName: string;
+  payrollPeriodId?: number | null;
+  periodName?: string | null;
+  effectiveDate: string;
+  month: number;
+  year: number;
+  amount: number;
+  decisionNumber?: string;
+  note?: string;
+  createdBy?: number;
+  createdByName?: string;
+  createdAt?: string;
+}
+
+export interface CreateEkkoDeductionRequest {
+  employeeCode: string;
+  projectCode?: string;
+  projectId?: number;
+  amount: number;
+  effectiveDate: string;
+  transactionCode?: string;
+  transactionDate?: string;
+  note?: string;
+}
+
+export interface UpdateEkkoDeductionRequest {
+  employeeCode: string;
+  projectCode?: string;
+  projectId?: number;
+  amount: number;
+  effectiveDate: string;
+  transactionCode?: string;
+  note?: string;
+}
+
+export interface ImportEkkoDeductionResultDto {
+  batchId: number;
+  batchCode: string;
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  errors: ImportEkkoDeductionErrorDto[];
+}
+
+export interface ImportEkkoDeductionErrorDto {
+  row: number;
+  employeeCode?: string;
+  column: string;
+  value?: string | null;
+  message: string;
+  errorCode?: string;
+}
+
+export interface EkkoDeductionFilterParams {
+  projectId?: number | string | null;
+  month?: number | null;
+  year?: number | null;
+  keyword?: string | null;
+  pageIndex?: number;
+  pageSize?: number;
+}
+
+
+

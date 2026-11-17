@@ -272,6 +272,144 @@ const fail = (status: number, code: string, message: string, fields?: Record<str
 
 const projectId = (value: string | readonly string[] | undefined) => String(value ?? "");
 
+// In-memory mock bank accounts state
+let mockBankAccountsList: any[] = [
+  {
+    id: 105,
+    employeeCode: "NV001",
+    employeeName: "Nguyễn Văn A",
+    citizenId: "079090001234",
+    bankName: "Vietcombank",
+    bankBranch: "CN Thủ Thiêm",
+    bankAccountNumber: "0123456789",
+    bankAccountName: "NGUYEN VAN A",
+    isPrimary: true,
+    effectiveFrom: "2026-01-01",
+    effectiveTo: null,
+    version: 1,
+    status: 1,
+    statusText: "Đang sử dụng",
+    createdAt: "2026-01-01 08:30:00",
+    createdByName: "admin",
+  },
+  {
+    id: 106,
+    employeeCode: "NV002",
+    employeeName: "Trần Thị B",
+    citizenId: "079192005678",
+    bankName: "MB Bank",
+    bankBranch: "CN Sài Gòn",
+    bankAccountNumber: "0987654321",
+    bankAccountName: "TRAN THI B",
+    isPrimary: true,
+    effectiveFrom: "2026-02-15",
+    effectiveTo: null,
+    version: 1,
+    status: 1,
+    statusText: "Đang sử dụng",
+    createdAt: "2026-02-15 09:15:00",
+    createdByName: "admin",
+  },
+  {
+    id: 107,
+    employeeCode: "NV001",
+    employeeName: "Nguyễn Văn A",
+    citizenId: "079090001234",
+    bankName: "Techcombank",
+    bankBranch: "CN Gia Định",
+    bankAccountNumber: "19039999999",
+    bankAccountName: "NGUYEN VAN A",
+    isPrimary: false,
+    effectiveFrom: "2025-06-01",
+    effectiveTo: "2026-01-01",
+    version: 1,
+    status: 0,
+    statusText: "Đã thay thế",
+    createdAt: "2025-06-01 09:00:00",
+    createdByName: "c&b_manager",
+  },
+];
+
+// In-memory mock Ekko advance deductions state
+let mockEkkoDeductionsList: any[] = [
+  {
+    id: 501,
+    employeeCode: "NV001",
+    employeeName: "Nguyễn Văn A",
+    projectId: 1017,
+    projectCode: "VIN_DT",
+    projectName: "Dự án Vinfast Đồng Tiến",
+    payrollPeriodId: null,
+    periodName: null,
+    effectiveDate: "2026-11-05",
+    month: 11,
+    year: 2026,
+    amount: 500000.0,
+    decisionNumber: "EKKO_TXN_001",
+    note: "Tạm ứng qua app Ekko đợt 1",
+    createdBy: 1,
+    createdByName: "admin",
+    createdAt: "2026-11-05 10:15:00",
+  },
+  {
+    id: 502,
+    employeeCode: "NV001",
+    employeeName: "Nguyễn Văn A",
+    projectId: 1017,
+    projectCode: "VIN_DT",
+    projectName: "Dự án Vinfast Đồng Tiến",
+    payrollPeriodId: null,
+    periodName: null,
+    effectiveDate: "2026-11-20",
+    month: 11,
+    year: 2026,
+    amount: 1000000.0,
+    decisionNumber: "EKKO_TXN_002",
+    note: "Tạm ứng qua app Ekko đợt 2",
+    createdBy: 1,
+    createdByName: "admin",
+    createdAt: "2026-11-20 15:30:00",
+  },
+  {
+    id: 503,
+    employeeCode: "NV002",
+    employeeName: "Trần Thị B",
+    projectId: 1018,
+    projectCode: "LAV_LA",
+    projectName: "Dự án Lavie Long An",
+    payrollPeriodId: null,
+    periodName: null,
+    effectiveDate: "2026-11-15",
+    month: 11,
+    year: 2026,
+    amount: 1500000.0,
+    decisionNumber: "EKKO_TXN_003",
+    note: "Tạm ứng sinh hoạt phí",
+    createdBy: 1,
+    createdByName: "admin",
+    createdAt: "2026-11-15 09:20:00",
+  },
+  {
+    id: 504,
+    employeeCode: "NV003",
+    employeeName: "Lê Hoàng C",
+    projectId: 1017,
+    projectCode: "VIN_DT",
+    projectName: "Dự án Vinfast Đồng Tiến",
+    payrollPeriodId: null,
+    periodName: null,
+    effectiveDate: "2026-11-12",
+    month: 11,
+    year: 2026,
+    amount: 800000.0,
+    decisionNumber: "EKKO_TXN_004",
+    note: "Tạm ứng đợt giữa tháng",
+    createdBy: 1,
+    createdByName: "admin",
+    createdAt: "2026-11-12 14:10:00",
+  },
+];
+
 export const handlers = [
   http.get("/api/projects", async ({ request }) => {
     await delay(100);
@@ -4478,6 +4616,423 @@ export const handlers = [
       }
     });
     return okV3({ success: true }, "Xóa quyết định khen thưởng đính kèm thành công.");
+  }),
+
+  // =========================================================================
+  // EKKO ADVANCE DEDUCTIONS (TẠM ỨNG LƯƠNG EKKO)
+  // =========================================================================
+  http.get("*/api/web/payroll/ekko-deductions/download-template", async () => {
+    await delay(150);
+    return new HttpResponse(new Blob(["Dummy Excel Content for Ekko Template"], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": 'attachment; filename="Template_Import_DoiSoat_Ekko.xlsx"',
+      },
+    });
+  }),
+
+  http.post("*/api/web/payroll/ekko-deductions/import", async () => {
+    await delay(300);
+    return HttpResponse.json({
+      success: true,
+      message: "Import đối soát Ekko hoàn tất thành công 100% (80/80 dòng).",
+      data: {
+        batchId: Date.now(),
+        batchCode: `EKKO_${Date.now()}`,
+        totalRows: 80,
+        successRows: 80,
+        errorRows: 0,
+        errors: [],
+      },
+    });
+  }),
+
+  http.get("*/api/web/payroll/ekko-deductions", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const projectIdParam = url.searchParams.get("projectId");
+    const month = url.searchParams.get("month") ? Number(url.searchParams.get("month")) : null;
+    const year = url.searchParams.get("year") ? Number(url.searchParams.get("year")) : null;
+    const keyword = (url.searchParams.get("keyword") || "").trim().toLowerCase();
+    const pageIndex = Number(url.searchParams.get("pageIndex") || 1);
+    const pageSize = Number(url.searchParams.get("pageSize") || 20);
+
+    let list = [...mockEkkoDeductionsList];
+
+    if (projectIdParam && projectIdParam !== "0" && projectIdParam !== "all") {
+      list = list.filter((item) => String(item.projectId) === String(projectIdParam) || item.projectCode === projectIdParam);
+    }
+    if (month) {
+      list = list.filter((item) => item.month === month);
+    }
+    if (year) {
+      list = list.filter((item) => item.year === year);
+    }
+    if (keyword) {
+      list = list.filter(
+        (item) =>
+          item.employeeCode.toLowerCase().includes(keyword) ||
+          item.employeeName.toLowerCase().includes(keyword) ||
+          (item.decisionNumber && item.decisionNumber.toLowerCase().includes(keyword)) ||
+          (item.note && item.note.toLowerCase().includes(keyword)) ||
+          item.projectCode.toLowerCase().includes(keyword)
+      );
+    }
+
+    const totalRow = list.length;
+    const startIndex = (pageIndex - 1) * pageSize;
+    const items = list.slice(startIndex, startIndex + pageSize);
+
+    return HttpResponse.json({
+      success: true,
+      message: "Success",
+      data: {
+        items,
+        totalRow,
+        pageIndex,
+        pageSize,
+      },
+    });
+  }),
+
+  http.get("*/api/web/payroll/ekko-deductions/:id", async ({ params }) => {
+    await delay(100);
+    const id = Number(params.id);
+    const match = mockEkkoDeductionsList.find((b) => b.id === id);
+    if (!match) {
+      return HttpResponse.json({ success: false, message: "Không tìm thấy bản ghi tạm ứng Ekko" }, { status: 404 });
+    }
+    return HttpResponse.json({ success: true, data: match, message: "Success" });
+  }),
+
+  http.post("*/api/web/payroll/ekko-deductions", async ({ request }) => {
+    await delay(200);
+    const body: any = await request.json();
+    const newId = Date.now();
+    const date = body.effectiveDate || new Date().toISOString().slice(0, 10);
+    const d = new Date(date);
+    const newRecord = {
+      id: newId,
+      employeeCode: (body.employeeCode || "").trim().toUpperCase(),
+      employeeName: body.employeeName || body.employeeCode || "Nhân viên mới",
+      projectId: Number(body.projectId || 1017),
+      projectCode: body.projectCode || "VIN_DT",
+      projectName: body.projectName || "Dự án Vinfast Đồng Tiến",
+      payrollPeriodId: null,
+      periodName: null,
+      effectiveDate: date,
+      month: d.getMonth() + 1,
+      year: d.getFullYear(),
+      amount: Number(body.amount || 0),
+      decisionNumber: body.transactionCode || `EKKO_${newId.toString().slice(-4)}`,
+      note: body.note || "",
+      createdBy: 1,
+      createdByName: "admin",
+      createdAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+    };
+    mockEkkoDeductionsList.unshift(newRecord);
+    return HttpResponse.json({
+      success: true,
+      data: newId,
+      message: "Thêm bản ghi tạm ứng Ekko thành công.",
+    });
+  }),
+
+  http.put("*/api/web/payroll/ekko-deductions/:id", async ({ params, request }) => {
+    await delay(150);
+    const id = Number(params.id);
+    const body: any = await request.json();
+    const existing = mockEkkoDeductionsList.find((b) => b.id === id);
+    if (!existing) {
+      return HttpResponse.json({ success: false, message: "Không tìm thấy bản ghi" }, { status: 404 });
+    }
+    if (body.amount !== undefined) existing.amount = Number(body.amount);
+    if (body.effectiveDate) {
+      existing.effectiveDate = body.effectiveDate;
+      const d = new Date(body.effectiveDate);
+      existing.month = d.getMonth() + 1;
+      existing.year = d.getFullYear();
+    }
+    if (body.transactionCode) existing.decisionNumber = body.transactionCode;
+    if (body.note !== undefined) existing.note = body.note;
+
+    return HttpResponse.json({
+      success: true,
+      data: true,
+      message: "Cập nhật bản ghi tạm ứng Ekko thành công.",
+    });
+  }),
+
+  http.delete("*/api/web/payroll/ekko-deductions/:id", async ({ params }) => {
+    await delay(150);
+    const id = Number(params.id);
+    const idx = mockEkkoDeductionsList.findIndex((b) => b.id === id);
+    if (idx !== -1) {
+      mockEkkoDeductionsList.splice(idx, 1);
+    }
+    return HttpResponse.json({
+      success: true,
+      data: true,
+      message: "Xóa bản ghi tạm ứng Ekko thành công.",
+    });
+  }),
+
+  // =========================================================================
+  // EMPLOYEE GROUP IMPORT (PHÂN NHÓM LAO ĐỘNG BẰNG EXCEL)
+  // =========================================================================
+  http.get("*/api/web/payroll/projects/:projectId/employee-groups/download-import-template", async ({ params }) => {
+    await delay(150);
+    const pId = String(params.projectId);
+    return new HttpResponse(new Blob(["Dummy Excel Content for Employee Groups"], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="Template_PhanNhom_DuAn_${pId}.xlsx"`,
+      },
+    });
+  }),
+
+  http.post("*/api/web/payroll/projects/:projectId/employee-groups/import", async () => {
+    await delay(300);
+    return HttpResponse.json({
+      success: true,
+      message: "Import hoàn tất thành công 100% (150/150 dòng).",
+      data: {
+        batchId: Date.now(),
+        batchCode: `GROUP_${Date.now()}`,
+        totalRows: 150,
+        successRows: 150,
+        errorRows: 0,
+        errors: [],
+      },
+    });
+  }),
+
+  // =========================================================================
+  // BANK ACCOUNTS (QUẢN LÝ TÀI KHOẢN NGÂN HÀNG)
+  // =========================================================================
+  http.get("*/api/web/payroll/bank-accounts/download-import-template", async () => {
+    await delay(150);
+    return new HttpResponse(new Blob(["Dummy Excel Content"], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": 'attachment; filename="Template_Import_TaiKhoanNganHang.xlsx"',
+      },
+    });
+  }),
+
+  http.post("*/api/web/payroll/bank-accounts/import", async () => {
+    await delay(300);
+    return HttpResponse.json({
+      success: true,
+      message: "Import hoàn tất thành công 100%.",
+      data: {
+        batchId: Date.now(),
+        batchCode: `BANK_${Date.now()}`,
+        totalRows: 10,
+        successRows: 10,
+        errorRows: 0,
+        errors: [],
+      },
+    });
+  }),
+
+  http.get("*/api/web/payroll/bank-accounts", async ({ request }) => {
+    await delay(150);
+    const url = new URL(request.url);
+    const search = (url.searchParams.get("search") || "").trim().toLowerCase();
+    const statusParam = url.searchParams.get("status");
+    const pageIndex = Math.max(1, parseInt(url.searchParams.get("pageIndex") || "1", 10));
+    const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10));
+
+    let list = [...mockBankAccountsList];
+
+    if (statusParam !== null && statusParam !== "" && statusParam !== "all") {
+      const st = parseInt(statusParam, 10);
+      list = list.filter((i) => i.status === st);
+    }
+
+    if (search) {
+      list = list.filter(
+        (i) =>
+          i.employeeCode.toLowerCase().includes(search) ||
+          i.employeeName.toLowerCase().includes(search) ||
+          i.bankAccountNumber.toLowerCase().includes(search) ||
+          i.bankName.toLowerCase().includes(search) ||
+          (i.citizenId && i.citizenId.toLowerCase().includes(search))
+      );
+    }
+
+    const totalRow = list.length;
+    const fromIndex = (pageIndex - 1) * pageSize;
+    const items = list.slice(fromIndex, fromIndex + pageSize);
+
+    return HttpResponse.json({
+      success: true,
+      message: "Success",
+      data: {
+        items,
+        pageIndex,
+        pageSize,
+        totalRow,
+      },
+    });
+  }),
+
+  http.get("*/api/web/payroll/bank-accounts/history/:employeeCode", async ({ params }) => {
+    await delay(100);
+    const empCode = String(params.employeeCode).trim().toLowerCase();
+    const list = mockBankAccountsList.filter(
+      (b) => (b.employeeCode || "").trim().toLowerCase() === empCode
+    );
+    return HttpResponse.json({
+      success: true,
+      message: "Success",
+      data: list,
+    });
+  }),
+
+  http.get("*/api/web/payroll/bank-accounts/by-employee/:employeeCode", async ({ params }) => {
+    await delay(100);
+    const empCode = String(params.employeeCode).trim().toLowerCase();
+    const match =
+      mockBankAccountsList.find(
+        (b) => (b.employeeCode || "").trim().toLowerCase() === empCode && b.status === 1
+      ) ||
+      mockBankAccountsList.find((b) => (b.employeeCode || "").trim().toLowerCase() === empCode) || {
+        id: 105,
+        employeeCode: params.employeeCode,
+        employeeName: "Nguyễn Văn A",
+        citizenId: "079090001234",
+        bankName: "Vietcombank",
+        bankBranch: "CN Thủ Thiêm",
+        bankAccountNumber: "0123456789",
+        bankAccountName: "NGUYEN VAN A",
+        isPrimary: true,
+        effectiveFrom: "2026-01-01",
+        effectiveTo: null,
+        version: 1,
+        status: 1,
+        statusText: "Đang sử dụng",
+        createdAt: "2026-01-01 08:30:00",
+        createdByName: "admin",
+      };
+
+    return HttpResponse.json({
+      success: true,
+      message: "Success",
+      data: match,
+    });
+  }),
+
+  http.get("*/api/web/payroll/bank-accounts/:id", async ({ params }) => {
+    await delay(100);
+    const id = Number(params.id);
+    const match = mockBankAccountsList.find((b) => b.id === id) || {
+      id,
+      employeeCode: "NV001",
+      employeeName: "Nguyễn Văn A",
+      citizenId: "079090001234",
+      bankName: "Vietcombank",
+      bankBranch: "CN Thủ Thiêm",
+      bankAccountNumber: "0123456789",
+      bankAccountName: "NGUYEN VAN A",
+      isPrimary: true,
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      version: 1,
+      status: 1,
+      statusText: "Đang sử dụng",
+      createdAt: "2026-01-01 08:30:00",
+      createdByName: "admin",
+    };
+
+    return HttpResponse.json({
+      success: true,
+      message: "Success",
+      data: match,
+    });
+  }),
+
+  http.post("*/api/web/payroll/bank-accounts", async ({ request }) => {
+    await delay(200);
+    const body: any = await request.json();
+    const empCode = (body.employeeCode || "").trim().toUpperCase();
+    const existing = mockBankAccountsList.find(
+      (b) => (b.employeeCode || "").trim().toUpperCase() === empCode && b.status === 1
+    );
+
+    const now = new Date().toISOString().slice(0, 10);
+    if (existing) {
+      if (existing.bankAccountNumber === (body.bankAccountNumber || "").trim()) {
+        // Cập nhật thông tin trên cùng STK -> auto nâng version lên +1
+        existing.version = (existing.version || 1) + 1;
+        existing.bankName = body.bankName || existing.bankName;
+        existing.bankBranch = body.bankBranch ?? existing.bankBranch;
+        existing.bankAccountName = body.bankAccountName || existing.bankAccountName;
+        existing.citizenId = body.citizenId || existing.citizenId;
+        return HttpResponse.json({
+          success: true,
+          message: `Cập nhật thông tin tài khoản thành công (Phiên bản v${existing.version}).`,
+          data: { id: existing.id },
+        });
+      } else {
+        // Đổi sang STK khác -> ngưng hiệu lực STK cũ, tạo STK mới
+        existing.status = 0;
+        existing.statusText = "Đã thay thế";
+        existing.effectiveTo = now;
+
+        const newId = Date.now();
+        mockBankAccountsList.unshift({
+          id: newId,
+          employeeCode: empCode,
+          employeeName: existing.employeeName,
+          citizenId: body.citizenId || existing.citizenId,
+          bankName: body.bankName,
+          bankBranch: body.bankBranch || "",
+          bankAccountNumber: body.bankAccountNumber,
+          bankAccountName: body.bankAccountName || existing.employeeName,
+          isPrimary: true,
+          effectiveFrom: now,
+          effectiveTo: null,
+          version: 1,
+          status: 1,
+          statusText: "Đang sử dụng",
+          createdAt: new Date().toLocaleString("vi-VN"),
+          createdByName: "admin",
+        });
+        return HttpResponse.json({
+          success: true,
+          message: "Đổi số tài khoản ngân hàng thành công.",
+          data: { id: newId },
+        });
+      }
+    } else {
+      // Thêm mới tài khoản cho nhân viên
+      const newId = Date.now();
+      mockBankAccountsList.unshift({
+        id: newId,
+        employeeCode: empCode,
+        employeeName: body.bankAccountName || empCode,
+        citizenId: body.citizenId,
+        bankName: body.bankName,
+        bankBranch: body.bankBranch || "",
+        bankAccountNumber: body.bankAccountNumber,
+        bankAccountName: body.bankAccountName || empCode,
+        isPrimary: true,
+        effectiveFrom: now,
+        effectiveTo: null,
+        version: 1,
+        status: 1,
+        statusText: "Đang sử dụng",
+        createdAt: new Date().toLocaleString("vi-VN"),
+        createdByName: "admin",
+      });
+      return HttpResponse.json({
+        success: true,
+        message: "Thêm mới tài khoản ngân hàng thành công.",
+        data: { id: newId },
+      });
+    }
   }),
 ];
 

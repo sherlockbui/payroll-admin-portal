@@ -14,6 +14,7 @@ import {
   Save,
   Search,
   Trash2,
+  Upload,
   UserCheck,
   UserMinus,
   Users,
@@ -27,6 +28,7 @@ import { api } from "@/lib/api";
 import { resetMockDatabase } from "@/lib/mock-db";
 import type { Employee, ProjectEmployeeGroup } from "@/lib/types";
 import { hideGsLoading, showGsLoading } from "@/lib/utils";
+import { ImportEmployeeGroupsModal } from "./import-employee-groups-modal";
 
 interface ManageEmployeeGroupsModalProps {
   projectId: string;
@@ -319,6 +321,9 @@ export function ManageEmployeeGroupsModal({
   // Group Delete Confirmation Modal State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState<ProjectEmployeeGroup | null>(null);
+
+  // Import Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Queries
   const groupsQuery = useQuery({
@@ -924,6 +929,16 @@ export function ManageEmployeeGroupsModal({
                       </button>
                     </div>
                   )}
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 text-xs font-semibold gap-1.5 shrink-0"
+                    onClick={() => setIsImportModalOpen(true)}
+                    title="Import phân nhóm người lao động từ file Excel"
+                  >
+                    <Upload className="w-3.5 h-3.5" /> Import Excel
+                  </Button>
                 </div>
 
                 {/* Employees Table Container (Fixed Flex Height) */}
@@ -1133,6 +1148,18 @@ export function ManageEmployeeGroupsModal({
           Bạn có chắc chắn muốn xóa nhóm <strong>{deletingGroup?.name}</strong>? Thao tác này sẽ xóa cấu hình nhóm khỏi bảng ma trận chính sách của dự án.
         </p>
       </Modal>
+
+      {/* DIALOG: IMPORT EMPLOYEE GROUPS EXCEL */}
+      <ImportEmployeeGroupsModal
+        projectId={projectId}
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["project-employees", projectId] });
+          queryClient.invalidateQueries({ queryKey: ["project-employee-groups", projectId] });
+          queryClient.invalidateQueries({ queryKey: ["project-policies", projectId] });
+        }}
+      />
     </>
   );
 }

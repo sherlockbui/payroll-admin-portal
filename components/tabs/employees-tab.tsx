@@ -5,6 +5,7 @@ import {
   Award,
   CalendarDays,
   Coins,
+  CreditCard,
   Filter,
   Palmtree,
   ReceiptText,
@@ -14,6 +15,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { EkkoDeductionsSubtab } from "@/components/employees/ekko-deductions-subtab";
 import { EvaluationsSubtab } from "@/components/employees/evaluations-subtab";
 import { LeaveSubtab } from "@/components/employees/leave-subtab";
 import { OtherDeductionsSubtab } from "@/components/employees/other-deductions-subtab";
@@ -31,6 +33,7 @@ type EmployeeSubtab =
   | "workdays"
   | "policies"
   | "deductions"
+  | "ekko"
   | "incomes"
   | "evaluations";
 
@@ -39,6 +42,7 @@ const SUBTABS: { id: EmployeeSubtab; label: string; icon: React.ComponentType<{ 
   // { id: "union", label: "Công đoàn phí", icon: Coins },
   { id: "policies", label: "Chế độ & Lương", icon: SlidersHorizontal },
   { id: "deductions", label: "Khoản trừ khác", icon: ReceiptText },
+  { id: "ekko", label: "Tạm ứng Ekko", icon: CreditCard },
   { id: "incomes", label: "Thu nhập khác", icon: WalletCards },
   { id: "evaluations", label: "Đánh giá KPI", icon: Award },
 ];
@@ -146,6 +150,13 @@ export function EmployeesTab({
         )}
         {activeSubtab === "deductions" && (
           <OtherDeductionsSubtab
+            projectId={effectiveProjectId}
+            employees={[]}
+            setHeaderAction={setHeaderAction}
+          />
+        )}
+        {activeSubtab === "ekko" && (
+          <EkkoDeductionsSubtab
             projectId={effectiveProjectId}
             employees={[]}
             setHeaderAction={setHeaderAction}

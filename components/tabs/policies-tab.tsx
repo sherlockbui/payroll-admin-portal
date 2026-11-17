@@ -1,13 +1,14 @@
 "use client";
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CalendarDays, Check, Loader2, Pencil, Plus, Save, Search, ScrollText, Trash2, Users, X } from "lucide-react";
+import { AlertCircle, CalendarDays, Check, Loader2, Pencil, Plus, Save, Search, ScrollText, Trash2, Upload, Users, X } from "lucide-react";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useToast } from "@/components/providers";
 import { Badge, Button, DatePicker, EmptyState, ErrorState, LoadingBlock, Modal, MonthPicker, SaveBar, StatusBadge, TablePaginationFooter, TableRowActions } from "@/components/ui";
 import { api } from "@/lib/api";
 import { type PolicyDefinition, type ProjectEmployeeGroup, type ProjectPolicy, type ProjectPolicyColumn, type ProjectPolicyRow, type TargetRole } from "@/lib/types";
 import { ManageEmployeeGroupsModal } from "@/components/policies/manage-employee-groups-modal";
+import { ImportEmployeeGroupsModal } from "@/components/policies/import-employee-groups-modal";
 import { cn, formatCurrency, formatDate, formatNumberVN, hideGsLoading, showGsLoading } from "@/lib/utils";
 
 export function calculateAutoFillValues(
@@ -187,6 +188,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<ProjectPolicyRow | null>(null);
   const [groupsModalOpen, setGroupsModalOpen] = useState(false);
+  const [importGroupsModalOpen, setImportGroupsModalOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -566,6 +568,9 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
             <Button variant="secondary" onClick={() => setGroupsModalOpen(true)}>
               <Users className="w-4 h-4" /> Quản lý nhóm {columns.length > 0 ? `(${columns.length})` : ""}
             </Button>
+            <Button variant="secondary" onClick={() => setImportGroupsModalOpen(true)}>
+              <Upload className="w-4 h-4" /> Import phân nhóm
+            </Button>
             <Button variant="primary" onClick={handleOpenAddPolicyModal}>
               <Plus /> Thêm chế độ
             </Button>
@@ -900,6 +905,18 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
         projectId={projectId}
         isOpen={groupsModalOpen}
         onClose={() => setGroupsModalOpen(false)}
+      />
+
+      {/* Import Employee Groups Modal */}
+      <ImportEmployeeGroupsModal
+        projectId={projectId}
+        isOpen={importGroupsModalOpen}
+        onClose={() => setImportGroupsModalOpen(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["project-policies", projectId] });
+          queryClient.invalidateQueries({ queryKey: ["project-employee-groups", projectId] });
+          queryClient.invalidateQueries({ queryKey: ["project-employees", projectId] });
+        }}
       />
     </div>
   );

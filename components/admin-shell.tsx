@@ -4,6 +4,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Banknote,
   BriefcaseBusiness,
+  Building2,
   Calculator,
   ChevronRight,
   Menu,
@@ -65,12 +66,13 @@ export function AdminShell({
   };
 
   const isEmployeesPage = pathname.startsWith("/employees");
+  const isBankAccountsPage = pathname.startsWith("/bank-accounts");
   const isDependentsPage = pathname.startsWith("/dependents");
   const isInsurancePage = pathname.startsWith("/insurance");
   const isPayrollPage = pathname.startsWith("/payroll");
   const isProjectsPage = pathname === "/" || pathname.startsWith("/projects");
   const hasActivePayrollItem =
-    isProjectsPage || isEmployeesPage || isDependentsPage || isInsurancePage || isPayrollPage;
+    isProjectsPage || isEmployeesPage || isBankAccountsPage || isDependentsPage || isInsurancePage || isPayrollPage;
 
   return (
     <div className={`admin-layout ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -118,6 +120,16 @@ export function AdminShell({
                     >
                       <Users className="w-4 h-4 shrink-0" />
                       <span className="nav-label">Người lao động</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      className={`sidebar-submenu-button ${isBankAccountsPage ? "is-active" : ""}`}
+                      href="/bank-accounts"
+                      title="Tài khoản ngân hàng"
+                    >
+                      <Building2 className="w-4 h-4 shrink-0" />
+                      <span className="nav-label">Tài khoản ngân hàng</span>
                     </Link>
                   </li>
                   <li>

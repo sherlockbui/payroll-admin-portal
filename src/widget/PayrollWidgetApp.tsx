@@ -8,6 +8,7 @@ import { AdminShell } from "@/components/admin-shell";
 import { ProjectsList } from "@/components/projects-list";
 import { ProjectDetail } from "@/components/project-detail";
 import { EmployeesTab } from "@/components/tabs/employees-tab";
+import { BankAccountsTab } from "@/components/tabs/bank-accounts-tab";
 import { DependentsTab } from "@/components/tabs/dependents-tab";
 import { InsuranceTab } from "@/components/tabs/insurance-tab";
 import { PayrollWorkspacePage } from "@/components/payroll/payroll-workspace";
@@ -86,7 +87,16 @@ function WidgetRouterView() {
     );
   }
 
-  // 4. Người phụ thuộc: /dependents
+  // 4. Tài khoản ngân hàng: /bank-accounts
+  if (pathname.startsWith("/bank-accounts")) {
+    return (
+      <AdminShell detailLabel="Tài khoản ngân hàng">
+        <BankAccountsTab />
+      </AdminShell>
+    );
+  }
+
+  // 5. Người phụ thuộc: /dependents
   if (pathname.startsWith("/dependents")) {
     return (
       <AdminShell detailLabel="Người phụ thuộc">
