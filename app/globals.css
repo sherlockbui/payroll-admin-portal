@@ -6738,12 +6738,19 @@ input[type="number"].no-spinner,
 /* ==========================================================================
    Spreadsheet / Inline Table Cell Editor Styles
    ========================================================================== */
+.policy-table td,
+.policy-table th {
+  vertical-align: middle !important;
+}
+
 .inline-cell-wrap {
   display: inline-flex;
   align-items: center;
+  vertical-align: middle !important;
   position: relative;
   width: 100%;
   max-width: 180px;
+  min-height: 38px;
   border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--card) 60%, var(--secondary));
@@ -6772,6 +6779,12 @@ input[type="number"].no-spinner,
   font-weight: 600;
   color: var(--foreground);
   line-height: 1.4;
+}
+
+span.inline-cell-input {
+  display: flex !important;
+  align-items: center !important;
+  min-height: 32px !important;
 }
 
 .inline-cell-input::placeholder {

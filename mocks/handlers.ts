@@ -410,6 +410,38 @@ let mockEkkoDeductionsList: any[] = [
   },
 ];
 
+let mockWebProjectPoliciesRows: Array<{
+  policyId: number;
+  policyCode: string;
+  policyName: string;
+  dataType: string;
+  controlType: string;
+  options: Array<{ group: string; value: string; label: string }>;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  values: Record<string, string>;
+}> = [
+  {
+    policyId: 24,
+    policyCode: "POL_STANDARD_WORKDAYS",
+    policyName: "Số ngày công chuẩn định mức",
+    dataType: "string",
+    controlType: "workday-rule-picker",
+    options: [
+      { group: "Tính động theo chu kỳ công", value: "CALC_NO_SUN", label: "Theo chu kỳ: Trừ CN" },
+      { group: "Tính động theo chu kỳ công", value: "CALC_NO_SAT_SUN", label: "Theo chu kỳ: Trừ Thứ 7 & CN" },
+      { group: "Số ngày cố định", value: "26", label: "Cố định 26 ngày" }
+    ],
+    effectiveFrom: "2026-11-17",
+    effectiveTo: null,
+    values: {
+      "1": "CALC_NO_SUN",
+      "2": "24",
+      "3": "CALC_NO_SAT_SUN",
+    },
+  },
+];
+
 export const handlers = [
   http.get("/api/projects", async ({ request }) => {
     await delay(100);
@@ -547,6 +579,51 @@ export const handlers = [
       found = db.projectPolicies.length < before;
     });
     return found ? ok({ deleted: true }) : fail(404, "POLICY_NOT_FOUND", "Không tìm thấy chế độ dự án.");
+  }),
+
+  // ================= WEB PAYROLL PROJECT POLICIES =================
+  http.get("*/api/web/payroll/projects/:projectId/policies", async ({ params }) => {
+    await delay(200);
+    const columns = [
+      { id: 1, name: "CNSX - CHÍNH THỨC" },
+      { id: 2, name: "PC - QC - TRƯỞNG CA - BẢO TRÌ" },
+      { id: 3, name: "CNSX - HĐXĐ 28 NGÀY 2 LẦN" },
+    ];
+    return ok({
+      columns,
+      rows: mockWebProjectPoliciesRows,
+      pageIndex: 1,
+      pageSize: 20,
+      totalRow: mockWebProjectPoliciesRows.length,
+    });
+  }),
+
+  http.put("*/api/web/payroll/projects/:projectId/policies", async ({ request }) => {
+    await delay(250);
+    const body = (await request.json()) as Array<{
+      PolicyId: number | string;
+      EffectiveFrom: string;
+      EffectiveTo?: string | null;
+      Values: Array<{ TargetGroupId: number | string; PolicyValue: string }>;
+    }>;
+    if (Array.isArray(body)) {
+      body.forEach((item) => {
+        const row = mockWebProjectPoliciesRows.find((r) => r.policyId === Number(item.PolicyId));
+        if (row) {
+          row.effectiveFrom = item.EffectiveFrom;
+          row.effectiveTo = item.EffectiveTo ? item.EffectiveTo : null;
+          if (Array.isArray(item.Values)) {
+            item.Values.forEach((v) => {
+              row.values[String(v.TargetGroupId)] = v.PolicyValue;
+            });
+          }
+        }
+      });
+    }
+    return ok({
+      success: true,
+      message: "Cập nhật cấu hình chế độ thành công",
+    });
   }),
 
   http.get("/api/projects/:projectId/attendance-config", async ({ params }) => {

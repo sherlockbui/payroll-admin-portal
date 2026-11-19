@@ -119,11 +119,19 @@ export interface ProjectPolicyColumn {
   name: string;
 }
 
+export interface ProjectPolicyOption {
+  group?: string;
+  value: string;
+  label: string;
+}
+
 export interface ProjectPolicyRow {
   policyId: number | string;
   policyName: string;
   policyCode: string;
   dataType: "percentage" | "currency" | string;
+  controlType?: "workday-rule-picker" | "select" | "input" | string;
+  options?: ProjectPolicyOption[];
   effectiveFrom: string | null;
   effectiveTo: string | null;
   values: Record<string, string | number>;

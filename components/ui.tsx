@@ -445,6 +445,7 @@ export interface DatePickerProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  allowClear?: boolean;
 }
 
 export function DatePicker({
@@ -454,6 +455,7 @@ export function DatePicker({
   placeholder = "Chọn ngày...",
   className,
   disabled = false,
+  allowClear = false,
 }: DatePickerProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -467,14 +469,16 @@ export function DatePicker({
       <button
         type="button"
         className={cn(
-          "button button-secondary button-sm flex items-center justify-center gap-1.5 min-w-[125px] font-medium text-xs h-8 px-2.5",
+          "button button-secondary button-sm flex items-center justify-center gap-1.5 min-w-[125px] font-medium text-xs h-8 px-2.5 w-full",
           className
         )}
         onClick={() => !disabled && setModalOpen(true)}
         disabled={disabled}
       >
         <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
-        <span>{displayDate || placeholder}</span>
+        <span className={cn("truncate", !displayDate && "text-muted font-normal italic")}>
+          {displayDate || placeholder}
+        </span>
       </button>
 
       {modalOpen && (
@@ -484,6 +488,7 @@ export function DatePicker({
           value={value}
           onChange={onChange}
           title={title}
+          allowClear={allowClear}
         />
       )}
     </>
@@ -497,6 +502,7 @@ export function DatePickerModal({
   onChange,
   title = "Chọn ngày làm việc",
   container,
+  allowClear = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -504,13 +510,14 @@ export function DatePickerModal({
   onChange: (value: string) => void;
   title?: string;
   container?: HTMLElement | null;
+  allowClear?: boolean;
 }) {
   const contextContainer = usePortalContainer();
   const targetContainer = container !== undefined ? container : contextContainer;
 
   // Helper to parse input date string into Date object
-  const parseDate = (val?: string): Date => {
-    if (!val) return new Date();
+  const parseDate = (val?: string): Date | null => {
+    if (!val || !val.trim()) return null;
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
       const [y, m, d] = val.split("-").map(Number);
       return new Date(y, m - 1, d);
@@ -524,12 +531,12 @@ export function DatePickerModal({
       return new Date(y, m - 1, 1);
     }
     const d = new Date(val);
-    return isNaN(d.getTime()) ? new Date() : d;
+    return isNaN(d.getTime()) ? null : d;
   };
 
-  const [draftDate, setDraftDate] = useState<Date>(() => parseDate(value));
+  const [draftDate, setDraftDate] = useState<Date | null>(() => parseDate(value));
   const [viewMonth, setViewMonth] = useState<Date>(() => {
-    const d = parseDate(value);
+    const d = parseDate(value) || new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
 
@@ -537,12 +544,14 @@ export function DatePickerModal({
     if (open) {
       const initial = parseDate(value);
       setDraftDate(initial);
-      setViewMonth(new Date(initial.getFullYear(), initial.getMonth(), 1));
+      const d = initial || new Date();
+      setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
     }
   }, [open, value]);
 
   // Format draft for display: DD/MM/YYYY
   const draftFormatted = useMemo(() => {
+    if (!draftDate) return "(Chưa chọn - Không thời hạn)";
     const d = String(draftDate.getDate()).padStart(2, "0");
     const m = String(draftDate.getMonth() + 1).padStart(2, "0");
     const y = draftDate.getFullYear();
@@ -578,6 +587,11 @@ export function DatePickerModal({
   };
 
   const handleSave = () => {
+    if (!draftDate) {
+      onChange("");
+      onOpenChange(false);
+      return;
+    }
     const y = draftDate.getFullYear();
     const m = String(draftDate.getMonth() + 1).padStart(2, "0");
     const d = String(draftDate.getDate()).padStart(2, "0");
@@ -689,7 +703,7 @@ export function DatePickerModal({
                     {Array.from({ length: daysInMonth }).map((_, idx) => {
                       const dayNum = idx + 1;
                       const current = new Date(year, month, dayNum);
-                      const isSelected = isSameDay(current, draftDate);
+                      const isSelected = draftDate ? isSameDay(current, draftDate) : false;
 
                       return (
                         <button
@@ -711,6 +725,20 @@ export function DatePickerModal({
             </div>
 
             <div className="gs-dash-date-actions">
+              {allowClear && (
+                <button
+                  type="button"
+                  className="gs-dash-date-btn"
+                  style={{ color: "var(--destructive)", marginRight: "auto" }}
+                  onClick={() => {
+                    setDraftDate(null);
+                    onChange("");
+                    onOpenChange(false);
+                  }}
+                >
+                  Để trống
+                </button>
+              )}
               <button
                 type="button"
                 className="gs-dash-date-btn reset"

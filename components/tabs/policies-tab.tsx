@@ -1,14 +1,14 @@
 "use client";
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CalendarDays, Check, Loader2, Pencil, Plus, Save, Search, ScrollText, Trash2, Upload, Users, X } from "lucide-react";
+import { AlertCircle, CalendarDays, Check, ChevronDown, Loader2, Pencil, Plus, Save, Search, ScrollText, Trash2, Users, X } from "lucide-react";
 import { useMemo, useState, useEffect, useRef } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useToast } from "@/components/providers";
-import { Badge, Button, DatePicker, EmptyState, ErrorState, LoadingBlock, Modal, MonthPicker, SaveBar, StatusBadge, TablePaginationFooter, TableRowActions } from "@/components/ui";
+import { Badge, Button, DatePicker, EmptyState, ErrorState, LoadingBlock, Modal, MonthPicker, SaveBar, StatusBadge, TablePaginationFooter, TableRowActions, usePortalContainer } from "@/components/ui";
 import { api } from "@/lib/api";
-import { type PolicyDefinition, type ProjectEmployeeGroup, type ProjectPolicy, type ProjectPolicyColumn, type ProjectPolicyRow, type TargetRole } from "@/lib/types";
+import { type PolicyDefinition, type ProjectEmployeeGroup, type ProjectPolicy, type ProjectPolicyColumn, type ProjectPolicyOption, type ProjectPolicyRow, type TargetRole } from "@/lib/types";
 import { ManageEmployeeGroupsModal } from "@/components/policies/manage-employee-groups-modal";
-import { ImportEmployeeGroupsModal } from "@/components/policies/import-employee-groups-modal";
 import { cn, formatCurrency, formatDate, formatNumberVN, hideGsLoading, showGsLoading } from "@/lib/utils";
 
 export function calculateAutoFillValues(
@@ -188,7 +188,6 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<ProjectPolicyRow | null>(null);
   const [groupsModalOpen, setGroupsModalOpen] = useState(false);
-  const [importGroupsModalOpen, setImportGroupsModalOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -360,7 +359,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
 
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [modalEffectiveFrom, setModalEffectiveFrom] = useState(todayStr);
-  const [modalEffectiveTo, setModalEffectiveTo] = useState(todayStr);
+  const [modalEffectiveTo, setModalEffectiveTo] = useState("");
 
   const saveAllMutation = useMutation({
     mutationFn: async () => {
@@ -390,8 +389,8 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
         const pId = String(row.policyId);
         const rawEffFrom = effectiveDatesMap[pId] || row.effectiveFrom || todayStr;
         const effFrom = String(rawEffFrom).slice(0, 10);
-        const rawEffTo = effectiveToDatesMap[pId] ?? row.effectiveTo ?? rawEffFrom;
-        const effTo = rawEffTo ? String(rawEffTo).slice(0, 10) : effFrom;
+        const rawEffTo = effectiveToDatesMap[pId] !== undefined ? effectiveToDatesMap[pId] : (row.effectiveTo || "");
+        const effTo = rawEffTo && String(rawEffTo).trim() !== "" ? String(rawEffTo).slice(0, 10) : null;
 
         const curVals = roleValuesMap[pId] || row.values || {};
         const valuesPayload = activeGroups.map((g) => ({
@@ -432,7 +431,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
       return api.addPoliciesToProject(projectId, {
         PolicyItemIds: policyItemIds,
         EffectiveFrom: modalEffectiveFrom || todayStr,
-        EffectiveTo: modalEffectiveTo || modalEffectiveFrom || todayStr,
+        EffectiveTo: modalEffectiveTo && modalEffectiveTo.trim() !== "" ? modalEffectiveTo : null,
       });
     },
     onSuccess: () => {
@@ -568,9 +567,6 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
             <Button variant="secondary" onClick={() => setGroupsModalOpen(true)}>
               <Users className="w-4 h-4" /> Quản lý nhóm {columns.length > 0 ? `(${columns.length})` : ""}
             </Button>
-            <Button variant="secondary" onClick={() => setImportGroupsModalOpen(true)}>
-              <Upload className="w-4 h-4" /> Import phân nhóm
-            </Button>
             <Button variant="primary" onClick={handleOpenAddPolicyModal}>
               <Plus /> Thêm chế độ
             </Button>
@@ -633,8 +629,8 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
 
                     return (
                       <tr key={row.policyId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                        <td className="text-center text-muted font-medium">{stt}</td>
-                        <td>
+                        <td className="text-center text-muted font-medium align-middle">{stt}</td>
+                        <td className="align-middle">
                           <div className="flex items-center gap-2 flex-wrap mb-0.5">
                             <strong className="text-foreground font-semibold">{row.policyName}</strong>
                             {row.policyCode && (
@@ -651,8 +647,9 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
                           const cellVal = roleValuesMap[pId]?.[cId] ?? row.values?.[cId] ?? "";
 
                           return (
-                            <td key={col.id}>
+                            <td key={col.id} className="align-middle">
                               <RowCellEditor
+                                row={row}
                                 dataType={row.dataType}
                                 value={cellVal}
                                 onChange={(newVal) => handleCellChange(row.policyId, col.id, newVal)}
@@ -663,7 +660,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
 
                         {/* Placeholder column when no groups exist */}
                         {columns.length === 0 && (
-                          <td className="text-center py-2 px-3 bg-amber-500/5">
+                          <td className="text-center py-2 px-3 bg-amber-500/5 align-middle">
                             <button
                               type="button"
                               onClick={() => setGroupsModalOpen(true)}
@@ -675,7 +672,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
                         )}
 
                         {/* Effective From Column */}
-                        <td className="text-center">
+                        <td className="text-center align-middle">
                           <div className="inline-flex justify-center w-full" style={{ maxWidth: "160px", margin: "0 auto" }}>
                             <DatePicker
                               value={effectiveDatesMap[pId] || row.effectiveFrom || "2026-07-01"}
@@ -692,7 +689,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
                         </td>
 
                         {/* Effective To Column */}
-                        <td className="text-center">
+                        <td className="text-center align-middle">
                           <div className="inline-flex justify-center w-full" style={{ maxWidth: "160px", margin: "0 auto" }}>
                             <DatePicker
                               value={effectiveToDatesMap[pId] ?? row.effectiveTo ?? ""}
@@ -703,13 +700,14 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
                                 }));
                               }}
                               title="Chọn ngày kết thúc áp dụng"
-                              placeholder="Chọn ngày..."
+                              placeholder="Không thời hạn"
+                              allowClear
                             />
                           </div>
                         </td>
 
                         {/* Action Column */}
-                        <td className="text-center">
+                        <td className="text-center align-middle">
                           <button
                             type="button"
                             className="button button-icon button-ghost text-muted hover:text-destructive transition-colors"
@@ -792,7 +790,8 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
                 value={modalEffectiveTo}
                 onChange={(val) => setModalEffectiveTo(val)}
                 title="Chọn ngày kết thúc áp dụng"
-                placeholder="Chọn ngày kết thúc..."
+                placeholder="Không thời hạn (Tùy chọn)"
+                allowClear
               />
             </div>
           </div>
@@ -906,31 +905,421 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
         isOpen={groupsModalOpen}
         onClose={() => setGroupsModalOpen(false)}
       />
-
-      {/* Import Employee Groups Modal */}
-      <ImportEmployeeGroupsModal
-        projectId={projectId}
-        isOpen={importGroupsModalOpen}
-        onClose={() => setImportGroupsModalOpen(false)}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["project-policies", projectId] });
-          queryClient.invalidateQueries({ queryKey: ["project-employee-groups", projectId] });
-          queryClient.invalidateQueries({ queryKey: ["project-employees", projectId] });
-        }}
-      />
     </div>
   );
 }
 
-function RowCellEditor({
+export const DEFAULT_WORKDAY_OPTIONS: ProjectPolicyOption[] = [
+  { group: "Tính động theo chu kỳ công", value: "CALC_NO_SUN", label: "Theo chu kỳ: Trừ CN" },
+  { group: "Tính động theo chu kỳ công", value: "CALC_NO_SAT_SUN", label: "Theo chu kỳ: Trừ Thứ 7 & CN" },
+  { group: "Số ngày cố định", value: "26", label: "Cố định 26 ngày" },
+];
+
+export function WorkdayRuleCellEditor({
+  options: customOptions,
+  value,
+  onChange,
+}: {
+  options?: ProjectPolicyOption[];
+  value: any;
+  onChange: (newVal: any) => void;
+}) {
+  const portalContainer = usePortalContainer();
+  const [open, setOpen] = useState(false);
+  const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
+  const strValue = value !== undefined && value !== null ? String(value).trim() : "";
+  const [customInputVal, setCustomInputVal] = useState(strValue || "26");
+
+  useEffect(() => {
+    if (strValue && strValue !== "__CUSTOM__") {
+      setCustomInputVal(strValue);
+    }
+  }, [strValue]);
+
+  // ALWAYS prioritize options returned by API
+  const optionsList: ProjectPolicyOption[] = useMemo(() => {
+    if (customOptions && customOptions.length > 0) {
+      return customOptions;
+    }
+    return DEFAULT_WORKDAY_OPTIONS;
+  }, [customOptions]);
+
+  // Match the option directly from API options
+  const matchedOption = optionsList.find((opt) => String(opt.value) === strValue);
+  const isCustomNumber = Boolean(strValue) && !matchedOption && strValue !== "__CUSTOM__" && strValue !== "0";
+
+  // Dynamic grouping strictly based on API options' "group"
+  const groupedOptions = useMemo(() => {
+    const groups: { name: string; items: ProjectPolicyOption[] }[] = [];
+    const groupMap = new Map<string, ProjectPolicyOption[]>();
+
+    for (const opt of optionsList) {
+      const gName = opt.group || "Tùy chọn";
+      if (!groupMap.has(gName)) {
+        const list: ProjectPolicyOption[] = [];
+        groupMap.set(gName, list);
+        groups.push({ name: gName, items: list });
+      }
+      groupMap.get(gName)!.push(opt);
+    }
+    return groups;
+  }, [optionsList]);
+
+  // Cell trigger display: strictly uses API label, never hardcodes or truncates text
+  const triggerLabel = useMemo(() => {
+    if (!strValue || strValue === "0") {
+      return <span className="text-muted font-normal italic">- Chọn -</span>;
+    }
+    // 1. If matched in API options, ALWAYS display exact opt.label from API!
+    if (matchedOption) {
+      return matchedOption.label;
+    }
+    // 2. Custom number not in options (e.g. 25.5, 23)
+    if (!isNaN(Number(strValue))) {
+      return `Cố định ${strValue} ngày`;
+    }
+    return strValue;
+  }, [strValue, matchedOption]);
+
+  const handleConfirmCustom = () => {
+    const cleaned = customInputVal.trim().replace(",", ".");
+    if (cleaned !== "" && !isNaN(Number(cleaned)) && Number(cleaned) > 0) {
+      onChange(cleaned);
+      setIsCustomModalOpen(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="inline-cell-wrap cursor-pointer">
+        <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              role="combobox"
+              aria-label="Chọn quy tắc ngày công chuẩn"
+              title={typeof triggerLabel === "string" ? triggerLabel : undefined}
+              className="w-full flex items-center justify-between text-left outline-none cursor-pointer bg-transparent border-none p-0 focus:outline-none"
+            >
+              <span className="inline-cell-input flex-1 min-w-0 pr-1 flex items-center">
+                <span className="truncate">{triggerLabel}</span>
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-muted shrink-0 mr-1 opacity-70" />
+            </button>
+          </DropdownMenu.Trigger>
+
+          <DropdownMenu.Portal container={portalContainer ?? undefined}>
+            <DropdownMenu.Content
+              align="start"
+              side="bottom"
+              sideOffset={4}
+              collisionPadding={10}
+              className="z-[99999] min-w-[280px] max-w-[360px] rounded-lg border border-border bg-card shadow-lg p-1.5 text-xs focus:outline-none animate-in fade-in-50 zoom-in-95 duration-100"
+            >
+            {groupedOptions.map((group, gIdx) => (
+              <div key={group.name} className={cn("space-y-0.5", gIdx > 0 && "mt-1.5 pt-1.5 border-t border-border")}>
+                <div className="px-2 py-1 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                  {group.name}
+                </div>
+                {group.items.map((opt) => {
+                  const isSelected = strValue === String(opt.value);
+                  return (
+                    <DropdownMenu.Item
+                      key={opt.value}
+                      onSelect={() => {
+                        onChange(String(opt.value));
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "w-full px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between gap-2 cursor-pointer outline-none transition-colors",
+                        isSelected
+                          ? "bg-primary/10 text-primary font-semibold"
+                          : "text-foreground hover:bg-secondary"
+                      )}
+                    >
+                      <span className="truncate flex-1 min-w-0 text-left font-medium">{opt.label}</span>
+                      {isSelected && <Check className="w-4 h-4 text-primary shrink-0 ml-2" />}
+                    </DropdownMenu.Item>
+                  );
+                })}
+              </div>
+            ))}
+
+            {isCustomNumber && (
+              <div className="mt-1.5 pt-1.5 border-t border-border space-y-0.5">
+                <DropdownMenu.Item
+                  onSelect={() => {
+                    onChange(strValue);
+                    setOpen(false);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between gap-2 bg-primary/10 text-primary font-semibold cursor-pointer outline-none"
+                >
+                  <span className="truncate flex-1 min-w-0 text-left font-medium">Cố định {strValue} ngày (Tự nhập)</span>
+                  <Check className="w-4 h-4 text-primary shrink-0 ml-2" />
+                </DropdownMenu.Item>
+              </div>
+            )}
+
+            {/* Mục Tự nhập số ngày công qua Modal */}
+            <div className="mt-1.5 pt-1.5 border-t border-border">
+              <DropdownMenu.Item
+                onSelect={() => {
+                  setOpen(false);
+                  setIsCustomModalOpen(true);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-md text-xs flex items-center gap-2 cursor-pointer outline-none text-foreground hover:bg-secondary font-medium transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5 text-muted shrink-0" />
+                <span>Nhập số ngày khác...</span>
+              </DropdownMenu.Item>
+            </div>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+      </div>
+
+      {/* Modal Dialog for Custom Number Input */}
+      <Modal
+        open={isCustomModalOpen}
+        onOpenChange={setIsCustomModalOpen}
+        title="Cấu hình số ngày công cố định"
+        description="Nhập số ngày công chuẩn áp dụng cho nhóm này (hỗ trợ số lẻ như 25.5, 23 ngày)."
+        size="sm"
+        footer={
+          <>
+            <Button onClick={() => setIsCustomModalOpen(false)}>Hủy</Button>
+            <Button
+              variant="primary"
+              disabled={
+                !customInputVal ||
+                isNaN(Number(customInputVal.trim().replace(",", "."))) ||
+                Number(customInputVal.trim().replace(",", ".")) <= 0
+              }
+              onClick={handleConfirmCustom}
+            >
+              Áp dụng
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4 py-2">
+          <div>
+            <span className="text-xs text-muted font-medium mb-1.5 block">Gợi ý số ngày phổ biến:</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {["26", "25.5", "24", "23", "22", "20"].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setCustomInputVal(num)}
+                  className={cn(
+                    "px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer",
+                    customInputVal === num
+                      ? "bg-primary text-white border-primary shadow-xs"
+                      : "bg-secondary text-secondary-foreground border-border hover:border-primary/50"
+                  )}
+                >
+                  {num} ngày
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-field mb-0">
+            <label className="text-xs font-semibold text-foreground mb-1 block">
+              Số ngày công định mức <span className="text-destructive">*</span>
+            </label>
+            <div className="flex items-center gap-2 px-3 py-2 border border-border/80 rounded-xl bg-card focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+              <input
+                type="number"
+                step="any"
+                min="1"
+                max="31"
+                autoFocus
+                value={customInputVal}
+                onChange={(e) => setCustomInputVal(e.target.value)}
+                placeholder="VD: 25.5"
+                className="w-full text-base font-bold bg-transparent border-none outline-none text-foreground"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleConfirmCustom();
+                  }
+                }}
+              />
+              <span className="text-xs font-semibold text-muted shrink-0">ngày</span>
+            </div>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+export function SelectCellEditor({
+  options,
+  value,
+  onChange,
+}: {
+  options?: ProjectPolicyOption[];
+  value: any;
+  onChange: (newVal: any) => void;
+}) {
+  const portalContainer = usePortalContainer();
+  const [open, setOpen] = useState(false);
+  const strValue = value !== undefined && value !== null ? String(value) : "";
+  const selectedOpt = (options || []).find((opt) => String(opt.value) === strValue);
+
+  if (!options || options.length === 0) {
+    return (
+      <div className="inline-cell-wrap">
+        <input
+          type="text"
+          className="inline-cell-input font-medium"
+          value={strValue}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+    );
+  }
+
+  const hasGroups = options.some((o) => Boolean(o.group));
+  const groups: Record<string, ProjectPolicyOption[]> = {};
+  if (hasGroups) {
+    for (const opt of options) {
+      const g = opt.group || "Tùy chọn";
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(opt);
+    }
+  }
+
+  return (
+    <div className="inline-cell-wrap cursor-pointer">
+      <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+        <DropdownMenu.Trigger asChild>
+          <button
+            type="button"
+            role="combobox"
+            aria-label="Chọn giá trị chế độ"
+            title={selectedOpt?.label}
+            className="w-full flex items-center justify-between text-left outline-none cursor-pointer bg-transparent border-none p-0 focus:outline-none"
+          >
+            <span className="inline-cell-input flex-1 min-w-0 pr-1 flex items-center">
+              {selectedOpt ? (
+                <span className="truncate">{selectedOpt.label}</span>
+              ) : (
+                <span className="text-muted font-normal italic truncate">- Chọn -</span>
+              )}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-muted shrink-0 mr-1 opacity-70" />
+          </button>
+        </DropdownMenu.Trigger>
+
+        <DropdownMenu.Portal container={portalContainer ?? undefined}>
+          <DropdownMenu.Content
+            align="start"
+            side="bottom"
+            sideOffset={4}
+            collisionPadding={10}
+            className="z-[99999] min-w-[240px] max-w-[360px] rounded-lg border border-border bg-card shadow-lg p-1.5 text-xs focus:outline-none max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in-50 zoom-in-95 duration-100"
+          >
+            {hasGroups ? (
+              Object.entries(groups).map(([gName, opts]) => (
+                <div key={gName} className="mb-1.5 last:mb-0">
+                  <div className="px-2 py-1 text-[11px] font-semibold text-muted uppercase tracking-wider mb-0.5">
+                    {gName}
+                  </div>
+                  <div className="space-y-0.5">
+                    {opts.map((opt) => {
+                      const isSelected = strValue === String(opt.value);
+                      return (
+                        <DropdownMenu.Item
+                          key={opt.value}
+                          onSelect={() => {
+                            onChange(String(opt.value));
+                            setOpen(false);
+                          }}
+                          className={cn(
+                            "w-full px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between gap-2 cursor-pointer outline-none transition-colors",
+                            isSelected
+                              ? "bg-primary/10 text-primary font-semibold"
+                              : "text-foreground hover:bg-secondary"
+                          )}
+                        >
+                          <span className="font-medium truncate flex-1 min-w-0 text-left">{opt.label}</span>
+                          {isSelected && <Check className="w-4 h-4 text-primary shrink-0 ml-2" />}
+                        </DropdownMenu.Item>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="space-y-0.5">
+                {options.map((opt) => {
+                  const isSelected = strValue === String(opt.value);
+                  return (
+                    <DropdownMenu.Item
+                      key={opt.value}
+                      onSelect={() => {
+                        onChange(String(opt.value));
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "w-full px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between gap-2 cursor-pointer outline-none transition-colors",
+                        isSelected
+                          ? "bg-primary/10 text-primary font-semibold"
+                          : "text-foreground hover:bg-secondary"
+                      )}
+                    >
+                      <span className="font-medium truncate flex-1 min-w-0 text-left">{opt.label}</span>
+                      {isSelected && <Check className="w-4 h-4 text-primary shrink-0 ml-2" />}
+                    </DropdownMenu.Item>
+                  );
+                })}
+              </div>
+            )}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
+  );
+}
+
+export function RowCellEditor({
+  row,
   dataType,
   value,
   onChange,
 }: {
-  dataType: string;
+  row?: ProjectPolicyRow;
+  dataType?: string;
   value: any;
   onChange: (newVal: any) => void;
 }) {
+  const isWorkdayPicker =
+    row?.controlType === "workday-rule-picker" ||
+    row?.policyCode === "POL_STANDARD_WORKDAYS";
+
+  if (isWorkdayPicker) {
+    return (
+      <WorkdayRuleCellEditor
+        options={row?.options}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (row?.controlType === "select") {
+    return (
+      <SelectCellEditor
+        options={row.options}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  }
+
   const normalizedType = String(dataType || "").toLowerCase().trim();
 
   // 1. Currency (Tiền tệ VNĐ)

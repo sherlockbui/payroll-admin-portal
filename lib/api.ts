@@ -29,6 +29,9 @@ import type {
   ProjectEmployeeGroup,
   ProjectEmployeeOption,
   ProjectPoliciesResponseData,
+  ProjectPolicyColumn,
+  ProjectPolicyOption,
+  ProjectPolicyRow,
   OtherDeductionRecord,
   OtherIncomeRecord,
   SalaryStructure,
@@ -617,7 +620,7 @@ export const api = {
     payload: {
       PolicyItemIds: number[];
       EffectiveFrom: string;
-      EffectiveTo?: string;
+      EffectiveTo?: string | null;
     }
   ) => {
     const rawBaseUrl = getApiBaseUrl();
@@ -638,7 +641,7 @@ export const api = {
       body: JSON.stringify({
         PolicyItemIds: payload.PolicyItemIds,
         EffectiveFrom: payload.EffectiveFrom,
-        EffectiveTo: payload.EffectiveTo || payload.EffectiveFrom,
+        EffectiveTo: payload.EffectiveTo ? payload.EffectiveTo : null,
       }),
     });
 
@@ -704,12 +707,43 @@ export const api = {
     }
 
     const data = resJson.data || {};
+    const rawColumns = Array.isArray(data.columns) ? data.columns : (Array.isArray(data.Columns) ? data.Columns : []);
+    const rawRows = Array.isArray(data.rows) ? data.rows : (Array.isArray(data.Rows) ? data.Rows : []);
+
+    const columns: ProjectPolicyColumn[] = rawColumns.map((c: any) => ({
+      id: c.id ?? c.Id,
+      name: c.name ?? c.Name ?? "",
+    }));
+
+    const rows: ProjectPolicyRow[] = rawRows.map((r: any) => {
+      const rawOptions = r.options ?? r.Options;
+      const options: ProjectPolicyOption[] | undefined = Array.isArray(rawOptions)
+        ? rawOptions.map((opt: any) => ({
+            group: opt.group ?? opt.Group,
+            value: String(opt.value ?? opt.Value ?? ""),
+            label: opt.label ?? opt.Label ?? "",
+          }))
+        : undefined;
+
+      return {
+        policyId: r.policyId ?? r.PolicyId,
+        policyName: r.policyName ?? r.PolicyName ?? "",
+        policyCode: r.policyCode ?? r.PolicyCode ?? "",
+        dataType: r.dataType ?? r.DataType ?? "string",
+        controlType: r.controlType ?? r.ControlType,
+        options,
+        effectiveFrom: r.effectiveFrom ?? r.EffectiveFrom ?? null,
+        effectiveTo: r.effectiveTo ?? r.EffectiveTo ?? null,
+        values: r.values ?? r.Values ?? {},
+      };
+    });
+
     return {
-      columns: Array.isArray(data.columns) ? data.columns : [],
-      rows: Array.isArray(data.rows) ? data.rows : [],
-      pageIndex: typeof data.pageIndex === "number" ? data.pageIndex : pageIndex,
-      pageSize: typeof data.pageSize === "number" ? data.pageSize : pageSize,
-      totalRow: typeof data.totalRow === "number" ? data.totalRow : (data.rows?.length ?? 0),
+      columns,
+      rows,
+      pageIndex: typeof data.pageIndex === "number" ? data.pageIndex : (typeof data.PageIndex === "number" ? data.PageIndex : pageIndex),
+      pageSize: typeof data.pageSize === "number" ? data.pageSize : (typeof data.PageSize === "number" ? data.PageSize : pageSize),
+      totalRow: typeof data.totalRow === "number" ? data.totalRow : (typeof data.TotalRow === "number" ? data.TotalRow : rows.length),
     };
   },
   updateProjectPolicyValues: async (
@@ -717,7 +751,7 @@ export const api = {
     payload: Array<{
       PolicyId: number | string;
       EffectiveFrom: string;
-      EffectiveTo?: string;
+      EffectiveTo?: string | null;
       Note?: string;
       Values: Array<{
         TargetGroupId: number | string;
@@ -740,7 +774,7 @@ export const api = {
     const bodyData = payload.map((item) => ({
       PolicyId: Number(item.PolicyId),
       EffectiveFrom: item.EffectiveFrom,
-      EffectiveTo: item.EffectiveTo || item.EffectiveFrom,
+      EffectiveTo: item.EffectiveTo ? String(item.EffectiveTo).slice(0, 10) : null,
       Note: item.Note ?? "",
       Values: item.Values.map((v) => ({
         TargetGroupId: Number(v.TargetGroupId),
