@@ -1,6 +1,6 @@
 "use client";
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CalendarDays, Check, ChevronDown, Loader2, Pencil, Plus, Save, Search, ScrollText, Trash2, Users, X } from "lucide-react";
 import { useMemo, useState, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -182,6 +182,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
   const queryClient = useQueryClient();
   const { notify } = useToast();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [modalSearch, setModalSearch] = useState("");
   const [debouncedModalSearch, setDebouncedModalSearch] = useState("");
@@ -198,6 +199,14 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
   const [savedRoleValuesMap, setSavedRoleValuesMap] = useState<
     Record<string, Record<string, string | number>>
   >({});
+
+  // Debounce main table search so typing doesn't trigger API on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Debounce search in modal
   useEffect(() => {
@@ -287,8 +296,14 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
     queryFn: () => api.getProjectEmployeeGroups(projectId),
   });
   const policiesQuery = useQuery({
-    queryKey: ["project-policies", projectId, page, pageSize, search],
-    queryFn: () => api.getProjectPolicies(projectId, { pageIndex: page, pageSize, search }),
+    queryKey: ["project-policies", projectId, page, pageSize, debouncedSearch],
+    queryFn: () =>
+      api.getProjectPolicies(projectId, {
+        pageIndex: page,
+        pageSize,
+        search: debouncedSearch,
+      }),
+    placeholderData: keepPreviousData,
   });
 
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
@@ -494,8 +509,6 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
       showGsLoading("Đang thêm chế độ mới...");
     } else if (deleteMutation.isPending) {
       showGsLoading("Đang xóa chế độ...");
-    } else if (policiesQuery.isFetching && Boolean(policiesQuery.data)) {
-      showGsLoading("Đang tải dữ liệu chế độ...");
     } else {
       hideGsLoading();
     }
@@ -504,11 +517,9 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
     saveAllMutation.isPending,
     addPoliciesMutation.isPending,
     deleteMutation.isPending,
-    policiesQuery.isFetching,
-    Boolean(policiesQuery.data),
   ]);
 
-  if (policiesQuery.isLoading) return <LoadingBlock rows={7} />;
+  if (policiesQuery.isLoading && !policiesQuery.data) return <LoadingBlock rows={7} />;
   if (policiesQuery.isError)
     return (
       <ErrorState
@@ -553,7 +564,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
         {/* Table Card Toolbar */}
         <div className="table-card-toolbar">
           <div className="flex items-center justify-end gap-2.5 flex-wrap w-full">
-            <label className="search-field" style={{ minWidth: "260px" }}>
+            <div className="search-field" style={{ minWidth: "260px" }}>
               <Search />
               <input
                 value={search}
@@ -563,7 +574,21 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
                 }}
                 placeholder="Tìm chế độ, mã chính sách..."
               />
-            </label>
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setPage(1);
+                  }}
+                  className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors cursor-pointer border-0 bg-transparent shrink-0"
+                  title="Xóa tìm kiếm"
+                  aria-label="Xóa tìm kiếm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
             <Button variant="secondary" onClick={() => setGroupsModalOpen(true)}>
               <Users className="w-4 h-4" /> Quản lý nhóm {columns.length > 0 ? `(${columns.length})` : ""}
             </Button>
@@ -573,7 +598,7 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
           </div>
         </div>
 
-        {rows.length === 0 ? (
+        {rows.length === 0 && !policiesQuery.isFetching ? (
           <EmptyState
             title={columns.length === 0 ? "Chưa có nhóm người lao động" : "Chưa có chế độ phù hợp"}
             description={
@@ -594,8 +619,13 @@ export function PoliciesTab({ projectId }: { projectId: string; embedded?: boole
             }
           />
         ) : (
-          <div className="data-table-wrap">
-            <div className="data-table-scroll">
+          <div className="data-table-wrap relative">
+            {policiesQuery.isFetching && (
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/20 overflow-hidden z-20">
+                <div className="h-full bg-primary animate-pulse w-full" />
+              </div>
+            )}
+            <div className={cn("data-table-scroll transition-opacity duration-150", policiesQuery.isFetching && "opacity-60")}>
               <table className="data-table policy-table">
                 <thead>
                   <tr>
