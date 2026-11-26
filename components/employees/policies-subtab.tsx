@@ -1,50 +1,39 @@
 "use client";
 
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Building2,
-  Check,
-  ChevronDown,
-  ChevronUp,
   Download,
   FileSpreadsheet,
-  Info,
-  Loader2,
   Pencil,
   RefreshCw,
   RotateCcw,
   Save,
-  Search,
-  SlidersHorizontal,
   Sparkles,
-  Upload,
   UploadCloud,
-  Users,
-  Wallet,
-  X,
 } from "lucide-react";
 import React, { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useToast } from "@/components/providers";
 import {
-  Badge,
   Button,
   EmptyState,
   GsDatePicker,
   GsMoneyInput,
   LoadingBlock,
   Modal,
+  SearchableSelect,
   SearchInput,
   TablePaginationFooter,
   TableRowActions,
+  usePortalContainer,
 } from "@/components/ui";
-import { api, ApiRequestError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type {
   EmployeePolicyDetailDto,
   EmployeePolicyDetailItemDto,
   EmployeePolicyListItemDto,
   ImportPolicyErrorDetail,
-  SaveEmployeePolicyItemDto,
   SaveEmployeePolicyRequest,
 } from "@/lib/types";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
@@ -144,25 +133,26 @@ export function formatPolicyValue(val: string | number | null | undefined, dataT
 // Helper to check if a policy data type is currency / money
 export function isMoneyDataType(dataType?: string): boolean {
   if (!dataType) return true;
-  const dt = dataType.toUpperCase();
-  if (
-    dt === "PERCENT" ||
-    dt === "PERCENTAGE" ||
-    dt.includes("PERCENT") ||
-    dt === "COEFFICIENT" ||
-    dt.includes("COEFF") ||
-    dt === "MULTIPLIER" ||
-    dt === "HOURS" ||
-    dt.includes("HOUR") ||
-    dt.includes("GIO") ||
-    dt === "DAYS" ||
-    dt.includes("DAY") ||
-    dt.includes("NGAY") ||
-    dt === "NUMBER"
-  ) {
-    return false;
-  }
-  return true;
+  const dt = dataType.trim().toUpperCase();
+  return dt === "CURRENCY" || dt === "MONEY" || dt === "AMOUNT";
+}
+
+export function isBasicSalaryPolicyCode(policyCode?: string): boolean {
+  const code = (policyCode || "").trim().toUpperCase();
+  return code === "POL_BASIC_SALARY" || code === "LCB" || code === "BASIC_SALARY";
+}
+
+export function isInsuranceSalaryPolicyCode(policyCode?: string): boolean {
+  const code = (policyCode || "").trim().toUpperCase();
+  return code === "POL_INSURANCE_BASE" || code === "LDBH" || code === "INSURANCE_BASE";
+}
+
+export function isDateOrderInvalid(effectiveFrom?: string | null, effectiveTo?: string | null): boolean {
+  if (!effectiveFrom || !effectiveTo) return false;
+  const from = effectiveFrom.slice(0, 10);
+  const to = effectiveTo.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return false;
+  return to < from;
 }
 
 // Helper to filter true allowances & bonus policies (exclude basic salary, insurance base, OT rate coefficients, standard hour thresholds)
@@ -358,13 +348,13 @@ export function EmployeePoliciesSubtab({
     };
   }, [activeSummary, totalRow, rawItems, selectedMode]);
 
+  const portalContainer = usePortalContainer();
+
   // ================= EDIT MODAL STATE =================
   const [editEmployeeCode, setEditEmployeeCode] = useState<string | null>(null);
   const [editDetail, setEditDetail] = useState<EmployeePolicyDetailDto | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [editIsCustom, setEditIsCustom] = useState(false);
-  const [editBaseSalary, setEditBaseSalary] = useState(0);
-  const [editInsuranceSalary, setEditInsuranceSalary] = useState(0);
   const [editEffectiveFrom, setEditEffectiveFrom] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -373,7 +363,7 @@ export function EmployeePoliciesSubtab({
     isEnabled: boolean;
     amount: number;
     valueStr: string;
-    isExpanded?: boolean;
+    effectiveFrom: string;
   }
   const [editablePolicies, setEditablePolicies] = useState<EditablePolicyItem[]>([]);
 
@@ -391,29 +381,39 @@ export function EmployeePoliciesSubtab({
       const detail = await api.getEmployeePolicyDetail(item.employeeCode, projectId);
       setEditDetail(detail);
 
-      const hasAnyOverride =
-        detail.policies.some((p) => p.hasOverride) ||
-        Boolean(detail.basicSalary && detail.basicSalary > 0) ||
-        Boolean(detail.insuranceSalary && detail.insuranceSalary > 0);
+      const policiesList = detail.policies || [];
+      const hasAnyOverride = policiesList.some((p) => p.hasOverride);
+      const todayIso = new Date().toISOString().slice(0, 10);
+
+      // Prefer the latest effectiveFrom among active overridden items as default batch date
+      const overrideEffectiveDates = policiesList
+        .filter((p) => p.hasOverride && p.effectiveFrom)
+        .map((p) => String(p.effectiveFrom).slice(0, 10))
+        .sort();
+      const latestOverrideFrom =
+        overrideEffectiveDates.length > 0
+          ? overrideEffectiveDates[overrideEffectiveDates.length - 1]
+          : todayIso;
 
       setEditIsCustom(hasAnyOverride);
-      setEditBaseSalary(detail.basicSalary || 0);
-      setEditInsuranceSalary(detail.insuranceSalary || 0);
-      setEditEffectiveFrom(
-        detail.policies.find((p) => p.effectiveFrom)?.effectiveFrom || new Date().toISOString().slice(0, 10)
-      );
+      setEditEffectiveFrom(latestOverrideFrom);
 
-      const mappedPolicies: EditablePolicyItem[] = (detail.policies || []).map((p) => {
-        const rawVal = p.employeeValue ?? p.effectiveValue ?? p.groupValue ?? "0";
+      const mappedPolicies: EditablePolicyItem[] = policiesList.map((p) => {
+        const rawVal = p.hasOverride
+          ? (p.employeeValue ?? p.effectiveValue ?? p.groupValue ?? "0")
+          : (p.groupValue ?? p.effectiveValue ?? "0");
         const valNum = Number(rawVal);
         return {
           ...p,
           isEnabled: Boolean(p.hasOverride),
           amount: isNaN(valNum) ? 0 : valNum,
           valueStr: String(rawVal),
-          effectiveTo: p.effectiveTo || "",
-          note: p.note || "",
-          isExpanded: Boolean(p.note || p.effectiveTo),
+          effectiveFrom:
+            p.hasOverride && p.effectiveFrom
+              ? String(p.effectiveFrom).slice(0, 10)
+              : todayIso,
+          effectiveTo: p.hasOverride && p.effectiveTo ? String(p.effectiveTo).slice(0, 10) : "",
+          note: p.hasOverride && p.note ? p.note : "",
         };
       });
 
@@ -426,35 +426,102 @@ export function EmployeePoliciesSubtab({
     }
   };
 
+  // Apply batch effectiveFrom to all currently enabled rows
+  const handleApplyBatchEffectiveFrom = () => {
+    const targetDate = (editEffectiveFrom || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    setEditablePolicies((prev) =>
+      prev.map((p) => (p.isEnabled ? { ...p, effectiveFrom: targetDate } : p))
+    );
+    notify(`Đã áp dụng ngày hiệu lực ${formatDate(targetDate)} cho các chế độ đang chọn.`);
+  };
+
   // Save Edit Handler
   const handleSaveEdit = async () => {
     if (!editDetail || !projectId || projectId === "all") return;
 
+    const fallbackDate = (editEffectiveFrom || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const enabledItems = editIsCustom ? editablePolicies.filter((p) => p.isEnabled) : [];
+    const itemsToRestore = editablePolicies.filter((p) => p.hasOverride && (!editIsCustom || !p.isEnabled));
+
+    // Validate date order & empty values per row before calling API
+    if (enabledItems.length > 0) {
+      const invalidDateItem = enabledItems.find((p) => {
+        const rowFrom = (p.effectiveFrom || fallbackDate).slice(0, 10);
+        return isDateOrderInvalid(rowFrom, p.effectiveTo);
+      });
+      if (invalidDateItem) {
+        const rowFrom = (invalidDateItem.effectiveFrom || fallbackDate).slice(0, 10);
+        notify(
+          `Hạn áp dụng của "${invalidDateItem.policyName}" không được nhỏ hơn ngày hiệu lực (${formatDate(rowFrom)}).`,
+          "error"
+        );
+        return;
+      }
+
+      const emptyValueItem = enabledItems.find((p) => {
+        if (isMoneyDataType(p.dataType)) return false;
+        return !String(p.valueStr ?? "").trim();
+      });
+      if (emptyValueItem) {
+        notify(`Giá trị của "${emptyValueItem.policyName}" không được để trống.`, "error");
+        return;
+      }
+    }
+
+    if (enabledItems.length === 0 && itemsToRestore.length === 0) {
+      notify("Vui lòng chọn ít nhất một chế độ để lưu thỏa thuận riêng.", "warning");
+      return;
+    }
+
     setSavingEdit(true);
     try {
-      const payload: SaveEmployeePolicyRequest = {
-        projectId: Number(projectId),
-        employeeCode: editDetail.employeeCode,
-        effectiveFrom: editEffectiveFrom || new Date().toISOString().slice(0, 10),
-        basicSalary: editIsCustom ? editBaseSalary : null,
-        insuranceSalary: editIsCustom ? editInsuranceSalary : null,
-        policies: editablePolicies
-          .filter((p) => p.isEnabled)
-          .map((p) => {
-            const isMoney = isMoneyDataType(p.dataType);
-            const val = isMoney ? String(p.amount || 0) : String(p.valueStr || p.amount || 0);
-            return {
-              policyItemId: p.policyItemId,
-              value: val,
-              effectiveTo: p.effectiveTo || null,
-              note: p.note || null,
-              status: 1,
-            };
-          }),
-      };
+      // 1. Restore unchecked or disabled overrides back to group default
+      for (const item of itemsToRestore) {
+        await api.restoreEmployeePolicy(editDetail.employeeCode, item.policyItemId, projectId);
+      }
 
-      await api.saveEmployeePolicy(editDetail.employeeCode, payload);
-      notify(`Đã lưu cấu hình thỏa thuận riêng cho nhân sự ${editDetail.employeeName}!`);
+      // 2. Group enabled overrides by their individual effectiveFrom date
+      // so policies with different start dates don't overwrite each other
+      if (enabledItems.length > 0) {
+        const groupedByFrom = new Map<string, EditablePolicyItem[]>();
+        for (const p of enabledItems) {
+          const rowFrom = (p.effectiveFrom || fallbackDate).slice(0, 10);
+          const group = groupedByFrom.get(rowFrom) || [];
+          group.push(p);
+          groupedByFrom.set(rowFrom, group);
+        }
+
+        const sortedDates = Array.from(groupedByFrom.keys()).sort();
+        for (const rowFrom of sortedDates) {
+          const groupItems = groupedByFrom.get(rowFrom) || [];
+          const payload: SaveEmployeePolicyRequest = {
+            projectId: Number(projectId),
+            employeeCode: editDetail.employeeCode,
+            effectiveFrom: rowFrom,
+            basicSalary: null,
+            insuranceSalary: null,
+            policies: groupItems.map((p) => {
+              const isMoney = isMoneyDataType(p.dataType);
+              const val = isMoney ? String(p.amount || 0) : String(p.valueStr ?? p.amount ?? 0).trim();
+              return {
+                policyItemId: p.policyItemId,
+                value: val,
+                effectiveTo: p.effectiveTo && p.effectiveTo.trim() !== "" ? p.effectiveTo.slice(0, 10) : null,
+                note: p.note && p.note.trim() !== "" ? p.note.trim() : null,
+                status: 1,
+              };
+            }),
+          };
+
+          await api.saveEmployeePolicy(editDetail.employeeCode, payload);
+        }
+      }
+
+      notify(
+        enabledItems.length === 0 && itemsToRestore.length > 0
+          ? `Đã khôi phục toàn bộ chế độ của nhân sự ${editDetail.employeeName} về chuẩn nhóm!`
+          : `Đã lưu cấu hình thỏa thuận riêng cho nhân sự ${editDetail.employeeName}!`
+      );
       queryClient.invalidateQueries({ queryKey: ["employee-policies"] });
       setEditEmployeeCode(null);
       setEditDetail(null);
@@ -471,7 +538,6 @@ export function EmployeePoliciesSubtab({
     try {
       await api.restoreEmployeePolicy(editDetail.employeeCode, policyItemId, projectId);
       notify(`Đã khôi phục chế độ "${policyName}" về chuẩn nhóm!`);
-      // Refresh modal detail
       const updated = await api.getEmployeePolicyDetail(editDetail.employeeCode, projectId);
       setEditDetail(updated);
       setEditablePolicies((prev) =>
@@ -481,18 +547,22 @@ export function EmployeePoliciesSubtab({
             const defVal = Number(rawVal);
             return {
               ...p,
+              isEnabled: false,
               hasOverride: false,
               employeeValue: null,
               effectiveValue: p.groupValue,
               amount: isNaN(defVal) ? 0 : defVal,
               valueStr: String(rawVal),
-              note: null,
-              effectiveTo: null,
+              note: "",
+              effectiveTo: "",
             };
           }
           return p;
         })
       );
+      if (!updated.policies.some((p) => p.hasOverride)) {
+        setEditIsCustom(false);
+      }
       queryClient.invalidateQueries({ queryKey: ["employee-policies"] });
     } catch (err: any) {
       notify(err.message || "Không thể khôi phục chế độ này", "error");
@@ -511,7 +581,7 @@ export function EmployeePoliciesSubtab({
       const detail = await api.getEmployeePolicyDetail(restoreEmployee.employeeCode, projectId);
       const overriddenItems = detail.policies.filter((p) => p.hasOverride);
 
-      if (overriddenItems.length === 0 && !detail.basicSalary && !detail.insuranceSalary) {
+      if (overriddenItems.length === 0) {
         notify("Nhân sự này hiện không có thỏa thuận riêng nào.", "warning");
         setRestoreEmployee(null);
         return;
@@ -612,20 +682,57 @@ export function EmployeePoliciesSubtab({
     return () => setHeaderAction(null);
   }, [setHeaderAction, projectId, policiesQuery.isFetching]);
 
-  // Live calculation in Edit Modal
+  // Live calculation in Edit Modal (combines both group-default & custom-overridden allowances and salaries)
   const editCalculations = useMemo(() => {
-    const totalAllowance = editablePolicies
-      .filter((a) => a.isEnabled && isMoneyDataType(a.dataType))
-      .reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const basicRow = editablePolicies.find((p) => isBasicSalaryPolicyCode(p.policyCode));
+    const insRow = editablePolicies.find((p) => isInsuranceSalaryPolicyCode(p.policyCode));
 
-    const defaultAllowanceTotal = editablePolicies
-      .filter((a) => a.isEnabled && isMoneyDataType(a.dataType))
-      .reduce((s, a) => s + (Number(a.groupValue) || 0), 0);
+    const groupBasic = basicRow ? Number(basicRow.groupValue) || 0 : editDetail?.basicSalary || 0;
+    const groupIns = insRow ? Number(insRow.groupValue) || 0 : editDetail?.insuranceSalary || 0;
 
-    const deltaTotal = totalAllowance - defaultAllowanceTotal;
+    const effectiveBasic =
+      editIsCustom && basicRow?.isEnabled ? Number(basicRow.amount) || 0 : groupBasic;
+    const effectiveIns =
+      editIsCustom && insRow?.isEnabled ? Number(insRow.amount) || 0 : groupIns;
 
-    return { totalAllowance, deltaTotal };
-  }, [editablePolicies]);
+    const allowanceRows = editablePolicies.filter(
+      (a) => isAllowancePolicy(a) && isMoneyDataType(a.dataType)
+    );
+
+    const totalAllowance = allowanceRows.reduce((s, a) => {
+      const val = editIsCustom && a.isEnabled ? Number(a.amount) || 0 : Number(a.groupValue) || 0;
+      return s + val;
+    }, 0);
+
+    const defaultAllowanceTotal = allowanceRows.reduce(
+      (s, a) => s + (Number(a.groupValue) || 0),
+      0
+    );
+
+    const totalFixedIncome = effectiveBasic + totalAllowance;
+    const defaultFixedIncome = groupBasic + defaultAllowanceTotal;
+    const deltaTotal = totalFixedIncome - defaultFixedIncome;
+    const hasInvalidDates =
+      editIsCustom &&
+      editablePolicies.some((p) => {
+        if (!p.isEnabled) return false;
+        const rowFrom = (p.effectiveFrom || editEffectiveFrom || "").slice(0, 10);
+        return isDateOrderInvalid(rowFrom, p.effectiveTo);
+      });
+
+    return {
+      groupBasic,
+      groupIns,
+      effectiveBasic,
+      effectiveIns,
+      isBasicOverridden: Boolean(editIsCustom && basicRow?.isEnabled),
+      isInsOverridden: Boolean(editIsCustom && insRow?.isEnabled),
+      totalAllowance,
+      totalFixedIncome,
+      deltaTotal,
+      hasInvalidDates,
+    };
+  }, [editablePolicies, editIsCustom, editEffectiveFrom, editDetail]);
 
   return (
     <div className="space-y-4">
@@ -660,29 +767,31 @@ export function EmployeePoliciesSubtab({
             </div>
 
             {/* Right: Group Filter Dropdown & Search Input */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               {projectGroups.length > 0 && (
-                <div className="min-w-[190px]">
-                  <select
+                <div style={{ width: "220px", minWidth: "180px" }}>
+                  <SearchableSelect
                     value={selectedGroupId}
-                    onChange={(e) => setSelectedGroupId(e.target.value)}
-                    className="h-9 w-full px-2.5 rounded-lg border border-border bg-background text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
-                    title="Lọc theo nhóm đối tượng"
-                  >
-                    <option value="all">Tất cả nhóm ({projectGroups.length} nhóm)</option>
-                    {projectGroups.map((g) => (
-                      <option key={g.id} value={String(g.id)}>
-                        {g.groupName || g.name} ({g.employeeCount || 0} NS)
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedGroupId(val || "all")}
+                    options={[
+                      { value: "all", label: `Tất cả nhóm (${projectGroups.length} nhóm)` },
+                      { value: "0", label: "Chưa phân nhóm" },
+                      ...projectGroups.map((g) => ({
+                        value: String(g.id),
+                        label: `${g.groupName || g.name} (${g.employeeCount || 0} NS)`,
+                      })),
+                    ]}
+                    placeholder="Tất cả nhóm"
+                    allowClear={false}
+                    style={{ width: "100%" }}
+                  />
                 </div>
               )}
               <SearchInput
                 value={searchTerm}
                 onChange={setSearchTerm}
-                placeholder="Tìm theo mã NV (GID), họ tên..."
-                containerClassName="min-w-[240px] max-w-[320px]"
+                placeholder="Tìm mã NV (GID), họ tên..."
+                containerClassName="min-w-[235px] max-w-[300px]"
               />
             </div>
           </div>
@@ -812,16 +921,17 @@ export function EmployeePoliciesSubtab({
                         </td>
 
                         {/* Allowances Summary: Mini Badges */}
-                        <td>
+                        <td className="!whitespace-normal">
                           {validAllowances.length === 0 ? (
                             <span className="text-muted-foreground italic text-xs">
                               — Không có phụ cấp —
                             </span>
                           ) : (
-                            <div className="flex flex-wrap items-center gap-1.5 py-0.5 max-w-[420px]">
+                            <div className="flex flex-wrap items-center gap-1.5 py-0.5 max-w-[400px]">
                               {validAllowances.slice(0, 3).map((p) => {
                                 const shortName = getShortPolicyName(p.policyName);
                                 const isCustom = p.hasOverride;
+                                const formattedVal = formatPolicyValue(p.policyValue ?? p.value, p.dataType);
                                 return (
                                   <span
                                     key={p.policyItemId}
@@ -831,11 +941,11 @@ export function EmployeePoliciesSubtab({
                                         ? "bg-primary/10 text-primary border-primary/25 font-semibold"
                                         : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
                                     )}
-                                    title={`${p.policyName}: ${formatCurrency(p.value || 0)}${isCustom ? " (Thỏa thuận riêng)" : " (Chuẩn nhóm)"}`}
+                                    title={`${p.policyName}: ${formattedVal}${isCustom ? " (Thỏa thuận riêng)" : " (Chuẩn nhóm)"}`}
                                   >
                                     <span>{shortName}:</span>
                                     <span className="font-mono font-bold text-foreground">
-                                      {formatCurrency(p.value || 0)}
+                                      {formattedVal}
                                     </span>
                                     {isCustom && (
                                       <span className="text-primary font-bold ml-0.5">★</span>
@@ -850,7 +960,7 @@ export function EmployeePoliciesSubtab({
                                     .slice(3)
                                     .map(
                                       (p) =>
-                                        `${p.policyName}: ${formatCurrency(p.value || 0)}${p.hasOverride ? " (Thỏa thuận riêng)" : ""}`
+                                        `${p.policyName}: ${formatPolicyValue(p.policyValue ?? p.value, p.dataType)}${p.hasOverride ? " (Thỏa thuận riêng)" : ""}`
                                     )
                                     .join("\n")}
                                 >
@@ -866,6 +976,10 @@ export function EmployeePoliciesSubtab({
                           {hasOverride ? (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
                               Thỏa thuận riêng
+                            </span>
+                          ) : !item.policyGroupId && !item.policyGroupName ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                              Chưa phân nhóm
                             </span>
                           ) : (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
@@ -935,9 +1049,9 @@ export function EmployeePoliciesSubtab({
           description={`Mã NV: ${editEmployeeCode} • Nhóm đối tượng: ${editDetail?.policyGroupName || "Chưa phân nhóm"}`}
           size="xl"
           footer={
-            <div className="flex items-center justify-between w-full">
+            <div className="flex items-center justify-between w-full gap-2">
               <div>
-                {editIsCustom && (
+                {editDetail?.policies.some((p) => p.hasOverride) && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -959,7 +1073,7 @@ export function EmployeePoliciesSubtab({
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={savingEdit || loadingDetail}
+                  disabled={savingEdit || loadingDetail || editCalculations.hasInvalidDates}
                   onClick={handleSaveEdit}
                   className="gap-1.5 font-semibold"
                 >
@@ -976,379 +1090,369 @@ export function EmployeePoliciesSubtab({
           ) : !editDetail ? (
             <div className="py-8 text-center text-muted-foreground">Không tìm thấy thông tin nhân sự.</div>
           ) : (
-            <div className="space-y-3.5 py-1 text-xs">
-              {/* Compact Mode Switcher Banner */}
+            <div className="space-y-3 py-1 text-xs">
+              {/* Top Control Bar: Mode Switcher + Effective From */}
               <div
                 className={cn(
-                  "px-3.5 py-2.5 rounded-xl border flex items-center justify-between transition-colors",
+                  "px-3.5 py-2.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 transition-colors",
                   editIsCustom
-                    ? "bg-primary/5 border-primary/20 text-slate-900 dark:text-slate-100"
+                    ? "bg-primary/5 border-primary/25 text-slate-900 dark:text-slate-100"
                     : "bg-slate-100/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
                 )}
               >
-                <div className="font-semibold text-xs flex items-center gap-2">
-                  {editIsCustom ? (
-                    <>
-                      <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                      <span className="text-primary font-bold">Chế độ thỏa thuận riêng (Ghi đè định mức chuẩn của nhóm)</span>
-                    </>
-                  ) : (
-                    <>
-                      <Building2 className="w-4 h-4 text-slate-500 shrink-0" />
-                      <span className="text-slate-600 dark:text-slate-300">Chế độ kế thừa 100% theo chuẩn nhóm đối tượng</span>
-                    </>
-                  )}
+                <div className="flex items-center gap-3 min-w-0">
+                  <label className="flex items-center gap-2 cursor-pointer shrink-0 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xs">
+                    <input
+                      type="checkbox"
+                      checked={editIsCustom}
+                      onChange={(e) => setEditIsCustom(e.target.checked)}
+                      className="rounded border-border text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+                    />
+                    <span className="font-semibold text-xs text-foreground">Bật thỏa thuận riêng</span>
+                  </label>
+
+                  <div className="font-semibold text-xs flex items-center gap-1.5 min-w-0">
+                    {editIsCustom ? (
+                      <>
+                        <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                        <span className="text-primary font-bold truncate">
+                          Đang áp dụng thỏa thuận riêng (Tick các chế độ cần ghi đè bên dưới)
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Building2 className="w-4 h-4 text-slate-500 shrink-0" />
+                        <span className="text-slate-600 dark:text-slate-300 truncate">
+                          {editDetail.policies.some((p) => p.hasOverride)
+                            ? "Kế thừa chuẩn nhóm — Bấm Lưu để khôi phục các thỏa thuận cũ về chuẩn nhóm"
+                            : "Kế thừa 100% theo chuẩn nhóm đối tượng"}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                <label className="flex items-center gap-2 cursor-pointer shrink-0 ml-3 bg-white dark:bg-slate-800 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xs">
-                  <input
-                    type="checkbox"
-                    checked={editIsCustom}
-                    onChange={(e) => setEditIsCustom(e.target.checked)}
-                    className="rounded border-border text-primary focus:ring-primary w-4 h-4 cursor-pointer"
-                  />
-                  <span className="font-semibold text-xs text-foreground">Bật thỏa thuận riêng</span>
-                </label>
+                {editIsCustom && (
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <span className="text-slate-600 dark:text-slate-300 font-semibold whitespace-nowrap">
+                      Áp dụng chung từ:
+                    </span>
+                    <div className="w-[145px]">
+                      <GsDatePicker
+                        size="sm"
+                        usePortal
+                        portalContainer={portalContainer}
+                        allowClear={false}
+                        value={editEffectiveFrom}
+                        onChange={setEditEffectiveFrom}
+                        placeholder="dd/mm/yyyy"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleApplyBatchEffectiveFrom}
+                      disabled={!editablePolicies.some((p) => p.isEnabled)}
+                      className="h-8 px-2.5 text-[11px] font-semibold whitespace-nowrap"
+                      title="Gán ngày này cho tất cả các chế độ đang được tick bên dưới"
+                    >
+                      Áp cho tất cả dòng bật
+                    </Button>
+                  </div>
+                )}
               </div>
 
-              {/* Side-by-Side Comparison Box */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-                {/* LEFT COLUMN: MỨC CHUẨN CỦA NHÓM (THAM CHIẾU) */}
-                <div className="p-3.5 bg-slate-50/80 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 flex flex-col">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                      <Building2 className="w-3.5 h-3.5 text-slate-500" /> 1. Định mức chuẩn nhóm
-                    </span>
-                    <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded font-medium">Khóa cố định</span>
+              {/* 3-Card Summary Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Lương cơ bản</span>
+                    {editCalculations.isBasicOverridden ? (
+                      <span className="px-1.5 py-0.2 rounded bg-primary/10 text-primary font-bold text-[10px]">★ Riêng</span>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px]">Chuẩn nhóm</span>
+                    )}
                   </div>
-
-                  {/* Group Default Salary & Insurance */}
-                  {(() => {
-                    const hasCustomBase = editIsCustom && editBaseSalary > 0 && editBaseSalary !== (editDetail.basicSalary || 0);
-                    const hasCustomIns = editIsCustom && editInsuranceSalary > 0 && editInsuranceSalary !== (editDetail.insuranceSalary || 0);
-
-                    return (
-                      <div className="grid grid-cols-2 gap-2.5 p-2 bg-white dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-700">
-                        <div className={cn("p-1.5 rounded transition-colors", hasCustomBase ? "bg-primary/5 border border-primary/20" : "")}>
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-slate-500 text-[10px] block">Lương cơ bản nhóm:</span>
-                            {hasCustomBase ? (
-                              <span className="text-[9px] px-1 py-0.2 rounded bg-primary/10 text-primary font-bold">★ Đã ghi đè</span>
-                            ) : (
-                              <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 font-medium">Chuẩn</span>
-                            )}
-                          </div>
-                          <div className="flex items-baseline gap-1 mt-0.5">
-                            <span className={cn("font-bold font-mono text-xs", hasCustomBase ? "line-through text-slate-400" : "text-slate-800 dark:text-slate-200")}>
-                              {editDetail.basicSalary ? formatCurrency(editDetail.basicSalary) : "—"}
-                            </span>
-                            {hasCustomBase && (
-                              <span className="font-bold font-mono text-xs text-primary">
-                                → {formatCurrency(editBaseSalary)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className={cn("p-1.5 rounded transition-colors", hasCustomIns ? "bg-primary/5 border border-primary/20" : "")}>
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-slate-500 text-[10px] block">Lương đóng BHXH nhóm:</span>
-                            {hasCustomIns ? (
-                              <span className="text-[9px] px-1 py-0.2 rounded bg-primary/10 text-primary font-bold">★ Đã ghi đè</span>
-                            ) : (
-                              <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 font-medium">Chuẩn</span>
-                            )}
-                          </div>
-                          <div className="flex items-baseline gap-1 mt-0.5">
-                            <span className={cn("font-bold font-mono text-xs", hasCustomIns ? "line-through text-slate-400" : "text-slate-800 dark:text-slate-200")}>
-                              {editDetail.insuranceSalary ? formatCurrency(editDetail.insuranceSalary) : "—"}
-                            </span>
-                            {hasCustomIns && (
-                              <span className="font-bold font-mono text-xs text-primary">
-                                → {formatCurrency(editInsuranceSalary)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Group All Policies List */}
-                  <div className="space-y-1 flex-1">
-                    <div className="space-y-1.5 bg-white dark:bg-slate-900/60 p-2 rounded-lg border border-slate-200 dark:border-slate-700 max-h-[340px] overflow-y-auto pr-1">
-                      {editDetail.policies.map((p) => {
-                        const cat = getPolicyCategory(p);
-                        const catColors: Record<string, string> = {
-                          salary: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800",
-                          allowance: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800",
-                          overtime: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800",
-                          bonus: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800",
-                          other: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
-                        };
-
-                        const isOverridden = Boolean(p.hasOverride);
-                        const customVal = p.employeeValue ?? p.effectiveValue;
-
-                        return (
-                          <div
-                            key={p.policyItemId}
-                            className={cn(
-                              "p-2 rounded-lg border transition-all flex items-center justify-between text-xs gap-2",
-                              isOverridden
-                                ? "bg-primary/5 border-primary/25 border-l-4 border-l-primary shadow-xs"
-                                : "bg-slate-50/50 dark:bg-slate-800/30 border-slate-200/80 dark:border-slate-700/60"
-                            )}
-                          >
-                            <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                              <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0", catColors[cat.key] || catColors.other)}>
-                                {cat.label}
-                              </span>
-                              <span className="text-slate-700 dark:text-slate-200 font-medium truncate" title={p.policyName}>
-                                {p.policyName}
-                              </span>
-                              {isOverridden ? (
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/25 shrink-0">
-                                  ★ Đã ghi đè
-                                </span>
-                              ) : (
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
-                                  Chuẩn nhóm
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="text-right shrink-0">
-                              {isOverridden ? (
-                                <div className="flex items-baseline gap-1">
-                                  <span className="line-through text-slate-400 text-[11px]">
-                                    {formatPolicyValue(p.groupValue, p.dataType)}
-                                  </span>
-                                  <span className="font-bold font-mono text-xs text-primary">
-                                    → {formatPolicyValue(customVal, p.dataType)}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
-                                  {formatPolicyValue(p.groupValue, p.dataType)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {editDetail.policies.length === 0 && (
-                        <div className="text-slate-400 italic text-center py-4">Nhóm đối tượng chưa cấu hình chính sách nào</div>
-                      )}
-                    </div>
+                  <div className="mt-1 flex items-baseline gap-1.5 flex-wrap">
+                    {editCalculations.isBasicOverridden && editCalculations.effectiveBasic !== editCalculations.groupBasic && (
+                      <span className="line-through text-slate-400 font-mono text-[11px]">
+                        {formatCurrency(editCalculations.groupBasic)}
+                      </span>
+                    )}
+                    <span className={cn("font-bold font-mono text-sm", editCalculations.isBasicOverridden ? "text-primary" : "text-foreground")}>
+                      {editCalculations.effectiveBasic > 0 ? formatCurrency(editCalculations.effectiveBasic) : "—"}
+                    </span>
                   </div>
                 </div>
 
-                {/* RIGHT COLUMN: MỨC ÁP DỤNG RIÊNG CHO NHÂN SỰ NÀY */}
-                <div
-                  className={cn(
-                    "p-3.5 rounded-xl border space-y-3 flex flex-col transition-colors",
-                    editIsCustom
-                      ? "bg-white dark:bg-slate-900 border-primary/30 ring-1 ring-primary/20 shadow-xs"
-                      : "bg-slate-50/50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-700"
-                  )}
-                >
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="font-bold text-primary uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-primary" /> 2. Mức thỏa thuận riêng
+                <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Lương đóng BHXH</span>
+                    {editCalculations.isInsOverridden ? (
+                      <span className="px-1.5 py-0.2 rounded bg-primary/10 text-primary font-bold text-[10px]">★ Riêng</span>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px]">Chuẩn nhóm</span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1.5 flex-wrap">
+                    {editCalculations.isInsOverridden && editCalculations.effectiveIns !== editCalculations.groupIns && (
+                      <span className="line-through text-slate-400 font-mono text-[11px]">
+                        {formatCurrency(editCalculations.groupIns)}
+                      </span>
+                    )}
+                    <span className={cn("font-bold font-mono text-sm", editCalculations.isInsOverridden ? "text-primary" : "text-foreground")}>
+                      {editCalculations.effectiveIns > 0 ? formatCurrency(editCalculations.effectiveIns) : "—"}
                     </span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl border border-primary/20 bg-primary/5">
+                  <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold">Tổng thu nhập cố định dự tính</span>
                     {editCalculations.deltaTotal !== 0 && (
-                      <span className={cn(
-                        "text-[11px] px-2 py-0.5 rounded font-bold font-mono",
-                        editCalculations.deltaTotal > 0
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
-                          : "bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
-                      )}>
-                        {editCalculations.deltaTotal > 0 ? `+${formatCurrency(editCalculations.deltaTotal)}` : formatCurrency(editCalculations.deltaTotal)}
+                      <span
+                        className={cn(
+                          "px-1.5 py-0.2 rounded font-bold font-mono text-[10px]",
+                          editCalculations.deltaTotal > 0
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                            : "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
+                        )}
+                      >
+                        {editCalculations.deltaTotal > 0
+                          ? `+${formatCurrency(editCalculations.deltaTotal)}`
+                          : formatCurrency(editCalculations.deltaTotal)}
                       </span>
                     )}
                   </div>
-
-                  {/* Base Salary & Insurance Salary Inputs */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <GsMoneyInput
-                        label="Lương cơ bản riêng"
-                        showWords={false}
-                        disabled={!editIsCustom}
-                        value={editBaseSalary}
-                        onChange={setEditBaseSalary}
-                        placeholder="0"
-                        inputClassName="font-bold text-xs"
-                      />
-                    </div>
-                    <div>
-                      <GsMoneyInput
-                        label="Lương đóng BHXH riêng"
-                        showWords={false}
-                        disabled={!editIsCustom}
-                        value={editInsuranceSalary}
-                        onChange={setEditInsuranceSalary}
-                        placeholder="0"
-                        inputClassName="font-bold text-xs"
-                      />
-                    </div>
+                  <div className="mt-1 font-bold font-mono text-sm text-primary">
+                    {formatCurrency(editCalculations.totalFixedIncome)}
                   </div>
+                </div>
+              </div>
 
-                  {/* All Policies List Editable */}
-                  <div className="space-y-1.5 flex-1 max-h-[340px] overflow-y-auto pr-1">
-                    {editablePolicies.map((a, i) => {
-                      const cat = getPolicyCategory(a);
-                      const catColors: Record<string, string> = {
-                        salary: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800",
-                        allowance: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800",
-                        overtime: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800",
-                        bonus: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800",
-                        other: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
-                      };
-                      const isMoney = isMoneyDataType(a.dataType);
+              {/* Unified Row-Aligned Comparison Table */}
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900">
+                <div className="max-h-[380px] overflow-auto">
+                  <table className="w-full border-collapse text-xs min-w-[980px]">
+                    <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-[0_1px_0_0_rgba(148,163,184,0.2)]">
+                      <tr className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        <th className="py-2.5 px-3 text-left w-[240px]">Chế độ / Chính sách</th>
+                        <th className="py-2.5 px-3 text-right w-[115px]">Chuẩn nhóm</th>
+                        <th className="py-2.5 px-3 text-left w-[180px]">Thỏa thuận riêng</th>
+                        <th className="py-2.5 px-2.5 text-left w-[142px]">Hiệu lực từ</th>
+                        <th className="py-2.5 px-2.5 text-left w-[148px]">Hạn áp dụng</th>
+                        <th className="py-2.5 px-2.5 text-left min-w-[130px]">Lý do / Căn cứ</th>
+                        <th className="py-2.5 px-2 text-center w-[42px]"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {editablePolicies.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-400 italic">
+                            Nhóm đối tượng hoặc dự án chưa cấu hình chính sách nào.
+                          </td>
+                        </tr>
+                      ) : (
+                        editablePolicies.map((a, i) => {
+                          const cat = getPolicyCategory(a);
+                          const catColors: Record<string, string> = {
+                            salary: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800",
+                            allowance: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800",
+                            overtime: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800",
+                            bonus: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800",
+                            other: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+                          };
+                          const isMoney = isMoneyDataType(a.dataType);
+                          const rowEditable = editIsCustom && a.isEnabled;
+                          const rowFrom = (a.effectiveFrom || editEffectiveFrom || "").slice(0, 10);
+                          const dateInvalid = rowEditable && isDateOrderInvalid(rowFrom, a.effectiveTo);
+                          const isValueDifferent = isMoney
+                            ? Number(a.amount || 0) !== Number(a.groupValue || 0)
+                            : String(a.valueStr ?? "").trim() !== String(a.groupValue ?? "").trim();
+                          const dtUpper = (a.dataType || "").toUpperCase();
+                          const unitSuffix = dtUpper.includes("PERCENT")
+                            ? "%"
+                            : dtUpper.includes("COEFF") || dtUpper === "MULTIPLIER"
+                              ? "x"
+                              : dtUpper.includes("HOUR") || dtUpper.includes("GIO")
+                                ? "h"
+                                : dtUpper.includes("DAY") || dtUpper.includes("NGAY")
+                                  ? "d"
+                                  : "";
 
-                      return (
-                        <div
-                          key={a.policyItemId}
-                          className={cn(
-                            "p-2 rounded-lg border transition-colors space-y-1.5",
-                            a.isEnabled
-                              ? "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 shadow-xs"
-                              : "bg-slate-100/60 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 opacity-60"
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <label className="flex items-center gap-2 cursor-pointer select-none min-w-0 flex-1">
-                              <input
-                                type="checkbox"
-                                disabled={!editIsCustom}
-                                checked={a.isEnabled}
-                                onChange={(e) => {
-                                  const copy = [...editablePolicies];
-                                  const checked = e.target.checked;
-                                  copy[i].isEnabled = checked;
-                                  if (checked && (!copy[i].amount || copy[i].amount === 0) && copy[i].groupValue) {
-                                    const num = Number(copy[i].groupValue);
-                                    if (!isNaN(num)) copy[i].amount = num;
-                                    copy[i].valueStr = String(copy[i].groupValue);
-                                  }
-                                  setEditablePolicies(copy);
-                                }}
-                                className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5 shrink-0 cursor-pointer"
-                              />
-                              <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0", catColors[cat.key] || catColors.other)}>
-                                {cat.label}
-                              </span>
-                              <span
-                                className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate"
-                                title={a.policyName}
-                              >
-                                {a.policyName}
-                                {a.hasOverride && (
-                                  <span className="ml-1 text-[10px] text-primary font-bold">
-                                    ★ (Ghi đè)
-                                  </span>
-                                )}
-                              </span>
-                            </label>
-
-                            <div className="flex items-center gap-1 shrink-0">
-                              <div className="w-28">
-                                {isMoney ? (
-                                  <GsMoneyInput
-                                    showWords={false}
-                                    disabled={!editIsCustom || !a.isEnabled}
-                                    value={a.amount}
-                                    onChange={(val) => {
-                                      const copy = [...editablePolicies];
-                                      copy[i].amount = val;
-                                      copy[i].valueStr = String(val);
-                                      setEditablePolicies(copy);
-                                    }}
-                                    className="h-7 text-xs"
-                                    inputClassName="text-right font-bold h-7 py-1 px-2 text-xs"
-                                    placeholder="0"
-                                  />
-                                ) : (
-                                  <div className="relative flex items-center">
-                                    <input
-                                      type="text"
-                                      disabled={!editIsCustom || !a.isEnabled}
-                                      value={a.valueStr ?? a.amount ?? ""}
-                                      onChange={(e) => {
-                                        const copy = [...editablePolicies];
-                                        copy[i].valueStr = e.target.value;
-                                        const parsed = Number(e.target.value);
-                                        copy[i].amount = isNaN(parsed) ? 0 : parsed;
-                                        setEditablePolicies(copy);
-                                      }}
-                                      className="w-full h-7 px-2 pr-5 text-right font-bold font-mono text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 disabled:opacity-50"
-                                      placeholder="0"
-                                    />
-                                    <span className="absolute right-1.5 text-[10px] text-muted-foreground font-mono pointer-events-none">
-                                      {a.dataType?.toUpperCase().includes("PERCENT")
-                                        ? "%"
-                                        : a.dataType?.toUpperCase().includes("COEFF") || a.dataType?.toUpperCase() === "MULTIPLIER"
-                                          ? "x"
-                                          : a.dataType?.toUpperCase().includes("HOUR") || a.dataType?.toUpperCase().includes("GIO")
-                                            ? "h"
-                                            : a.dataType?.toUpperCase().includes("DAY") || a.dataType?.toUpperCase().includes("NGAY")
-                                              ? "d"
-                                              : ""}
+                          return (
+                            <tr
+                              key={a.policyItemId}
+                              className={cn(
+                                "transition-colors align-middle",
+                                rowEditable
+                                  ? "bg-primary/[0.03] dark:bg-primary/[0.06]"
+                                  : "hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
+                              )}
+                            >
+                              {/* Policy Info (clean 2-line hierarchy) */}
+                              <td className="py-2.5 px-3">
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-slate-800 dark:text-slate-100 leading-snug">
+                                    {a.policyName}
+                                    {a.hasOverride && (
+                                      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20 align-middle">
+                                        ★ Ghi đè
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                    <span
+                                      className={cn(
+                                        "px-1.5 py-0.2 rounded text-[10px] font-medium border shrink-0",
+                                        catColors[cat.key] || catColors.other
+                                      )}
+                                    >
+                                      {cat.label}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-mono truncate">
+                                      {a.policyCode}
                                     </span>
                                   </div>
-                                )}
-                              </div>
+                                </div>
+                              </td>
 
-                              {/* Expand Note/Date */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const copy = [...editablePolicies];
-                                  copy[i].isExpanded = !copy[i].isExpanded;
-                                  setEditablePolicies(copy);
-                                }}
-                                title="Ghi chú & Kỳ hạn"
-                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors"
-                              >
-                                {a.isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                              </button>
-
-                              {/* Inline Restore Button */}
-                              {a.hasOverride && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleInlineRestorePolicy(a.policyItemId, a.policyName)}
-                                  title="Khôi phục về mức chuẩn nhóm"
-                                  className="p-1 rounded text-slate-500 hover:text-primary hover:bg-primary/10 transition-colors"
+                              {/* Group Default (Read-only) */}
+                              <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                                <span
+                                  className={cn(
+                                    rowEditable && a.groupValue && isValueDifferent
+                                      ? "line-through text-slate-400"
+                                      : ""
+                                  )}
                                 >
-                                  <RotateCcw className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                                  {formatPolicyValue(a.groupValue, a.dataType)}
+                                </span>
+                              </td>
 
-                          {/* Expanded Details: Note & Effective To */}
-                          {a.isExpanded && a.isEnabled && (
-                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                              <div>
-                                <label className="text-slate-500 block mb-0.5">Hạn áp dụng:</label>
-                                <input
-                                  type="date"
-                                  value={a.effectiveTo ? a.effectiveTo.slice(0, 10) : ""}
-                                  onChange={(e) => {
+                              {/* Custom Override Toggle + Value */}
+                              <td className="py-2.5 px-3">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Bật thỏa thuận riêng cho ${a.policyName}`}
+                                    disabled={!editIsCustom}
+                                    checked={a.isEnabled}
+                                    onChange={(e) => {
+                                      const copy = [...editablePolicies];
+                                      const checked = e.target.checked;
+                                      copy[i].isEnabled = checked;
+                                      if (checked && (!copy[i].amount || copy[i].amount === 0) && copy[i].groupValue) {
+                                        const num = Number(copy[i].groupValue);
+                                        if (!isNaN(num)) copy[i].amount = num;
+                                        copy[i].valueStr = String(copy[i].groupValue);
+                                      }
+                                      if (checked && !copy[i].hasOverride && editEffectiveFrom) {
+                                        copy[i].effectiveFrom = editEffectiveFrom;
+                                      }
+                                      setEditablePolicies(copy);
+                                    }}
+                                    className="rounded border-border text-primary focus:ring-primary w-4 h-4 shrink-0 cursor-pointer disabled:opacity-50"
+                                  />
+                                  <div className="flex-1 min-w-[115px]">
+                                    {isMoney ? (
+                                      <GsMoneyInput
+                                        size="sm"
+                                        unit="đ"
+                                        showWords={false}
+                                        disabled={!rowEditable}
+                                        value={a.amount}
+                                        onChange={(val) => {
+                                          const copy = [...editablePolicies];
+                                          copy[i].amount = val;
+                                          copy[i].valueStr = String(val);
+                                          setEditablePolicies(copy);
+                                        }}
+                                        inputClassName="text-right font-bold"
+                                        placeholder="0"
+                                      />
+                                    ) : (
+                                      <div
+                                        className={cn(
+                                          "flex items-center h-8 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary",
+                                          !rowEditable && "opacity-55 bg-slate-100 dark:bg-slate-800/50 cursor-not-allowed"
+                                        )}
+                                      >
+                                        <input
+                                          type="text"
+                                          disabled={!rowEditable}
+                                          value={a.valueStr ?? a.amount ?? ""}
+                                          onChange={(e) => {
+                                            const copy = [...editablePolicies];
+                                            copy[i].valueStr = e.target.value;
+                                            const parsed = Number(e.target.value);
+                                            copy[i].amount = isNaN(parsed) ? 0 : parsed;
+                                            setEditablePolicies(copy);
+                                          }}
+                                          className={cn(
+                                            "!h-full !min-h-0 flex-1 min-w-0 !border-0 !rounded-none !bg-transparent !shadow-none !outline-none !ring-0 !py-0 text-xs font-bold",
+                                            unitSuffix
+                                              ? "!pl-2 !pr-1 text-right font-mono"
+                                              : dtUpper === "STRING" || dtUpper === "TEXT"
+                                                ? "!px-2 text-left"
+                                                : "!px-2 text-right font-mono"
+                                          )}
+                                          placeholder="Nhập giá trị..."
+                                        />
+                                        {unitSuffix && (
+                                          <span className="pr-2.5 text-[11px] text-muted-foreground font-mono font-semibold select-none shrink-0">
+                                            {unitSuffix}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Per-row Effective From */}
+                              <td className="py-2.5 px-2.5">
+                                <GsDatePicker
+                                  size="sm"
+                                  usePortal
+                                  portalContainer={portalContainer}
+                                  disabled={!rowEditable}
+                                  value={rowFrom}
+                                  onChange={(val) => {
                                     const copy = [...editablePolicies];
-                                    copy[i].effectiveTo = e.target.value;
+                                    copy[i].effectiveFrom = val;
                                     setEditablePolicies(copy);
                                   }}
-                                  className="w-full h-7 px-2 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                  placeholder="dd/mm/yyyy"
+                                  allowClear={false}
                                 />
-                              </div>
-                              <div>
-                                <label className="text-slate-500 block mb-0.5">Lý do / Căn cứ:</label>
+                              </td>
+
+                              {/* Effective To */}
+                              <td className="py-2.5 px-2.5">
+                                <GsDatePicker
+                                  size="sm"
+                                  usePortal
+                                  portalContainer={portalContainer}
+                                  disabled={!rowEditable}
+                                  value={a.effectiveTo ? a.effectiveTo.slice(0, 10) : ""}
+                                  onChange={(val) => {
+                                    const copy = [...editablePolicies];
+                                    copy[i].effectiveTo = val;
+                                    setEditablePolicies(copy);
+                                  }}
+                                  placeholder="Vô thời hạn"
+                                  allowClear
+                                  error={dateInvalid ? "Phải ≥ Hiệu lực từ" : undefined}
+                                />
+                              </td>
+
+                              {/* Note */}
+                              <td className="py-2.5 px-2.5">
                                 <input
                                   type="text"
+                                  disabled={!rowEditable}
                                   placeholder="VD: Phụ lục HĐLĐ..."
                                   value={a.note || ""}
                                   onChange={(e) => {
@@ -1356,39 +1460,31 @@ export function EmployeePoliciesSubtab({
                                     copy[i].note = e.target.value;
                                     setEditablePolicies(copy);
                                   }}
-                                  className="w-full h-7 px-2 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                  className="w-full !h-8 !min-h-[32px] !px-2.5 !py-0 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary"
                                 />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+                              </td>
 
-              {/* Bottom Summary Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-primary/5 border border-primary/20 rounded-xl text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800 dark:text-slate-100">Tổng thu nhập cố định dự tính:</span>
-                  <span className="text-base font-bold text-primary font-mono">
-                    {formatCurrency((editIsCustom ? editBaseSalary : (editDetail.basicSalary || 0)) + editCalculations.totalAllowance)}
-                  </span>
+                              {/* Inline Restore */}
+                              <td className="py-2.5 px-2 text-center">
+                                {a.hasOverride && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInlineRestorePolicy(a.policyItemId, a.policyName)}
+                                    title="Khôi phục về mức chuẩn nhóm"
+                                    aria-label={`Khôi phục ${a.policyName} về chuẩn nhóm`}
+                                    className="p-1.5 rounded-md text-slate-500 hover:text-primary hover:bg-primary/10 transition-colors"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-
-                {editIsCustom && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-600 dark:text-slate-300 font-medium">Hiệu lực từ:</span>
-                    <div className="w-36">
-                      <GsDatePicker
-                        value={editEffectiveFrom}
-                        onChange={setEditEffectiveFrom}
-                        placeholder="dd/mm/yyyy"
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           )}

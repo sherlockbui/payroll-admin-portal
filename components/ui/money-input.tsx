@@ -17,6 +17,7 @@ export interface MoneyInputProps {
   min?: number;
   max?: number;
   step?: number;
+  size?: "default" | "sm";
   className?: string;
   inputClassName?: string;
   error?: string;
@@ -46,6 +47,7 @@ export const GsMoneyInput = forwardRef<MoneyInputRef, MoneyInputProps>(function 
     required = false,
     min,
     max,
+    size = "default",
     className,
     inputClassName,
     error,
@@ -171,14 +173,30 @@ export const GsMoneyInput = forwardRef<MoneyInputRef, MoneyInputProps>(function 
           placeholder={placeholder}
           className={cn(
             "gs-money-input-field font-mono",
-            unit ? "!pr-14" : allowClear ? "!pr-8" : "!pr-3",
+            size === "sm" && "is-sm",
+            unit
+              ? size === "sm" && unit.length <= 2
+                ? allowClear
+                  ? "!pr-11"
+                  : "!pr-7"
+                : "!pr-14"
+              : allowClear
+                ? "!pr-8"
+                : size === "sm"
+                  ? "!pr-2.5"
+                  : "!pr-3",
             error && "has-error",
             inputClassName
           )}
         />
 
         {/* Clear Button & Optional Currency Unit Badge */}
-        <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+        <div
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 flex items-center gap-1",
+            size === "sm" ? "right-2" : "right-2.5"
+          )}
+        >
           {allowClear && displayValue && !disabled && !readOnly && (
             <button
               type="button"
@@ -191,7 +209,14 @@ export const GsMoneyInput = forwardRef<MoneyInputRef, MoneyInputProps>(function 
           )}
 
           {unit && (
-            <span className="text-[11px] font-bold text-muted-foreground pointer-events-none select-none px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">
+            <span
+              className={cn(
+                "pointer-events-none select-none font-mono",
+                size === "sm"
+                  ? "text-[10px] text-muted-foreground"
+                  : "text-[11px] font-bold text-muted-foreground px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700"
+              )}
+            >
               {unit}
             </span>
           )}

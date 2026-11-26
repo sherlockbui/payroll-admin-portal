@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useId } from "react";
+import { createPortal } from "react-dom";
 import { Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +10,10 @@ export interface DatePickerProps {
   onChange: (value: string) => void;
   label?: string;
   placeholder?: string;
+  title?: string;
+  size?: "default" | "sm";
+  usePortal?: boolean;
+  portalContainer?: HTMLElement | null;
   disabled?: boolean;
   readOnly?: boolean;
   required?: boolean;
@@ -44,6 +49,10 @@ export function GsDatePicker({
   onChange,
   label,
   placeholder = "dd/mm/yyyy",
+  title,
+  size = "default",
+  usePortal = false,
+  portalContainer,
   disabled = false,
   readOnly = false,
   required = false,
@@ -58,7 +67,10 @@ export function GsDatePicker({
   const generatedId = useId();
   const inputId = id || generatedId;
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [portalCoords, setPortalCoords] = useState<{ top: number; left: number } | null>(null);
 
   // Parse value string to Date object
   const parsedDate = useMemo<Date | null>(() => {
@@ -100,8 +112,27 @@ export function GsDatePicker({
     return `${d}/${m}/${y}`;
   }, [parsedDate]);
 
+  const calculatePortalCoords = () => {
+    if (!wrapRef.current || typeof window === "undefined") return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const popoverWidth = 280;
+    const popoverHeight = 315;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const showAbove = spaceBelow < popoverHeight && rect.top > popoverHeight;
+
+    setPortalCoords({
+      top: showAbove
+        ? Math.max(8, rect.top - popoverHeight - 4)
+        : Math.min(window.innerHeight - popoverHeight - 8, rect.bottom + 4),
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - popoverWidth - 8)),
+    });
+  };
+
   const handleToggle = () => {
     if (disabled || readOnly) return;
+    if (!open && usePortal) {
+      calculatePortalCoords();
+    }
     setOpen((prev) => !prev);
   };
 
@@ -116,12 +147,16 @@ export function GsDatePicker({
     if (!open) return;
 
     function handleClickOutside(e: MouseEvent | TouchEvent) {
-      if (!containerRef.current) return;
       const path = e.composedPath ? e.composedPath() : [];
-      const isInside =
-        containerRef.current.contains(e.target as Node) ||
-        (path.length > 0 && path.includes(containerRef.current));
-      if (!isInside) {
+      const target = e.target as Node;
+      const inContainer =
+        containerRef.current &&
+        (containerRef.current.contains(target) || (path.length > 0 && path.includes(containerRef.current)));
+      const inPopover =
+        popoverRef.current &&
+        (popoverRef.current.contains(target) || (path.length > 0 && path.includes(popoverRef.current)));
+
+      if (!inContainer && !inPopover) {
         setOpen(false);
       }
     }
@@ -130,16 +165,38 @@ export function GsDatePicker({
       if (e.key === "Escape") setOpen(false);
     }
 
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
+    function handleScroll(e: Event) {
+      if (!usePortal) return;
+      const path = e.composedPath ? e.composedPath() : [];
+      const target = e.target as Node;
+      if (popoverRef.current && (popoverRef.current.contains(target) || (path.length > 0 && path.includes(popoverRef.current)))) {
+        return;
+      }
+      calculatePortalCoords();
+    }
+
+    function handleResize() {
+      if (usePortal) calculatePortalCoords();
+    }
+
+    document.addEventListener("mousedown", handleClickOutside, true);
+    document.addEventListener("touchstart", handleClickOutside, true);
     document.addEventListener("keydown", handleKeyDown);
+    if (usePortal) {
+      window.addEventListener("scroll", handleScroll, true);
+      window.addEventListener("resize", handleResize, true);
+    }
 
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside, true);
+      document.removeEventListener("touchstart", handleClickOutside, true);
       document.removeEventListener("keydown", handleKeyDown);
+      if (usePortal) {
+        window.removeEventListener("scroll", handleScroll, true);
+        window.removeEventListener("resize", handleResize, true);
+      }
     };
-  }, [open]);
+  }, [open, usePortal]);
 
   // Calendar day grid calculations
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -251,6 +308,137 @@ export function GsDatePicker({
     setOpen(false);
   };
 
+  const popoverContent = open ? (
+    <div
+      ref={popoverRef}
+      data-radix-scroll-lock-ignore="true"
+      className={cn("gs-date-popover", usePortal && "is-portal")}
+      style={
+        usePortal && portalCoords
+          ? {
+              position: "fixed",
+              top: `${portalCoords.top}px`,
+              left: `${portalCoords.left}px`,
+              zIndex: 999999,
+              pointerEvents: "auto",
+            }
+          : { pointerEvents: "auto" }
+      }
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Header: Month & Year Navigator */}
+      <div className="gs-date-popover-header">
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={handlePrevYear}
+            className="gs-date-nav-btn"
+            title="Năm trước"
+          >
+            <ChevronsLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handlePrevMonth}
+            className="gs-date-nav-btn"
+            title="Tháng trước"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="gs-date-header-title">
+          {MONTH_NAMES[viewMonth]} {viewYear}
+        </div>
+
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={handleNextMonth}
+            className="gs-date-nav-btn"
+            title="Tháng sau"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleNextYear}
+            className="gs-date-nav-btn"
+            title="Năm sau"
+          >
+            <ChevronsRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Weekdays Header */}
+      <div className="gs-date-weekdays">
+        {WEEKDAYS.map((w, index) => (
+          <div
+            key={w}
+            className={cn(
+              "gs-date-weekday-cell",
+              index === 6 && "is-weekend"
+            )}
+          >
+            {w}
+          </div>
+        ))}
+      </div>
+
+      {/* Days Grid */}
+      <div className="gs-date-grid">
+        {calendarDays.map((cd, idx) => {
+          const isCurrentMonth = cd.monthOffset === 0;
+          return (
+            <button
+              key={`${cd.dateStr}-${idx}`}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectDate(cd.dateStr);
+              }}
+              className={cn(
+                "gs-date-cell-btn",
+                !isCurrentMonth && "is-other-month",
+                cd.isToday && !cd.isSelected && "is-today",
+                cd.isSelected && "is-selected"
+              )}
+            >
+              {cd.dayNumber}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Footer Toolbar */}
+      <div className="gs-date-popover-footer">
+        <button
+          type="button"
+          onClick={handleSelectToday}
+          className="gs-date-quick-today"
+        >
+          Hôm nay
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(false);
+          }}
+          className="gs-date-close-btn"
+        >
+          Đóng
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  const targetPortal =
+    portalContainer || (typeof document !== "undefined" ? document.body : null);
+
   return (
     <div ref={containerRef} className={cn("gs-date-picker-group space-y-1.5", className)}>
       {label && (
@@ -262,17 +450,19 @@ export function GsDatePicker({
         </label>
       )}
 
-      <div className="gs-date-input-wrap">
+      <div ref={wrapRef} className="gs-date-input-wrap">
         <button
           id={inputId}
           name={name}
           type="button"
+          title={title}
           disabled={disabled || readOnly}
           onClick={handleToggle}
           aria-haspopup="dialog"
           aria-expanded={open}
           className={cn(
             "gs-date-input-trigger",
+            size === "sm" && "is-sm",
             open && "is-open",
             error && "has-error",
             !displayString && "is-placeholder",
@@ -283,12 +473,12 @@ export function GsDatePicker({
         </button>
 
         {/* Leading Calendar Icon */}
-        <div className="gs-date-leading-icon">
-          <Calendar className="w-4 h-4" />
+        <div className={cn("gs-date-leading-icon", size === "sm" && "is-sm")}>
+          <Calendar className={size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4"} />
         </div>
 
-        {/* Trailing Action: Clear or Calendar indicator */}
-        <div className="gs-date-trailing-actions">
+        {/* Trailing Action: Clear or Calendar indicator (hide duplicate glyph in sm mode) */}
+        <div className={cn("gs-date-trailing-actions", size === "sm" && "is-sm")}>
           {allowClear && displayString && !disabled && !readOnly ? (
             <button
               type="button"
@@ -296,129 +486,19 @@ export function GsDatePicker({
               className="gs-date-clear-btn"
               title="Xóa ngày đã chọn"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className={size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} />
             </button>
-          ) : (
+          ) : size !== "sm" ? (
             <div className="gs-date-trailing-glyph">
               <Calendar className="w-3.5 h-3.5" />
             </div>
-          )}
+          ) : null}
         </div>
 
-        {/* Calendar Popover (Rendered inline inside container) */}
-        {open && (
-          <div
-            data-radix-scroll-lock-ignore="true"
-            className="gs-date-popover"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header: Month & Year Navigator */}
-            <div className="gs-date-popover-header">
-              <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={handlePrevYear}
-                  className="gs-date-nav-btn"
-                  title="Năm trước"
-                >
-                  <ChevronsLeft className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePrevMonth}
-                  className="gs-date-nav-btn"
-                  title="Tháng trước"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="gs-date-header-title">
-                {MONTH_NAMES[viewMonth]} {viewYear}
-              </div>
-
-              <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={handleNextMonth}
-                  className="gs-date-nav-btn"
-                  title="Tháng sau"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNextYear}
-                  className="gs-date-nav-btn"
-                  title="Năm sau"
-                >
-                  <ChevronsRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Weekdays Header */}
-            <div className="gs-date-weekdays">
-              {WEEKDAYS.map((w, index) => (
-                <div
-                  key={w}
-                  className={cn(
-                    "gs-date-weekday-cell",
-                    index === 6 && "is-weekend"
-                  )}
-                >
-                  {w}
-                </div>
-              ))}
-            </div>
-
-            {/* Days Grid */}
-            <div className="gs-date-grid">
-              {calendarDays.map((cd, idx) => {
-                const isCurrentMonth = cd.monthOffset === 0;
-                return (
-                  <button
-                    key={`${cd.dateStr}-${idx}`}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectDate(cd.dateStr);
-                    }}
-                    className={cn(
-                      "gs-date-cell-btn",
-                      !isCurrentMonth && "is-other-month",
-                      cd.isToday && !cd.isSelected && "is-today",
-                      cd.isSelected && "is-selected"
-                    )}
-                  >
-                    {cd.dayNumber}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Footer Toolbar */}
-            <div className="gs-date-popover-footer">
-              <button
-                type="button"
-                onClick={handleSelectToday}
-                className="gs-date-quick-today"
-              >
-                Hôm nay
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpen(false);
-                }}
-                className="gs-date-close-btn"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Calendar Popover */}
+        {usePortal && targetPortal && popoverContent
+          ? createPortal(popoverContent, targetPortal)
+          : popoverContent}
       </div>
 
       {error && <p className="text-[11px] font-medium text-rose-500 mt-1">{error}</p>}

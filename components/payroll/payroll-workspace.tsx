@@ -41,7 +41,10 @@ export function PayrollWorkspacePage() {
   const [query, setQuery] = useState("");
   const [filterProject, setFilterProject] = useState("");
   const [selectedProjectItem, setSelectedProjectItem] = useState<any>(null);
-  const [monthFilter, setMonthFilter] = useState("2026-07");
+  const [monthFilter, setMonthFilter] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);

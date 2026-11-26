@@ -7538,6 +7538,14 @@ span.inline-cell-input {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.gs-money-input-field.is-sm {
+  height: 32px;
+  min-height: 32px;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .gs-money-input-field:hover:not(:disabled) {
   border-color: #94a3b8;
 }
@@ -7591,6 +7599,14 @@ span.inline-cell-input {
   user-select: none;
 }
 
+.gs-date-input-trigger.is-sm {
+  height: 32px;
+  min-height: 32px;
+  border-radius: 6px;
+  padding: 0 24px 0 26px;
+  font-size: 12px;
+}
+
 .gs-date-input-trigger:hover:not(:disabled) {
   border-color: #94a3b8;
   background-color: #f8fafc;
@@ -7633,6 +7649,12 @@ span.inline-cell-input {
   transition: color 0.15s ease;
 }
 
+.gs-date-leading-icon.is-sm {
+  left: 8px;
+  width: 13px;
+  height: 13px;
+}
+
 .gs-date-input-wrap:hover .gs-date-leading-icon,
 .gs-date-input-trigger.is-open ~ .gs-date-leading-icon {
   color: var(--primary, #038b8c);
@@ -7645,6 +7667,10 @@ span.inline-cell-input {
   transform: translateY(-50%);
   display: flex;
   align-items: center;
+}
+
+.gs-date-trailing-actions.is-sm {
+  right: 6px;
 }
 
 .gs-date-clear-btn {
@@ -7683,7 +7709,8 @@ span.inline-cell-input {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 99999;
+  z-index: 999999;
+  pointer-events: auto !important;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #ffffff;
@@ -7694,6 +7721,12 @@ span.inline-cell-input {
   font-family: inherit;
   width: 280px;
   box-sizing: border-box;
+}
+
+.gs-date-popover.is-portal {
+  position: fixed;
+  pointer-events: auto !important;
+  z-index: 999999;
 }
 
 .gs-date-popover-header {
